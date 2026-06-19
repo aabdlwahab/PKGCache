@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<!-- Single static file, vanilla JS, zero external assets — loads fully offline
+     on the air-gapped side. Talks to webui/server.py over /api/*. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>package-cache</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2b3540; --fg:#d6dee6;
+    --muted:#8a97a5; --accent:#4ea1ff; --ok:#3fb950; --bad:#f0633e; --warn:#d6a534;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:center; gap:16px; padding:12px 20px;
+           background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header h1 .sub { color:var(--muted); font-weight:400; }
+  .pill { font-size:12px; padding:3px 9px; border-radius:999px; background:#0d1117;
+          border:1px solid var(--line); color:var(--muted); }
+  .pill.ok { color:var(--ok); border-color:#1f4d2a; }
+  .pill.bad { color:var(--bad); border-color:#5a2418; }
+  .grow { flex:1; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px 20px; align-items:start; }
+  @media (max-width:980px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .panel > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+                margin:0; padding:11px 14px; border-bottom:1px solid var(--line);
+                display:flex; align-items:center; gap:8px; }
+  .live { margin-left:auto; font:11px/1 system-ui,sans-serif; text-transform:none; letter-spacing:0;
+          color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .live .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .live .dot.beat { animation:pulse 1.6s ease-in-out infinite; }
+  .eco-head .new { font-size:12px; color:var(--warn); font-weight:600; }
+  .panel .body { padding:14px; }
+  .eco { margin-bottom:14px; }
+  .eco-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+  .eco-head .name { font-weight:600; text-transform:capitalize; }
+  .eco-head .count { font-size:12px; color:var(--muted); }
+  .eco-head .ep { margin-left:auto; font:12px monospace; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+  th,td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; }
+  td.ver { color:var(--accent); white-space:nowrap; }
+  td.dig { font:11px monospace; color:var(--muted); word-break:break-all; }
+  .empty { color:var(--muted); font-style:italic; padding:6px 0; }
+  /* live download progress */
+  .dl { margin:8px 0; }
+  .dl-head { display:flex; align-items:baseline; gap:8px; }
+  .dl-head .name { font-weight:600; text-transform:capitalize; font-size:12px; color:var(--accent); }
+  .dl-name { font:12px monospace; color:var(--fg); white-space:nowrap; overflow:hidden;
+             text-overflow:ellipsis; }
+  .dl-bar { height:7px; background:#0d1117; border:1px solid var(--line); border-radius:4px;
+            overflow:hidden; margin:4px 0; }
+  .dl-fill { height:100%; background:var(--accent); transition:width .3s ease; }
+  .dl-fill.done { background:var(--ok); }
+  .dl-fill.indet { opacity:.4; animation:pulse 1.2s ease-in-out infinite; }
+  .dl-meta { font-size:11px; color:var(--muted); }
+  /* recent pulls log */
+  #recent { max-height:240px; overflow:auto; }
+  .log-row { display:flex; align-items:baseline; gap:8px; padding:3px 0;
+             border-bottom:1px solid var(--line); font-size:12px; }
+  .log-row:last-child { border-bottom:0; }
+  .log-eco { flex:0 0 54px; text-transform:capitalize; font-weight:600; font-size:11px;
+             color:var(--accent); }
+  .log-name { flex:1 1 auto; font-family:monospace; white-space:nowrap; overflow:hidden;
+              text-overflow:ellipsis; }
+  .log-size { flex:0 0 auto; color:var(--muted); font-size:11px; }
+  .log-time { flex:0 0 auto; color:var(--muted); font-size:11px; min-width:56px; text-align:right; }
+  .hm { flex:0 0 32px; font-size:10px; font-weight:700; text-transform:uppercase; text-align:center;
+        border-radius:3px; padding:1px 0; }
+  .hm.hit { background:rgba(63,185,80,.18); color:var(--ok); }
+  .hm.miss { background:rgba(240,99,62,.18); color:var(--bad); }
+  input,button,textarea { font:inherit; }
+  input[type=text]{ width:100%; padding:7px 9px; background:#0d1117; border:1px solid var(--line);
+                    border-radius:6px; color:var(--fg); }
+  .field { margin-bottom:10px; }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  button { padding:7px 13px; background:var(--accent); color:#06121f; border:0; border-radius:6px;
+           font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .commit { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .commit:last-child{ border-bottom:0; }
+  .commit .sha { font:12px monospace; color:var(--muted); }
+  .commit .msg { flex:1; }
+  .commit .tag { font-size:11px; padding:1px 6px; border-radius:4px; background:#0d1117; color:var(--muted); border:1px solid var(--line); }
+  .commit.head .tag { color:var(--ok); border-color:#1f4d2a; }
+  .commit .date { font-size:12px; color:var(--muted); }
+  #console { grid-column:1/-1; background:#06090d; border:1px solid var(--line); border-radius:8px; display:none; }
+  #console.show { display:block; }
+  #console h2 { display:flex; align-items:center; gap:10px; }
+  #console pre { margin:0; padding:14px; max-height:340px; overflow:auto; font:12px/1.5 monospace;
+                 white-space:pre-wrap; color:#c9d4df; }
+  .filter { width:auto; flex:1; }
+  .note { font-size:12px; color:var(--muted); margin-top:6px; }
+  .err { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>package-cache <span class="sub">air-gap registry</span></h1>
+  <span id="commit" class="pill">commit …</span>
+  <span id="proxies" class="pill">proxies …</span>
+  <span class="grow"></span>
+  <input id="filter" class="filter" type="text" placeholder="filter packages…" style="max-width:260px">
+  <button class="ghost" onclick="refresh()">Refresh</button>
+</header>
+
+<main>
+  <!-- ---- which packages are downloaded where ---- -->
+  <section class="panel">
+    <h2>Packages in cache <span id="pkglive" class="live"></span></h2>
+    <div class="body" id="packages"><div class="empty">loading…</div></div>
+  </section>
+
+  <!-- ---- live download progress (aggregated from the four proxies) ---- -->
+  <section class="panel" id="dlpanel" style="display:none">
+    <h2>Downloads in progress <span id="dllive" class="live"></span></h2>
+    <div class="body" id="downloads"></div>
+  </section>
+
+  <!-- ---- recent pulls (log-like feed) ---- -->
+  <section class="panel">
+    <h2>Recently pulled <span id="recentlive" class="live"></span></h2>
+    <div class="body" id="recent"><div class="empty">nothing pulled yet</div></div>
+  </section>
+
+  <!-- ---- snapshot control ---- -->
+  <section class="panel">
+    <h2>Snapshots</h2>
+    <div class="body">
+      <div class="field">
+        <label>New checkpoint — quiesce, hash, version & commit</label>
+        <div class="row">
+          <input id="ckmsg" type="text" placeholder='e.g. "added numpy 2.1 + curl"'>
+          <button id="ckbtn" onclick="checkpoint()">Checkpoint</button>
+        </div>
+      </div>
+      <div class="row" style="gap:16px; margin:12px 0">
+        <div class="field grow" style="margin:0">
+          <label>Export delta to shuttle drive (online side)</label>
+          <div class="row">
+            <input id="exdrive" type="text" placeholder="/media/shuttle">
+            <button class="ghost" onclick="job('export',{drive:val('exdrive')})">Export</button>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Import from shuttle drive (air-gapped side)</label>
+        <div class="row">
+          <input id="imdrive" type="text" placeholder="/media/shuttle">
+          <button class="ghost" onclick="job('import',{drive:val('imdrive')})">Import</button>
+        </div>
+      </div>
+      <h2 style="border:0; padding:14px 0 4px 0">History — click a checkpoint to roll back</h2>
+      <div id="history"><div class="empty">loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ---- live job output ---- -->
+  <section id="console" class="panel">
+    <h2><span id="jobtitle">job</span> <span id="jobstatus" class="pill">running</span>
+        <span class="grow"></span>
+        <button class="ghost" onclick="hideConsole()">Close</button></h2>
+    <pre id="joblog"></pre>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const val = id => $('#'+id).value.trim();
+let MANIFESTS = {};
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || r.status); }
+  return r.json();
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function loadProxies(){
+  try {
+    const p = await api('/api/proxies');
+    const el = $('#proxies');
+    if (!p.available){ el.className='pill bad'; el.textContent='docker unreachable'; return; }
+    const up = p.services.filter(s=>/run|up/i.test(s.state+s.status)).length;
+    el.className = up ? 'pill ok' : 'pill';
+    el.textContent = up ? `${up} proxies up (${p.profile})` : 'proxies stopped';
+  } catch(e){ $('#proxies').textContent='proxies ?'; }
+}
+
+let ENDPOINTS = {};
+let CHECKPOINTED = {};
+let _pkgKey = '';
+async function loadPackages(){
+  if (!Object.keys(ENDPOINTS).length) ENDPOINTS = await api('/api/endpoints');
+  const m = await api('/api/manifests');
+  MANIFESTS = m.ecosystems || {};
+  CHECKPOINTED = m.checkpointed || {};
+  renderLive(m.age);
+  // Only rebuild the table when the data actually changed, so a 5s poll doesn't
+  // fight the user's scroll/selection while nothing is happening.
+  const key = JSON.stringify([MANIFESTS, CHECKPOINTED]);
+  if (key !== _pkgKey){ _pkgKey = key; renderPackages(); }
+}
+
+function renderLive(age){
+  const el = $('#pkglive');
+  if (age === null || age === undefined){
+    el.innerHTML = '<span class="dot beat" style="background:var(--warn)"></span>syncing…'; return;
+  }
+  el.innerHTML = `<span class="dot beat"></span>${age < 2 ? 'live' : 'live · '+Math.round(age)+'s ago'}`;
+}
+
+function renderPackages(){
+  const filter = $('#filter').value.toLowerCase();
+  const host = document.getElementById('packages');
+  host.innerHTML = '';
+  for (const eco of ['docker','npm','pip','apt','apk']){
+    const all = MANIFESTS[eco]||[];
+    const items = all.filter(it =>
+      !filter || (it.name+' '+it.version).toLowerCase().includes(filter));
+    const newCount = all.length - (CHECKPOINTED[eco]||0);   // cached but not yet checkpointed
+    const div = document.createElement('div');
+    div.className = 'eco';
+    let rows = items.map(it => `<tr>
+        <td>${esc(it.name)}</td>
+        <td class="ver">${esc(it.version||'')}</td>
+        <td class="dig">${it.digest?esc(String(it.digest).slice(0,24))+'…':''}</td></tr>`).join('');
+    if (!rows) rows = `<tr><td colspan="3" class="empty">${filter?'no matches':'nothing cached yet'}</td></tr>`;
+    div.innerHTML = `
+      <div class="eco-head">
+        <span class="name">${eco}</span>
+        <span class="count">${items.length}${filter?' shown':' pkgs'}</span>
+        ${(!filter && newCount>0)?`<span class="new" title="cached but not yet checkpointed — run a checkpoint to version them">+${newCount} new</span>`:''}
+        <span class="ep">${esc(ENDPOINTS[eco]||'')}</span>
+      </div>
+      <table><thead><tr><th>name</th><th>version</th><th>digest</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    host.appendChild(div);
+  }
+}
+
+async function loadHistory(){
+  const h = await api('/api/history');
+  const el = $('#history');
+  if (!h.commits.length){ el.innerHTML = '<div class="empty">no commits yet</div>'; return; }
+  $('#commit').textContent = h.head ? 'commit '+h.head.slice(0,7) : 'no commit';
+  el.innerHTML = h.commits.map(c => `
+    <div class="commit ${c.is_head?'head':''}">
+      <span class="date">${esc(c.date)}</span>
+      <span class="sha">${esc(c.short)}</span>
+      <span class="msg">${esc(c.subject)}</span>
+      ${c.is_head?'<span class="tag">HEAD</span>':
+        (c.is_checkpoint?`<button class="ghost" onclick="rollback('${c.hash}','${esc(c.short)}')">roll back</button>`:'<span class="tag">·</span>')}
+    </div>`).join('');
+}
+
+function fmtBytes(n){
+  if (n === null || n === undefined) return '?';
+  const u = ['B','KB','MB','GB']; let i = 0;
+  while (n >= 1024 && i < u.length-1){ n /= 1024; i++; }
+  return n.toFixed(i?1:0)+' '+u[i];
+}
+
+async function loadDownloads(){
+  let d;
+  try { d = await api('/api/downloads'); } catch { return; }
+  const sources = d.sources || {};
+  // flatten into one list, tagging each with its ecosystem
+  const all = [];
+  for (const eco of ['docker','npm','pip','apt']){
+    const items = sources[eco];
+    if (!Array.isArray(items)) continue;            // null => proxy unreachable
+    for (const it of items){
+      if (it.status === 'active' || it.status === 'complete') all.push({eco, ...it});
+    }
+  }
+  const panel = document.getElementById('dlpanel');
+  const host = document.getElementById('downloads');
+  if (!all.length){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  $('#dllive').innerHTML = `<span class="dot beat"></span>${d.age==null?'syncing…':(d.age<2?'live':'live · '+Math.round(d.age)+'s ago')}`;
+  host.innerHTML = all.map(it => {
+    const done = it.status === 'complete';
+    const pct = it.pct === null || it.pct === undefined ? (done?100:0) : it.pct;
+    const indet = (it.pct === null || it.pct === undefined) && !done;
+    const meta = done ? `done · ${fmtBytes(it.downloaded)}`
+      : `${fmtBytes(it.downloaded)} / ${fmtBytes(it.total)}${it.pct==null?'':' ('+it.pct+'%)'}`;
+    return `<div class="dl">
+      <div class="dl-head"><span class="name">${esc(it.eco)}</span>
+        <span class="dl-name" title="${esc(it.id||'')}">${esc(it.name)}</span></div>
+      <div class="dl-bar"><div class="dl-fill ${done?'done':''} ${indet?'indet':''}" style="width:${indet?100:pct}%"></div></div>
+      <div class="dl-meta">${esc(meta)}</div>
+    </div>`;
+  }).join('');
+}
+
+function relTime(epoch){
+  const s = Math.max(0, Math.round(Date.now()/1000 - epoch));
+  if (s < 60) return s+'s ago';
+  if (s < 3600) return Math.round(s/60)+'m ago';
+  if (s < 86400) return Math.round(s/3600)+'h ago';
+  return Math.round(s/86400)+'d ago';
+}
+
+let _recentCount = 0;
+async function loadRecent(){
+  let d;
+  try { d = await api('/api/recent'); } catch { return; }
+  const pulls = d.pulls || [];
+  const host = document.getElementById('recent');
+  const hits = pulls.filter(p => p.hit === true).length;
+  const misses = pulls.filter(p => p.hit === false).length;
+  $('#recentlive').innerHTML = `<span class="dot beat"></span>${hits} hit${hits===1?'':'s'} · ${misses} miss${misses===1?'':'es'}`;
+  if (!pulls.length){ host.innerHTML = '<div class="empty">nothing pulled yet</div>'; return; }
+  host.innerHTML = pulls.map(p => {
+    const hit = p.hit === true, miss = p.hit === false;
+    const badge = hit ? '<span class="hm hit">hit</span>'
+                : miss ? '<span class="hm miss">miss</span>' : '';
+    return `<div class="log-row">
+      <span class="log-eco eco-${esc(p.eco)}">${esc(p.eco)}</span>
+      ${badge}
+      <span class="log-name" title="${esc(p.id||'')}">${esc(p.name||'')}</span>
+      <span class="log-size">${p.size?fmtBytes(p.size):''}</span>
+      <span class="log-time" data-t="${p.time}">${relTime(p.time)}</span>
+    </div>`;
+  }).join('');
+  _recentCount = pulls.length;
+}
+// keep the "… ago" labels ticking without refetching
+setInterval(() => {
+  document.querySelectorAll('#recent .log-time').forEach(el => {
+    const t = parseFloat(el.dataset.t); if (t) el.textContent = relTime(t);
+  });
+}, 5000);
+
+function refresh(){ loadProxies(); loadPackages(); loadHistory(); }
+$('#filter').addEventListener('input', renderPackages);
+
+// ---- jobs ----
+function showConsole(title){
+  $('#console').classList.add('show');
+  $('#jobtitle').textContent = title;
+  $('#joblog').textContent = '';
+  $('#console').scrollIntoView({behavior:'smooth'});
+}
+function hideConsole(){ $('#console').classList.remove('show'); }
+function setBusy(b){ document.querySelectorAll('main button').forEach(x=>x.disabled=b); }
+
+async function job(action, params){
+  for (const k in params) if (!params[k]) { alert(k+' is required'); return; }
+  try {
+    showConsole(action);
+    const st = $('#jobstatus'); st.className='pill'; st.textContent='running';
+    setBusy(true);
+    const {id} = await api('/api/jobs', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action, ...params})});
+    await poll(id);
+  } catch(e){
+    $('#joblog').textContent += '\n[error] '+e.message+'\n';
+    $('#jobstatus').className='pill bad'; $('#jobstatus').textContent='failed';
+    setBusy(false);
+  }
+}
+
+async function poll(id){
+  const j = await api('/api/jobs/'+id);
+  $('#joblog').textContent = j.log || '(no output yet)';
+  $('#joblog').parentElement.scrollTop = 1e9;
+  if (j.status === 'running'){ setTimeout(()=>poll(id), 700); return; }
+  const st = $('#jobstatus');
+  st.className = 'pill ' + (j.status==='done'?'ok':'bad');
+  st.textContent = j.status;
+  setBusy(false);
+  refresh();  // packages/history likely changed
+}
+
+function checkpoint(){
+  const msg = val('ckmsg');
+  if (!msg){ alert('a checkpoint message is required'); return; }
+  job('checkpoint', {message: msg});
+  $('#ckmsg').value='';
+}
+function rollback(hash, short){
+  if (!confirm(`Roll back to ${short}?\nThis runs: git checkout ${short} && dvc checkout`)) return;
+  job('rollback', {commit: hash});
+}
+
+refresh();
+loadDownloads();
+loadRecent();
+setInterval(loadProxies, 10000);
+setInterval(loadDownloads, 1500);
+setInterval(loadRecent, 3000);
+// Live package view: poll often, but loadPackages only rebuilds the table when
+// the cache contents actually change (see _pkgKey).
+setInterval(() => loadPackages().catch(()=>{}), 5000);
+</script>
+</body>
+</html>
