@@ -1,0 +1,26 @@
+# Cache contents are versioned by DVC, never committed directly to git.
+# Only the .dvc pointers (and the manifests) belong in git.
+/caches/docker/
+/caches/npm/
+/caches/pip/
+/caches/apt/
+
+# ...but keep the empty dirs around so the proxies have somewhere to mount.
+!/caches/docker/.gitkeep
+!/caches/npm/.gitkeep
+!/caches/pip/.gitkeep
+!/caches/apt/.gitkeep
+
+# Shuttle/transfer artifacts should never live in the repo.
+*.bundle
+/dvcstore/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# TLS material (scripts/gen-certs.sh). Private keys never leave this host; the
+# CA cert is shareable (carry it across the gap, install on build hosts).
+/certs/*.key
+/certs/*.srl
+!/certs/ca.crt
