@@ -1,0 +1,69 @@
+# Four pull-through caching proxies (OCI / npm / PyPI / apt+apk) as ONE Python
+# container (./pkgcache) running all four roles in a single process — each on its
+# own port (the protocols can't share a port: OCI owns /v2/ at the root, apt is a
+# forward proxy). The HTTPS roles terminate TLS in-process from ./certs, so there
+# is no separate TLS proxy. Everything is written into ./caches/<eco> (DVC-tracked).
+#
+# Bring up online side:     docker compose --profile online up -d
+# Bring up air-gapped side: OFFLINE=1 docker compose --profile offline up -d
+#
+# OFFLINE=1 makes every role serve from cache only and never reach upstream — this
+# is the air-gap mode (a cache miss simply fails). Run scripts/gen-certs.sh once
+# before `up` to populate ./certs.
+
+services:
+  # ---- the cache (all four roles, one process) ---------------------------
+  pkgcache:
+    build: ./pkgcache
+    image: package-registry/pkgcache:local
+    restart: unless-stopped
+    environment:
+      OFFLINE: "${OFFLINE:-0}"
+      PKGCACHE_CACHE_ROOT: /caches
+      PKGCACHE_TLS_CERT: /certs/server.crt
+      PKGCACHE_TLS_KEY: /certs/server.key
+    ports:
+      - "5000:5000"   # OCI  (HTTPS)  pull <host>:5000/{dockerhub,ghcr,quay}/<image>
+      - "4873:4873"   # npm  (HTTPS)
+      - "3141:3141"   # pip  (HTTPS)
+      - "3142:3142"   # apt + apk (HTTP forward proxy)
+    volumes:
+      - ./caches:/caches        # each role uses /caches/<eco>
+      - ./certs:/certs:ro
+    networks:
+      default:
+        aliases: ["pkgcache"]
+    profiles: ["online", "offline"]
+
+  # ---- control UI --------------------------------------------------------
+  # Own profile ("ui"), deliberately NOT in online/offline so checkpoint.sh's
+  # `docker compose stop` never takes it down with the cache. Bring it up
+  # alongside a cache profile, e.g.:
+  #   docker compose --profile online --profile ui up -d
+  #
+  # webui is now the API backend only: the React console (`console` service)
+  # is the public entry on :8088 and reverse-proxies /api here. webui is reached
+  # over the compose network as webui:8088, so it no longer publishes a host port.
+  webui:
+    build: ./webui
+    restart: unless-stopped
+    expose: ["8088"]       # internal only — the console proxies /api to it
+    environment:
+      UI_HOST: 0.0.0.0
+    working_dir: ${PWD}
+    volumes:
+      - .:${PWD}                              # repo at its own path
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${SHUTTLE_MOUNT:-/media}:${SHUTTLE_MOUNT:-/media}
+    profiles: ["ui"]
+
+  # The React + TS console (full frontend). Built by a multi-stage image (Node →
+  # nginx); nginx serves the static bundle and reverse-proxies /api to webui.
+  # Public UI port (no auth — trusted nets only).
+  console:
+    build: ./webui/console
+    image: package-registry/console:local
+    restart: unless-stopped
+    ports: ["8088:80"]
+    depends_on: ["webui"]
+    profiles: ["ui"]
