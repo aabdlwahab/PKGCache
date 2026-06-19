@@ -1,0 +1,35 @@
+# pkgcache upstream maps. One file, one section per role; PKGCACHE_ROLE picks one.
+# Env overrides: PKGCACHE_ROLE, OFFLINE, PKGCACHE_CACHE_ROOT, PKGCACHE_PORT,
+# PKGCACHE_REQUEST_TIMEOUT, PKGCACHE_HOST, PKGCACHE_CONFIG.
+
+defaults:
+  # Generous per-request timeout so the first online fetch of a multi-GB CUDA
+  # wheel completes and commits, rather than timing out mid-stream.
+  request_timeout: 1200
+
+roles:
+  oci:
+    listen_port: 5000
+    # client pulls <host>:5000/<dest>/<image>; dest selects the upstream registry
+    upstreams:
+      dockerhub: https://registry-1.docker.io
+      ghcr: https://ghcr.io
+      quay: https://quay.io
+
+  npm:
+    listen_port: 4873
+    upstream: https://registry.npmjs.org
+
+  pypi:
+    listen_port: 3141
+    # client uses --index-url https://<host>:3141/<index>/+simple/
+    # <index> maps to a PEP 503/691 simple root:
+    indexes:
+      root/pypi: https://pypi.org/simple
+      root/pytorch-cu124: https://download.pytorch.org/whl/cu124
+      root/pytorch-cpu: https://download.pytorch.org/whl/cpu
+
+  apt:
+    listen_port: 3142
+    # forward proxy — no upstream map; the Host header carries the mirror. Proxies
+    # to ANY host (no allowlist) by design; trusted/isolated networks only.
