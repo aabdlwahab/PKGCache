@@ -1,0 +1,71 @@
+/* Design tokens — ported verbatim from the hi-fi handoff (OKLCH, IBM Plex,
+   two skins × dark/light). Theme is on [data-theme], skin on [data-skin]; both
+   are set on <html> by App from localStorage. */
+
+/* ---- self-hosted fonts (air-gap: no CDN) -------------------------------
+   Drop the woff2 files in public/fonts/ at build time. If they are absent the
+   declarations simply fall back to the system mono/sans stacks below, so the
+   app still renders — it just won't be pixel-identical to the IBM Plex spec. */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: local("IBM Plex Mono"), url("/fonts/IBMPlexMono.woff2") format("woff2");
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100vh; }
+
+@keyframes pcc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.28; } }
+@keyframes pcc-indet { 0% { transform: translateX(-110%); } 100% { transform: translateX(460%); } }
+@keyframes pcc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-track { background: transparent; }
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.185 0.012 250); --bg2: oklch(0.155 0.012 250);
+  --panel: oklch(0.215 0.013 250); --panel2: oklch(0.255 0.014 250);
+  --inset: oklch(0.155 0.012 252);
+  --line: oklch(0.315 0.012 252); --line2: oklch(0.40 0.012 252);
+  --fg: oklch(0.93 0.006 250); --fg2: oklch(0.80 0.008 250);
+  --muted: oklch(0.66 0.012 252);
+  --ok: oklch(0.78 0.15 152); --bad: oklch(0.70 0.18 28); --warn: oklch(0.82 0.13 82);
+  --ok-bg: oklch(0.78 0.15 152 / 0.14); --bad-bg: oklch(0.70 0.18 28 / 0.16); --warn-bg: oklch(0.82 0.13 82 / 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: oklch(0.955 0.004 250); --bg2: oklch(0.925 0.005 250);
+  --panel: oklch(0.995 0.001 250); --panel2: oklch(0.975 0.003 250);
+  --inset: oklch(0.965 0.004 250);
+  --line: oklch(0.895 0.005 252); --line2: oklch(0.82 0.008 252);
+  --fg: oklch(0.27 0.012 252); --fg2: oklch(0.40 0.012 252);
+  --muted: oklch(0.52 0.014 252);
+  --ok: oklch(0.52 0.15 152); --bad: oklch(0.55 0.20 28); --warn: oklch(0.58 0.13 70);
+  --ok-bg: oklch(0.52 0.15 152 / 0.12); --bad-bg: oklch(0.55 0.20 28 / 0.12); --warn-bg: oklch(0.58 0.13 70 / 0.14);
+  --shadow: 0 1px 2px rgba(20, 30, 45, 0.08), 0 8px 22px rgba(20, 30, 45, 0.06);
+}
+/* Single fixed skin: the console typography (IBM Plex Mono, sharp corners,
+   uppercase titles) with the dashboard's blue accent. These are theme-independent,
+   so they live at :root (the [data-theme] blocks above own the color palette). */
+:root {
+  --ui: "IBM Plex Mono", ui-monospace, monospace;
+  --title: "IBM Plex Mono", ui-monospace, monospace;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 3px; --radius-sm: 2px; --tspace: 0.1em; --titlecase: uppercase;
+  --accent: oklch(0.62 0.17 248); --accent-ink: #ffffff; --accent-soft: oklch(0.62 0.17 248 / 0.14);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
