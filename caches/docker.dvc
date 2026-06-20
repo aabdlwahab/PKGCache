@@ -1,0 +1,6 @@
+outs:
+- md5: f896464ad3bd51063d0d4d3c3f3503c1.dir
+  size: 1050156898
+  nfiles: 140
+  hash: md5
+  path: docker

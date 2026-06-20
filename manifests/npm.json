@@ -1,0 +1,4274 @@
+[
+  {
+    "digest": "sha256:559f5bd10facb84423cd1b87454659d2c74749123ae8899bffa4458fe7a97d3a",
+    "name": "@alloc/quick-lru",
+    "size": 4465,
+    "version": "5.2.0"
+  },
+  {
+    "digest": "sha256:f8bf712008656c5abc83dd859463cba3193c76f4cd1fe8ad3637f7ae18bfd368",
+    "name": "@ampproject/remapping",
+    "size": 15562,
+    "version": "2.3.0"
+  },
+  {
+    "digest": "sha256:b6e24cd97ad524c9081afd19382ac50d0bd589ce7a56ac22c59faf728faa7db0",
+    "name": "@babel/runtime",
+    "size": 55384,
+    "version": "7.28.6"
+  },
+  {
+    "digest": "sha256:8895283c249a2d32bac878ec3e0d335ed4d0eecde995377f3cd3c6e86ecf757c",
+    "name": "@eslint-community/eslint-utils",
+    "size": 80151,
+    "version": "4.9.0"
+  },
+  {
+    "digest": "sha256:5683bcf971a407879399090cb8f324df0b034966f728bcff9e6b72dad049c677",
+    "name": "@eslint-community/regexpp",
+    "size": 73232,
+    "version": "4.12.1"
+  },
+  {
+    "digest": "sha256:1c516037060791cfdd8ac74876b105b0c102271ad3c614650c3b1b5d9b4fa12c",
+    "name": "@eslint/config-array",
+    "size": 74555,
+    "version": "0.21.0"
+  },
+  {
+    "digest": "sha256:cae81293ad62007254c350058123b38867d0e8c4ba80c1b2f5327bc9579fe5f9",
+    "name": "@eslint/config-helpers",
+    "size": 11191,
+    "version": "0.4.0"
+  },
+  {
+    "digest": "sha256:b855bc4238a147211b3972451cb5e6323ae99289d9f9917cdcb8e23517c26a43",
+    "name": "@eslint/core",
+    "size": 22408,
+    "version": "0.16.0"
+  },
+  {
+    "digest": "sha256:c97fa6e2d5254321de04a9091fd38d843ed7f330a6576d77dc0fafac0c18a97e",
+    "name": "@eslint/eslintrc",
+    "size": 134704,
+    "version": "3.3.1"
+  },
+  {
+    "digest": "sha256:591497052be8dff51052cb0e88b1d5b115566d75352c63674799de4767869f49",
+    "name": "@eslint/js",
+    "size": 4451,
+    "version": "9.37.0"
+  },
+  {
+    "digest": "sha256:ba7f68de75eb51cb7d7157502b43a0fdbaad799f10698a66152d7fe1a11e1e18",
+    "name": "@eslint/object-schema",
+    "size": 10883,
+    "version": "2.1.6"
+  },
+  {
+    "digest": "sha256:ddcf7f3fbe0637e4408d9be775cb09d7182d0be2600ba17bce702ab74e2e12d7",
+    "name": "@eslint/plugin-kit",
+    "size": 22285,
+    "version": "0.4.0"
+  },
+  {
+    "digest": "sha256:d0a5f5e4d7744e84e47a0ae70f6a91b80c8be237fd5d7261db7185f9d29e04d9",
+    "name": "@floating-ui/core",
+    "size": 44166,
+    "version": "1.7.4"
+  },
+  {
+    "digest": "sha256:64bcf0c4802680227dc0e8068f678848e4f7dcff304b9ed3459e8588e3b77886",
+    "name": "@floating-ui/dom",
+    "size": 33999,
+    "version": "1.7.5"
+  },
+  {
+    "digest": "sha256:61b1321d04edc794ee03f46ef983f1a65a8edc44e207a54c1919b14058f9b85e",
+    "name": "@floating-ui/react-dom",
+    "size": 10622,
+    "version": "2.1.7"
+  },
+  {
+    "digest": "sha256:b92e7dd416ef0c3781e6b0da125f5662f27052f5306be414a3e9bed3d8df9a78",
+    "name": "@floating-ui/utils",
+    "size": 9916,
+    "version": "0.2.10"
+  },
+  {
+    "digest": "sha256:39c62cc6ec315387bb9e283fcdbcbef1330b59d4a3d1a3f52f3cdc7668d6e6a1",
+    "name": "@formatjs/ecma402-abstract",
+    "size": 46701,
+    "version": "2.3.6"
+  },
+  {
+    "digest": "sha256:26c23867809f4dbf5f95c60146cd52a60561ba51c3f19d8453287f8ff5b8bd78",
+    "name": "@formatjs/fast-memoize",
+    "size": 2354,
+    "version": "2.2.7"
+  },
+  {
+    "digest": "sha256:d924459ec3c04ff069992bfd03ba16c80998ebfeff185226115c760b2c7089b1",
+    "name": "@formatjs/icu-messageformat-parser",
+    "size": 34771,
+    "version": "2.11.4"
+  },
+  {
+    "digest": "sha256:13edfbff4f612bf597114c6181cb9845a47073b4717eed93dbf3a00cb95a4d3a",
+    "name": "@formatjs/icu-skeleton-parser",
+    "size": 5727,
+    "version": "1.8.16"
+  },
+  {
+    "digest": "sha256:b485c50074b8a25d55f8caf674a1066961092e5761d4c71a5a83c81d26b03f0f",
+    "name": "@formatjs/intl-localematcher",
+    "size": 24092,
+    "version": "0.6.2"
+  },
+  {
+    "digest": "sha256:1048f68c3e09450e72197d7a180e85cfb674b54f2f91042efd83a40632dcfe0d",
+    "name": "@heroui/accordion",
+    "size": 13164,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:cf781f2cf9389597de41854aba8e66ab8773a1f00e75a75a9469d40fef63906b",
+    "name": "@heroui/alert",
+    "size": 5950,
+    "version": "2.2.30"
+  },
+  {
+    "digest": "sha256:34180d6b01cefe258d6276735eec7ea3b42d49ddec0cca6738c4629c340979e1",
+    "name": "@heroui/aria-utils",
+    "size": 7580,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:8a49dae7fe7abadab19294e68028088bf3bdb88c54cb1bcf5ddda64e64e8964a",
+    "name": "@heroui/autocomplete",
+    "size": 10087,
+    "version": "2.3.32"
+  },
+  {
+    "digest": "sha256:2d1fc8bf773fa541f74be6bbcfd50b44c351b143b95d8a084c88ac22fa28421f",
+    "name": "@heroui/avatar",
+    "size": 10098,
+    "version": "2.2.25"
+  },
+  {
+    "digest": "sha256:68894a9dc83b8746112a0eb765375a4a5f375f504cba8cc353f74245ff300524",
+    "name": "@heroui/badge",
+    "size": 4653,
+    "version": "2.2.18"
+  },
+  {
+    "digest": "sha256:656d95515c6c95d9b4e717894f5e20dd0001dcb936b73b123fc4a1a15bc91fb7",
+    "name": "@heroui/breadcrumbs",
+    "size": 8121,
+    "version": "2.2.24"
+  },
+  {
+    "digest": "sha256:7145a6c9b6a7ac7e183d7c4fa0603c8c6ad0be3e7e7cca8a97d9bf9322af1729",
+    "name": "@heroui/button",
+    "size": 7650,
+    "version": "2.2.30"
+  },
+  {
+    "digest": "sha256:5c857b29abdab97dd85577e90c708c678eedbda0f5b4e84234b1149c70f42b0a",
+    "name": "@heroui/calendar",
+    "size": 71240,
+    "version": "2.2.30"
+  },
+  {
+    "digest": "sha256:4f79ff7c84c1bd363c91642fe7b9086f8ce95b2b9b21295dfc72d794a961708a",
+    "name": "@heroui/card",
+    "size": 7396,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:fc7e4eaffec3bdea37eeaeb77512891b9c78603c6ab9c74adf48422049b28d91",
+    "name": "@heroui/checkbox",
+    "size": 12287,
+    "version": "2.3.30"
+  },
+  {
+    "digest": "sha256:fb8b59c5d3c1164fe7a6b42e379411c27c7b003ffb716b889b43b0a3cf47e18c",
+    "name": "@heroui/chip",
+    "size": 5664,
+    "version": "2.2.24"
+  },
+  {
+    "digest": "sha256:ae091a5c6b1b59008e700f85338361331384988a689358a541ee4d691ba6f027",
+    "name": "@heroui/code",
+    "size": 3520,
+    "version": "2.2.23"
+  },
+  {
+    "digest": "sha256:e80df8ab5e39bb319149fa04447da79751a71d7e2d35d36aefee1cfcc8a91a8d",
+    "name": "@heroui/date-input",
+    "size": 14220,
+    "version": "2.3.30"
+  },
+  {
+    "digest": "sha256:a33ced9f98c172bdfee7ebd5622f3a5d1dbbac75a3c22a2e6fabbfadd8bbce87",
+    "name": "@heroui/date-picker",
+    "size": 28572,
+    "version": "2.3.31"
+  },
+  {
+    "digest": "sha256:ebd8de0f9c6ca0a17cf6c2039738141f5bd7d91c1bac08dcf434202b1fe96a56",
+    "name": "@heroui/divider",
+    "size": 4254,
+    "version": "2.2.22"
+  },
+  {
+    "digest": "sha256:7b4492651210bb1a9fff803d9d9419a9aaf2014e1c6bb5aa6f22aace674313f5",
+    "name": "@heroui/dom-animation",
+    "size": 2158,
+    "version": "2.1.10"
+  },
+  {
+    "digest": "sha256:e5278b0e9833bfb25c66a5bb5d629db3f849dad6e0dc52a721c1c70d521cfdef",
+    "name": "@heroui/drawer",
+    "size": 4205,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:21ab3e95406eb571398b23eb809ac4f8a9014f7d443a94cffadf83e2519cd70a",
+    "name": "@heroui/dropdown",
+    "size": 6910,
+    "version": "2.3.30"
+  },
+  {
+    "digest": "sha256:f3c36bc880e530487fa33686e13d8a8b127f8d701f8749a3a792fb9bd1598008",
+    "name": "@heroui/form",
+    "size": 5734,
+    "version": "2.1.30"
+  },
+  {
+    "digest": "sha256:16827bb3eb3988d4d23b6225bbad039c0f25c55fbd025b34419cbe9d06db7c66",
+    "name": "@heroui/framer-utils",
+    "size": 4301,
+    "version": "2.1.26"
+  },
+  {
+    "digest": "sha256:cfb8503bda5ea45f2b17761edcefb91d3057f4c3aaec8c7be1640e8b123ee1ae",
+    "name": "@heroui/image",
+    "size": 5694,
+    "version": "2.2.19"
+  },
+  {
+    "digest": "sha256:112be6acfc2bfe145faa6bfc80166cd8f11e0cb98d146714501de3624f92fa74",
+    "name": "@heroui/input",
+    "size": 13021,
+    "version": "2.4.31"
+  },
+  {
+    "digest": "sha256:cb2893a8a085d63ce0ad250400706b0472c45ef4d3bf44ac5e3aedacdbb179b8",
+    "name": "@heroui/input-otp",
+    "size": 10789,
+    "version": "2.1.30"
+  },
+  {
+    "digest": "sha256:3d88006d72e5eb878871281c7f6329ba94a3d19d448af88a9463e814fbc2d3e9",
+    "name": "@heroui/kbd",
+    "size": 5021,
+    "version": "2.2.24"
+  },
+  {
+    "digest": "sha256:860c6bd5a7dd30b591beff6d6de25f6bc491e354abe22d6231877e8a702bd54a",
+    "name": "@heroui/link",
+    "size": 5258,
+    "version": "2.2.25"
+  },
+  {
+    "digest": "sha256:0585dfca126aa1a672cfc13365351023379ffc0d5de1be83c83e402edb4a923c",
+    "name": "@heroui/listbox",
+    "size": 26408,
+    "version": "2.3.29"
+  },
+  {
+    "digest": "sha256:030be3458dad4edbbdd123238f99109e5dfb23a3ddc3923d60ac8938c0ebf2cf",
+    "name": "@heroui/menu",
+    "size": 13531,
+    "version": "2.2.29"
+  },
+  {
+    "digest": "sha256:9ed6fa6f294ec82ec6af3b460bc0286120735e4c3c798b6e6af57f799bd14eb8",
+    "name": "@heroui/modal",
+    "size": 14628,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:896f421b5e71fe89299595fb084bf4188a69671f7138d9997be0d1fec674d7ac",
+    "name": "@heroui/navbar",
+    "size": 17289,
+    "version": "2.2.28"
+  },
+  {
+    "digest": "sha256:b8206d1734bb4397ec5df7cac424acb6135cfc0d83a5c170ef4213e66cd33547",
+    "name": "@heroui/number-input",
+    "size": 10748,
+    "version": "2.0.21"
+  },
+  {
+    "digest": "sha256:c2c9cb2160979c8645f03347c0fe105f2648a2763f9de2e8dc7cb2d6d0deeb07",
+    "name": "@heroui/pagination",
+    "size": 12458,
+    "version": "2.2.26"
+  },
+  {
+    "digest": "sha256:03f9090db4469d602d8fb6955bc3fd9f94db97959406022ee9ac6cb707d6cda9",
+    "name": "@heroui/popover",
+    "size": 21952,
+    "version": "2.3.30"
+  },
+  {
+    "digest": "sha256:69233451ca82ee1befd8e330abc899d54fc86cced08206abc0901a23bb5b40a6",
+    "name": "@heroui/progress",
+    "size": 7368,
+    "version": "2.2.24"
+  },
+  {
+    "digest": "sha256:2cbdc4710e8fc253ff8d43b3bd51393f2bd015d8ed08735e3a0e8fb594436fac",
+    "name": "@heroui/radio",
+    "size": 8922,
+    "version": "2.3.30"
+  },
+  {
+    "digest": "sha256:25a6f7e9735833c51665941527088dbde85cfad37d18c2e4baafb20e7974b1ae",
+    "name": "@heroui/react",
+    "size": 7189,
+    "version": "2.8.8"
+  },
+  {
+    "digest": "sha256:a99bd3dd565919709a6380dc117fcfc3a82066ef772213bb9a849afd274609d0",
+    "name": "@heroui/react-rsc-utils",
+    "size": 5942,
+    "version": "2.1.9"
+  },
+  {
+    "digest": "sha256:1cbe69e99c4e45b49733e00cf267149fd9128728471a26195644dfb009e92489",
+    "name": "@heroui/react-utils",
+    "size": 7234,
+    "version": "2.1.14"
+  },
+  {
+    "digest": "sha256:ad895d9309d41ace1204bec307041829b5420ed0ae2a4c0d04062cd35becbc72",
+    "name": "@heroui/ripple",
+    "size": 4399,
+    "version": "2.2.21"
+  },
+  {
+    "digest": "sha256:16406e4940fc5e5566a41668fa56fbe755e900130edaaef8f7d8690ed7af08e9",
+    "name": "@heroui/scroll-shadow",
+    "size": 4073,
+    "version": "2.3.19"
+  },
+  {
+    "digest": "sha256:b68fd83b6a9377b80df6780c300d43e32b2fc7ed4ff0da2737d3b2efcf8b5cf0",
+    "name": "@heroui/select",
+    "size": 23107,
+    "version": "2.4.31"
+  },
+  {
+    "digest": "sha256:4cb28727c9a1fa3b30902db28327adc93f80d3e7d1a2b218e9f848964cabfbd8",
+    "name": "@heroui/shared-icons",
+    "size": 89969,
+    "version": "2.1.10"
+  },
+  {
+    "digest": "sha256:e9bc93102a699fd44a2cd3772649b0879348f37c1d4ad127250cd4c2d0836cb9",
+    "name": "@heroui/shared-utils",
+    "size": 22650,
+    "version": "2.1.12"
+  },
+  {
+    "digest": "sha256:851d80fdf15aaf347851a7aac5b7ca12132f59020699452155e86771353f50c6",
+    "name": "@heroui/skeleton",
+    "size": 4242,
+    "version": "2.2.18"
+  },
+  {
+    "digest": "sha256:44c2db3ba9aefc8977d1e1f77d91299b4591aa94138d0df332223d2b46a32e2e",
+    "name": "@heroui/slider",
+    "size": 10958,
+    "version": "2.4.27"
+  },
+  {
+    "digest": "sha256:46d247918cc239b49c0af1ab890205e4f3510910aa0cca3d4272fe845cce97c8",
+    "name": "@heroui/snippet",
+    "size": 7111,
+    "version": "2.2.31"
+  },
+  {
+    "digest": "sha256:c79dc9673b0e0bd88a80bf6207d5602a9b3b869921f0216f2dd4baf7d009bbae",
+    "name": "@heroui/spacer",
+    "size": 4401,
+    "version": "2.2.23"
+  },
+  {
+    "digest": "sha256:f5316a1a2fae0de38cb176820b2cc966881ce5544f6caddff9ca8ec414fe6ab5",
+    "name": "@heroui/spinner",
+    "size": 5200,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:852e0b4ce447cacee770bd249f5a47fa76c0a2b6aad5bfe82b54813176b5ab9b",
+    "name": "@heroui/switch",
+    "size": 6691,
+    "version": "2.2.26"
+  },
+  {
+    "digest": "sha256:88e47492920eb5f51505042f72a5ae426968a5c1eb53f88b118f09c5f91c27cd",
+    "name": "@heroui/system",
+    "size": 9157,
+    "version": "2.4.26"
+  },
+  {
+    "digest": "sha256:ae16fbaf2799f769dfc65cd8fa4e35216a38faf5d36d420a9361d02ca24f172b",
+    "name": "@heroui/system-rsc",
+    "size": 7538,
+    "version": "2.3.22"
+  },
+  {
+    "digest": "sha256:6ddd1eb964df80bee1e7d314a3df7c590c2f4962adbaf7415176b62f1e7e0922",
+    "name": "@heroui/table",
+    "size": 33738,
+    "version": "2.2.30"
+  },
+  {
+    "digest": "sha256:bf3a103ec7e9981a3f945a0cdb02e82fd97ac2bdfba03700e50a0092861ac5dc",
+    "name": "@heroui/tabs",
+    "size": 10898,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:70529abb98bc7dccfac5a421e182ab5fe09745aee6e6a90fe2a7bc23be34d40e",
+    "name": "@heroui/theme",
+    "size": 262807,
+    "version": "2.4.26"
+  },
+  {
+    "digest": "sha256:dcaf8d5211249fadc2efb194655fdf8853a98859227a9ebbf811ef87e89175b9",
+    "name": "@heroui/toast",
+    "size": 51213,
+    "version": "2.0.20"
+  },
+  {
+    "digest": "sha256:ed2e87869591a250baa243d4dc382f63f02f363bde59303ce9bfb08c16dda3fe",
+    "name": "@heroui/tooltip",
+    "size": 7342,
+    "version": "2.2.27"
+  },
+  {
+    "digest": "sha256:9cd40a3e7f0198f971286e26c5d604da852af37061bd0e0d82147d83a07f4490",
+    "name": "@heroui/use-aria-accordion",
+    "size": 4202,
+    "version": "2.2.19"
+  },
+  {
+    "digest": "sha256:0b1e481c0ea27ea90740ee2ad08ba95975b532e6d813f88ecab58d121f9f7d95",
+    "name": "@heroui/use-aria-button",
+    "size": 3323,
+    "version": "2.2.21"
+  },
+  {
+    "digest": "sha256:cb153df25e0fd1fcc1415b292c745088b5f97efd0910218883b877d4db758882",
+    "name": "@heroui/use-aria-link",
+    "size": 3279,
+    "version": "2.2.22"
+  },
+  {
+    "digest": "sha256:128d49ae846fa4ca432cf24f6e0de6f8d58d92b7b49220f3290b4cf5267ad012",
+    "name": "@heroui/use-aria-modal-overlay",
+    "size": 2993,
+    "version": "2.2.20"
+  },
+  {
+    "digest": "sha256:4e3d6018b210b1a0b4c19c233c03fecb30b47428c0eceea7cc126e7a46d47273",
+    "name": "@heroui/use-aria-multiselect",
+    "size": 6565,
+    "version": "2.4.20"
+  },
+  {
+    "digest": "sha256:08aed6c03b103f3a5ef2b6cba09fc0daed1c6396da0a86bdf6b56bd31c7c8c3e",
+    "name": "@heroui/use-aria-overlay",
+    "size": 3535,
+    "version": "2.0.5"
+  },
+  {
+    "digest": "sha256:88f093a3c51199174ca62521021e66072ab1023e85676856f04eff5d2e56421d",
+    "name": "@heroui/use-callback-ref",
+    "size": 2566,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:e281b2f13e9520838c9759f154bb2043ab22682595059e835153b4eca176ebd1",
+    "name": "@heroui/use-clipboard",
+    "size": 2912,
+    "version": "2.1.9"
+  },
+  {
+    "digest": "sha256:d42d5b8ff9ebebbda21266158927b5dc3c6dd1b53a5d8d931300ee16b6ffdd3c",
+    "name": "@heroui/use-data-scroll-overflow",
+    "size": 3928,
+    "version": "2.2.13"
+  },
+  {
+    "digest": "sha256:b3eb8bdd8f5d4acc889c82af8cb422ffcda1749144dbc38921caa767e818d801",
+    "name": "@heroui/use-disclosure",
+    "size": 2949,
+    "version": "2.2.18"
+  },
+  {
+    "digest": "sha256:59651337f0dbe36297db382470c2348cbfbafae72ece053fb376f1cf0287391a",
+    "name": "@heroui/use-draggable",
+    "size": 3400,
+    "version": "2.1.19"
+  },
+  {
+    "digest": "sha256:2006315853273825b89a58550490de7ad31724fe9a23f0c67c41249a96a6372b",
+    "name": "@heroui/use-form-reset",
+    "size": 2946,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:e34cc55564f5cb0535f2be1a0130e9586112e90d1cf3bb4a1ee03d313dc5e170",
+    "name": "@heroui/use-image",
+    "size": 3655,
+    "version": "2.1.14"
+  },
+  {
+    "digest": "sha256:e420edff2a4d7c84086327fca120a8eb9215f0519b4ca7f53b98223c6c1dc9bf",
+    "name": "@heroui/use-intersection-observer",
+    "size": 3145,
+    "version": "2.2.14"
+  },
+  {
+    "digest": "sha256:e8bf52b55fe81b210f4c4f31ca2b225a0938c95a1eb85990b651cfdf7ea24c64",
+    "name": "@heroui/use-is-mobile",
+    "size": 2335,
+    "version": "2.2.12"
+  },
+  {
+    "digest": "sha256:151e25aa4ab9f3b9ebe2b5fd70542b8a3bc7024408b3801b0d0a9b5129660b73",
+    "name": "@heroui/use-is-mounted",
+    "size": 2580,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:f99c2779a7ce43cb142c63b594d9128ff1d6ea8e8af30bae4692a2c44b8677cb",
+    "name": "@heroui/use-measure",
+    "size": 2671,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:9a82a77e3472d73b7e9a7df960c0fc254ecaa9f7dcb8f7142f1829cfeeb4224b",
+    "name": "@heroui/use-pagination",
+    "size": 3632,
+    "version": "2.2.19"
+  },
+  {
+    "digest": "sha256:b96c793bf4bdfa04b518a83a67871a357c67ba2f18ca264c9b286ecbfa236244",
+    "name": "@heroui/use-resize",
+    "size": 2709,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:c57c0de41bdeaed47e504aeba18777e50c7d460fb352e62ba5987cc098bfbdc7",
+    "name": "@heroui/use-safe-layout-effect",
+    "size": 2263,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:7acb5800eb969c7820b476c3cc563236f14b69ad63896b815f50d28006eeb76f",
+    "name": "@heroui/use-scroll-position",
+    "size": 2998,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:bb90607f1a8609577652a63e62959209fe55630b0d7c17a87a3ad826e00e1489",
+    "name": "@heroui/use-viewport-size",
+    "size": 3011,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:31cfe89924cf45a11454f7a4baa8a1c357dad64b2f6c39624c29d0149c3d65c8",
+    "name": "@heroui/user",
+    "size": 9764,
+    "version": "2.2.25"
+  },
+  {
+    "digest": "sha256:45285f4ac515a516a25cb003d5c6e075c7b216fe43d852818b444fa754ab266f",
+    "name": "@humanfs/core",
+    "size": 14260,
+    "version": "0.19.1"
+  },
+  {
+    "digest": "sha256:abf8fc5963703f638497b7373291b54c268b655467ae299328798ca444db6a0b",
+    "name": "@humanfs/node",
+    "size": 9327,
+    "version": "0.16.7"
+  },
+  {
+    "digest": "sha256:6916df30c976c50fb67af9d9693728b1d93e501f8fb4a46731b4ca3a0d1d0f1a",
+    "name": "@humanwhocodes/module-importer",
+    "size": 7090,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:7774adde8013a91e5502d550f071ab61b1077ce5cc3c4933fb853bba55a02280",
+    "name": "@humanwhocodes/retry",
+    "size": 11398,
+    "version": "0.4.3"
+  },
+  {
+    "digest": "sha256:97d71019438016d07f5b7ad146dfd73bc67241c519aed24616979407c09f1eaa",
+    "name": "@img/colour",
+    "size": 13393,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:43c132f5a31dc0d38aff8376fdce66b4761118a451e41dfa36f9829d9607c07c",
+    "name": "@img/sharp-libvips-linux-x64",
+    "size": 7534373,
+    "version": "1.2.4"
+  },
+  {
+    "digest": "sha256:d6742cf538f93231708988bd49790e6897774ebf7b0c6cfaeb6c14286039bfc9",
+    "name": "@img/sharp-libvips-linuxmusl-x64",
+    "size": 7650497,
+    "version": "1.2.4"
+  },
+  {
+    "digest": "sha256:fe13679b222907d9584214bf837d5d92c9456ba0880fc24625dd118ab7918ef9",
+    "name": "@img/sharp-linux-x64",
+    "size": 182787,
+    "version": "0.34.5"
+  },
+  {
+    "digest": "sha256:84f6666b2abf1d7f8d42e833a02540ab70b2c1d1ea726e2eef18156a9ffad5f5",
+    "name": "@img/sharp-linuxmusl-x64",
+    "size": 119134,
+    "version": "0.34.5"
+  },
+  {
+    "digest": "sha256:d9eadfead2a88bee3cc542cacae59fda4d8c59e8494fac3648298a0fbddaca70",
+    "name": "@internationalized/date",
+    "size": 152916,
+    "version": "3.10.1"
+  },
+  {
+    "digest": "sha256:1b51c3d90bc62a4846e7ba7b73434c391f9850c2b3c2a69c48f62fe6fd29ebb5",
+    "name": "@internationalized/date",
+    "size": 153275,
+    "version": "3.11.0"
+  },
+  {
+    "digest": "sha256:390bed80384d37ca8f3e850a8d7aef5de461a930d250c1ebf674f816f6e693e4",
+    "name": "@internationalized/message",
+    "size": 9390,
+    "version": "3.1.8"
+  },
+  {
+    "digest": "sha256:92e3f1370a4e162b68b40d8fd2d40b778402386c10e1017c973101bad0072883",
+    "name": "@internationalized/number",
+    "size": 29462,
+    "version": "3.6.5"
+  },
+  {
+    "digest": "sha256:d9843c68f5622a52c565cdf497a94ae3a956e1b5b262cf196272dcd257a47d9c",
+    "name": "@internationalized/string",
+    "size": 11802,
+    "version": "3.2.7"
+  },
+  {
+    "digest": "sha256:7ac286e3cccc1ea8980e79e2039def6bb97d3182e17951cd9094f0400ed98236",
+    "name": "@isaacs/fs-minipass",
+    "size": 12383,
+    "version": "4.0.1"
+  },
+  {
+    "digest": "sha256:bc16f658c1f6d63e0c8738ab881d03f49f1955d8f853cdcb8f7d315cf62f0082",
+    "name": "@jridgewell/gen-mapping",
+    "size": 17972,
+    "version": "0.3.13"
+  },
+  {
+    "digest": "sha256:db52f9f62558baab13353dd39e3200750fc33e6a129a575b46226f493776e230",
+    "name": "@jridgewell/resolve-uri",
+    "size": 9622,
+    "version": "3.1.2"
+  },
+  {
+    "digest": "sha256:47ad3b0d20a2e5e31ed65049829440fb1e3d4ac554d93f8040562c1821816585",
+    "name": "@jridgewell/sourcemap-codec",
+    "size": 17469,
+    "version": "1.5.5"
+  },
+  {
+    "digest": "sha256:c64c71a119630d5abe8246889edf334b2ca9ddad094e20d623332956b1453ccf",
+    "name": "@jridgewell/trace-mapping",
+    "size": 30747,
+    "version": "0.3.31"
+  },
+  {
+    "digest": "sha256:26ea84b6b303f5ab58d8ab63156e493698940df275091aefb658d9aaf760fa59",
+    "name": "@next/env",
+    "size": 4780,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:9a20a3b1472c80702c15e6026d5e4675e1399bf71f058198029d1601c29a68a1",
+    "name": "@next/eslint-plugin-next",
+    "size": 17477,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:363afd12e31872a993c7f056239740da3b3a6b2f96a29015145b5b967f47f580",
+    "name": "@next/swc-linux-x64-gnu",
+    "size": 47344467,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:1bda24c75ecf40737c29909fd68e93a64d5572dd4f2de0905da8b44be5880516",
+    "name": "@next/swc-linux-x64-musl",
+    "size": 47299582,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:a924bfa317c78e8bdbb0bd361522aba431fffe0878bf3699a8cb35a6e50cf94c",
+    "name": "@nodelib/fs.scandir",
+    "size": 6586,
+    "version": "2.1.5"
+  },
+  {
+    "digest": "sha256:d8f8533551f21aca87b3fc2d4bc2e2cc7ab221104902c07da3df20baaf52136b",
+    "name": "@nodelib/fs.stat",
+    "size": 4182,
+    "version": "2.0.5"
+  },
+  {
+    "digest": "sha256:cbf9621f69b822ce97f71e842fea8e7bf9c7e986f01285689ede282092727d3d",
+    "name": "@nodelib/fs.walk",
+    "size": 7360,
+    "version": "1.2.8"
+  },
+  {
+    "digest": "sha256:79de9053484e8a74151088848132b484814daf8f2e7a245e82ce9ae425b7707d",
+    "name": "@nolyfill/is-core-module",
+    "size": 1528,
+    "version": "1.0.39"
+  },
+  {
+    "digest": "sha256:f6cec1ff1fcc58a45eeefc25d0e6aa1f1659845dbd198963617a86e43d21f3d1",
+    "name": "@radix-ui/colors",
+    "size": 238824,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:4c8cfcc6bc5d3b7e358e0889ea38dde6faba009c23b10fd74313a04a8a94aebb",
+    "name": "@radix-ui/number",
+    "size": 1529,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:1385ada6b202ed965fb56764c94fc932c6ff945b86aa78a3242763d181087fbb",
+    "name": "@radix-ui/primitive",
+    "size": 3681,
+    "version": "1.1.3"
+  },
+  {
+    "digest": "sha256:d10cefe0f9402d7f6a481d50e381a8660a3d12c5e937cef97623b695df322419",
+    "name": "@radix-ui/react-accessible-icon",
+    "size": 3384,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:654bc99bf8369edc14e97e06554d019bdaf5dfe0ab0bb0c58f4076c9d40c974f",
+    "name": "@radix-ui/react-accordion",
+    "size": 12632,
+    "version": "1.2.12"
+  },
+  {
+    "digest": "sha256:1aa36bfa2e77f63a72463f0ac4a2f36e6b38872a048312777cb37d46289db22d",
+    "name": "@radix-ui/react-alert-dialog",
+    "size": 11013,
+    "version": "1.1.15"
+  },
+  {
+    "digest": "sha256:3d2df8c7ae550b5d6475858ec5a865593ea5d20522fd14ef451fd81468702dd7",
+    "name": "@radix-ui/react-arrow",
+    "size": 3389,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:f7c4d269a85215f527368560d19f584491fa9aa30bbbb9eb0243e10ed2a19fac",
+    "name": "@radix-ui/react-aspect-ratio",
+    "size": 3599,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:fc5420212363d3bcf5312e9811ec2364dd92116ccc20eb5e638d0a1b07d654c2",
+    "name": "@radix-ui/react-avatar",
+    "size": 6328,
+    "version": "1.1.10"
+  },
+  {
+    "digest": "sha256:9e2714259c00e78da3a9044fc0eb96b8cc72a377e692eddcd5fc1ab4de051ed3",
+    "name": "@radix-ui/react-checkbox",
+    "size": 10744,
+    "version": "1.3.3"
+  },
+  {
+    "digest": "sha256:ef61296be11a707504a75879003f50a3cafe9205cf9464b22fe34a3e08636dba",
+    "name": "@radix-ui/react-collapsible",
+    "size": 8029,
+    "version": "1.1.12"
+  },
+  {
+    "digest": "sha256:3b832720e2caa4ac1f892b8a2154da8652e90ca3f41b40c9d5af1ff368a4a71c",
+    "name": "@radix-ui/react-collection",
+    "size": 24986,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:a3417c6290a04dd4dc34a8ce6b17be86da6c6a7d7455c5f47e16d7911777169f",
+    "name": "@radix-ui/react-compose-refs",
+    "size": 2979,
+    "version": "1.1.2"
+  },
+  {
+    "digest": "sha256:f1ed108c0bf1896d19f7b695d882e0b9dddb23b1526eca6409e8b48149b8c934",
+    "name": "@radix-ui/react-context",
+    "size": 4597,
+    "version": "1.1.2"
+  },
+  {
+    "digest": "sha256:00bf29f205388bd9964a5eb5b7459d698619aeb41da0e1a00b219c6d4005abad",
+    "name": "@radix-ui/react-context-menu",
+    "size": 13310,
+    "version": "2.2.16"
+  },
+  {
+    "digest": "sha256:8fc125a0ec59b9091d053697fe7ba292bf5abc6ceec86aa3a50799deb2852b83",
+    "name": "@radix-ui/react-dialog",
+    "size": 14536,
+    "version": "1.1.15"
+  },
+  {
+    "digest": "sha256:5eb20a248a5900771e69a4d2d42dfaa91c44826f9a82220572e1a3164c0131c4",
+    "name": "@radix-ui/react-direction",
+    "size": 2435,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:4d904ed5c015afbbb1e0ee6a1ededb9254f7e64f5df54725ee3ffa11348ee893",
+    "name": "@radix-ui/react-dismissable-layer",
+    "size": 10600,
+    "version": "1.1.11"
+  },
+  {
+    "digest": "sha256:339d026bfbd6d86fd9bc3348f117202a753c3c59d4e89834360adf326acaa34e",
+    "name": "@radix-ui/react-dropdown-menu",
+    "size": 12742,
+    "version": "2.1.16"
+  },
+  {
+    "digest": "sha256:83ed44fa30c737de5e87087946c8cc0e7fb99be2d70ae31a7aa1978b8827e2e6",
+    "name": "@radix-ui/react-focus-guards",
+    "size": 3525,
+    "version": "1.1.3"
+  },
+  {
+    "digest": "sha256:3fec5455c3248c861a6b3fb9a2de6f3f4e4819a2abbc0b6b76e4863132461435",
+    "name": "@radix-ui/react-focus-scope",
+    "size": 10925,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:fe453d39fdc5789cca366fe3b5b4bd0e07dd080a7b55cd8deb717b2d7b5d86f3",
+    "name": "@radix-ui/react-form",
+    "size": 25511,
+    "version": "0.1.8"
+  },
+  {
+    "digest": "sha256:97921b19b0492a73ace37d64d6b3372100e69986c76fae54f43b7b0184b53371",
+    "name": "@radix-ui/react-hover-card",
+    "size": 11704,
+    "version": "1.1.15"
+  },
+  {
+    "digest": "sha256:a10d67becad6bc10846f9bc0a79e4a15a285eadca6eae4d88d06bea5586bcafb",
+    "name": "@radix-ui/react-id",
+    "size": 2429,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:fc581b620fca25a8a00daccc878a3b27d74b0ab5f2f360981e5d4e8e96ef0478",
+    "name": "@radix-ui/react-label",
+    "size": 3350,
+    "version": "2.1.7"
+  },
+  {
+    "digest": "sha256:5ae2e00993edd8042f829666afd0640a1bad8209629a49db0346bc49315b05da",
+    "name": "@radix-ui/react-menu",
+    "size": 50720,
+    "version": "2.1.16"
+  },
+  {
+    "digest": "sha256:9cc82850084a0576178e7636a2714e7dd749ef80db9f3552088cac53cc0a084e",
+    "name": "@radix-ui/react-menubar",
+    "size": 25243,
+    "version": "1.1.16"
+  },
+  {
+    "digest": "sha256:d1ab7cb67ea04486346c60ebebf37c103287e70e6ce6b762fabc16d9b8f41f6d",
+    "name": "@radix-ui/react-navigation-menu",
+    "size": 46986,
+    "version": "1.2.14"
+  },
+  {
+    "digest": "sha256:c5845534d9e4b484779b22c28e72dd7db80a02c10f45374c27fcda941767f09b",
+    "name": "@radix-ui/react-one-time-password-field",
+    "size": 42390,
+    "version": "0.1.8"
+  },
+  {
+    "digest": "sha256:ff4cd8f5bf927b58774ed8c3e415370ff87d38c0d91b4d101dc1156a6a9cda16",
+    "name": "@radix-ui/react-password-toggle-field",
+    "size": 16796,
+    "version": "0.1.3"
+  },
+  {
+    "digest": "sha256:235469a7f5a74da2aa3657800d7d75e421323173484b42b996a29fc6c6664ab9",
+    "name": "@radix-ui/react-popover",
+    "size": 13283,
+    "version": "1.1.15"
+  },
+  {
+    "digest": "sha256:92b87aa32a6d8890985693cbb09fb4879868107d10dcd17595d19c858c950312",
+    "name": "@radix-ui/react-popper",
+    "size": 13098,
+    "version": "1.2.8"
+  },
+  {
+    "digest": "sha256:52e61fcc709ecb2ecfbbaa626613290fc070eda00b226e8efa0e5f23b464fe8c",
+    "name": "@radix-ui/react-portal",
+    "size": 3548,
+    "version": "1.1.9"
+  },
+  {
+    "digest": "sha256:8f18de2c84a397e546ea265f4e31b4e5fa28e7a620bbe38baaf2d4981ce9d103",
+    "name": "@radix-ui/react-presence",
+    "size": 7898,
+    "version": "1.1.5"
+  },
+  {
+    "digest": "sha256:f1c13d99d14188ba7415cbb2a235c1b5787c5071c72b169ece3128c213757141",
+    "name": "@radix-ui/react-primitive",
+    "size": 4895,
+    "version": "2.1.3"
+  },
+  {
+    "digest": "sha256:0732bc2e00da93eadefefe215798c911c7fcc33d87762a3d9b4d26b216e12430",
+    "name": "@radix-ui/react-progress",
+    "size": 5631,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:731d15adc8cd64dd21dd09bc8c73dae0f1044a260f5be2e621deea8f00567590",
+    "name": "@radix-ui/react-radio-group",
+    "size": 12135,
+    "version": "1.3.8"
+  },
+  {
+    "digest": "sha256:89198e9bc01cddf4c64f6e190bad6020a29fccc2b33b5db3f945f0fbc52b7ab6",
+    "name": "@radix-ui/react-roving-focus",
+    "size": 11339,
+    "version": "1.1.11"
+  },
+  {
+    "digest": "sha256:8436c5b241247967e3d9663d7ce78e060137f65996edc6126e5d519c0271f90c",
+    "name": "@radix-ui/react-scroll-area",
+    "size": 39112,
+    "version": "1.2.10"
+  },
+  {
+    "digest": "sha256:1919744b7f3098b1de3f543e63c7356b80fcbf4f01c3da1cad0f8a798ff6ba66",
+    "name": "@radix-ui/react-select",
+    "size": 70230,
+    "version": "2.2.6"
+  },
+  {
+    "digest": "sha256:fb49bf28c9cb3080a267011130694fd989241007c478e86e5020b77f535b4f00",
+    "name": "@radix-ui/react-separator",
+    "size": 3832,
+    "version": "1.1.7"
+  },
+  {
+    "digest": "sha256:7024fa7d1e0882a50f9f64f1a81dd824ae82dfad6e9701b84390ee4fab4a1363",
+    "name": "@radix-ui/react-slider",
+    "size": 29745,
+    "version": "1.3.6"
+  },
+  {
+    "digest": "sha256:2273c7614cbe7b8335803b0d1fefb8042d6e1c2f3f2da71a6583875563042110",
+    "name": "@radix-ui/react-slot",
+    "size": 6026,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:b0f05b7f949b62d7ec1b49cb206388ce775175bc2d45aeaa82cf77c1da6219bd",
+    "name": "@radix-ui/react-switch",
+    "size": 6973,
+    "version": "1.2.6"
+  },
+  {
+    "digest": "sha256:3b393c2f0c1f6e28d47f0e2de801659f1b106f244c45f6c7d3ec2562aa04b4ef",
+    "name": "@radix-ui/react-tabs",
+    "size": 8682,
+    "version": "1.1.13"
+  },
+  {
+    "digest": "sha256:01f71454f5d0297037c6a93cf7753a4458999e707029dadaa1049eaa4490da88",
+    "name": "@radix-ui/react-toast",
+    "size": 41302,
+    "version": "1.2.15"
+  },
+  {
+    "digest": "sha256:2c90e966f4fbc49a67f5439d8713414fbded320e310d612ba4b84d8ff5ea4127",
+    "name": "@radix-ui/react-toggle",
+    "size": 3900,
+    "version": "1.1.10"
+  },
+  {
+    "digest": "sha256:99b156df0f0aa9b35a14aae58074e2b283bda63feb71f49128fbda7a0f21e35d",
+    "name": "@radix-ui/react-toggle-group",
+    "size": 8587,
+    "version": "1.1.11"
+  },
+  {
+    "digest": "sha256:73078c0280b2d7dcbc0e1938f6763c8f7a60b7555605ae1ba6b8709e3c296fc2",
+    "name": "@radix-ui/react-toolbar",
+    "size": 7331,
+    "version": "1.1.11"
+  },
+  {
+    "digest": "sha256:4231206889481eb8d81499d4a682e1b341d38e6a6a66750d111bc811b8efd0cc",
+    "name": "@radix-ui/react-tooltip",
+    "size": 28354,
+    "version": "1.2.8"
+  },
+  {
+    "digest": "sha256:1c155d182c8a65220235aec52112944128866fb9524f5406203c47cd01c9a74b",
+    "name": "@radix-ui/react-use-callback-ref",
+    "size": 2232,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:1dce920306510154046f7fd6b92d21dc8847b281c755d7c587bf712d62d8f6c4",
+    "name": "@radix-ui/react-use-controllable-state",
+    "size": 6268,
+    "version": "1.2.2"
+  },
+  {
+    "digest": "sha256:b9308ff7221590d0739ad1b06f458f480cb9c71428036228c3e41faa50cb20cc",
+    "name": "@radix-ui/react-use-effect-event",
+    "size": 3545,
+    "version": "0.0.2"
+  },
+  {
+    "digest": "sha256:dc1121b1b1793279880daecfa04230de411404c8e9ac849c1d1c8714dd013e33",
+    "name": "@radix-ui/react-use-escape-keydown",
+    "size": 2454,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:9bdca7d76bc37a72db0ee5353f82f4a90995fec46567628a891db399643cc324",
+    "name": "@radix-ui/react-use-is-hydrated",
+    "size": 2550,
+    "version": "0.1.0"
+  },
+  {
+    "digest": "sha256:fc152ce4e230913604de541dfa46af95e4c13d60e92640407a973b81272b51a7",
+    "name": "@radix-ui/react-use-layout-effect",
+    "size": 2117,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:6822dd3497b440baf5254cd13dce70c192ac2961759f4e88bc66dcc216adf1d8",
+    "name": "@radix-ui/react-use-previous",
+    "size": 2201,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:8a9cd8d9a2f962dd65ee2bc31fa874738aa7b778c8dd46810f8ce8ece78aabc6",
+    "name": "@radix-ui/react-use-rect",
+    "size": 2365,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:c939dd43081637e69a7033e6a0e23ace43bc3edc2dbd2cb26b27fddcd80a6bbb",
+    "name": "@radix-ui/react-use-size",
+    "size": 3102,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:16f5f62c6831c87112ffb5d6b6a0ab6298906780ed59361fb747bf7c31c90335",
+    "name": "@radix-ui/react-visually-hidden",
+    "size": 3572,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:4a541ef9b63826a44e1d500a5a10e80f70d2934286156d73a8143d7e17f557af",
+    "name": "@radix-ui/rect",
+    "size": 3386,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:6275ab12eb6b35c56ce44b2f65786a8226642078584e6dd3a423766a327a992a",
+    "name": "@radix-ui/themes",
+    "size": 649321,
+    "version": "3.3.0"
+  },
+  {
+    "digest": "sha256:263e1c37d0fa6d2777d1787e8ce1a571f2f19a95896d2587b789883ab8d0eaa9",
+    "name": "@react-aria/breadcrumbs",
+    "size": 21612,
+    "version": "3.5.30"
+  },
+  {
+    "digest": "sha256:8f8cd20fdaa5554ff5d0c7226c4c933e569696f26189d4f7a67d10200ec35071",
+    "name": "@react-aria/button",
+    "size": 13908,
+    "version": "3.14.3"
+  },
+  {
+    "digest": "sha256:83eced454cbb56b8516ef112603a42d15a72e32c60350d53b544454e2144f7e1",
+    "name": "@react-aria/calendar",
+    "size": 78142,
+    "version": "3.9.3"
+  },
+  {
+    "digest": "sha256:ba766d1dcb0e0a4f45830d9e28b6397050faea8bbe9f37f7d5e334ee6df40b25",
+    "name": "@react-aria/checkbox",
+    "size": 16737,
+    "version": "3.16.3"
+  },
+  {
+    "digest": "sha256:f19488e833780f321d7250be4f9c7c597ec88d45daf03076d74a85fea4db76a9",
+    "name": "@react-aria/combobox",
+    "size": 52154,
+    "version": "3.14.1"
+  },
+  {
+    "digest": "sha256:19d25fc91a95324556ab6a405a7ae996bc70ff55c85c5840951e964b6cd06c93",
+    "name": "@react-aria/datepicker",
+    "size": 89153,
+    "version": "3.15.3"
+  },
+  {
+    "digest": "sha256:65caabf1251d554b3143d5e78ea7b154b39c433fda3b3b55c5190b35054b7d21",
+    "name": "@react-aria/dialog",
+    "size": 8427,
+    "version": "3.5.32"
+  },
+  {
+    "digest": "sha256:40c5140422674c5ee5043b097641c5c2dc512f70614e079a281fab723d0340f2",
+    "name": "@react-aria/focus",
+    "size": 74876,
+    "version": "3.21.3"
+  },
+  {
+    "digest": "sha256:c4ada57c2a3227498c8f9aad8eb1ffa32f2a050ef75bfa39004e1019d75a83cb",
+    "name": "@react-aria/focus",
+    "size": 74992,
+    "version": "3.21.4"
+  },
+  {
+    "digest": "sha256:5dedc60c3a7700824415474f2d30493947c8b48de1e54b98afa101bb9784cbb0",
+    "name": "@react-aria/form",
+    "size": 10807,
+    "version": "3.1.3"
+  },
+  {
+    "digest": "sha256:6bf2dd38b30c9db13038a10f42e262058f09d60f61ba9736c33ef34cb4f32202",
+    "name": "@react-aria/grid",
+    "size": 85203,
+    "version": "3.14.7"
+  },
+  {
+    "digest": "sha256:454a626ba8c0efd744adb84cc2eb3311c23f61e50d21f02fc7d5e3a3276d9e90",
+    "name": "@react-aria/i18n",
+    "size": 30698,
+    "version": "3.12.14"
+  },
+  {
+    "digest": "sha256:0a032cc7dbcfbb0bd795183b86e598990c4ea5d48309829fd6268bb71a137bb7",
+    "name": "@react-aria/i18n",
+    "size": 30712,
+    "version": "3.12.15"
+  },
+  {
+    "digest": "sha256:62be7f6a2ab23f77e6f94e8a615735c8bee785a8a08192f9605c5cff1859c58a",
+    "name": "@react-aria/interactions",
+    "size": 149140,
+    "version": "3.26.0"
+  },
+  {
+    "digest": "sha256:3dadb685bd668a634bdfd3b51aa2fa5e16f35ceab86e07b6c17bd03e8de6e52d",
+    "name": "@react-aria/interactions",
+    "size": 150303,
+    "version": "3.27.0"
+  },
+  {
+    "digest": "sha256:bd3d2e7ec52fa7f157d39ba869f875a17d54b663d61c555e1649075692073a10",
+    "name": "@react-aria/label",
+    "size": 9092,
+    "version": "3.7.23"
+  },
+  {
+    "digest": "sha256:2da0b3a0ef32021c97d0a101219056bfbf04c6357c69bc008f02c775770f671e",
+    "name": "@react-aria/landmark",
+    "size": 22950,
+    "version": "3.0.9"
+  },
+  {
+    "digest": "sha256:bb0591d0cdbecec31bab56ead961099d6601770ac2a0041aa0063de996f6d149",
+    "name": "@react-aria/link",
+    "size": 7983,
+    "version": "3.8.8"
+  },
+  {
+    "digest": "sha256:25bff70a76478dc4cf06901bff32a54aacb8bfd18f3aa568c2e425a8ea6b8bc6",
+    "name": "@react-aria/listbox",
+    "size": 20163,
+    "version": "3.15.1"
+  },
+  {
+    "digest": "sha256:598d9045c3e741299f342d91ceed4bf0afbed8b9da7cd108f44926e3560813b7",
+    "name": "@react-aria/live-announcer",
+    "size": 10304,
+    "version": "3.4.4"
+  },
+  {
+    "digest": "sha256:1ac047fe81475bc3bdac19192ef627628e5dced75163018e18494b1028f7036e",
+    "name": "@react-aria/menu",
+    "size": 67583,
+    "version": "3.19.4"
+  },
+  {
+    "digest": "sha256:55a76c114513abf77726c2b58b46c015cba34feafcf22a9e7e84c71ed6b3cbbd",
+    "name": "@react-aria/numberfield",
+    "size": 36012,
+    "version": "3.12.3"
+  },
+  {
+    "digest": "sha256:4a7c890e96c276f6a7f8f8c75bfa6a2081c0d9a507026d9c73efd8dec41e1b2e",
+    "name": "@react-aria/overlays",
+    "size": 144658,
+    "version": "3.31.0"
+  },
+  {
+    "digest": "sha256:2ac4965c44178efa1ae7336fc39d1c5f05ba2e49dfdbaa4070072b1ab4b3db3c",
+    "name": "@react-aria/progress",
+    "size": 7570,
+    "version": "3.4.28"
+  },
+  {
+    "digest": "sha256:45aad03ec251d2b844a1a9d295f5a1ff9996e5527d06c21c4d8380ff90ab8572",
+    "name": "@react-aria/radio",
+    "size": 16777,
+    "version": "3.12.3"
+  },
+  {
+    "digest": "sha256:beb33fa855a4d1bc0a1f6d0d1bb4f4ebac9a3abe79617c1eb8575502a40a974c",
+    "name": "@react-aria/selection",
+    "size": 77292,
+    "version": "3.27.0"
+  },
+  {
+    "digest": "sha256:b3901c47865c61e2d3c1670f183f185f8c00b238c78307029606362a8f6bbae2",
+    "name": "@react-aria/selection",
+    "size": 77316,
+    "version": "3.27.1"
+  },
+  {
+    "digest": "sha256:460b7d0356df00e3749aa7c1d775be7a0007e259b6e60a066b846de4cc688e32",
+    "name": "@react-aria/slider",
+    "size": 25790,
+    "version": "3.8.3"
+  },
+  {
+    "digest": "sha256:e62b02c0538634160a2bffb3a330f8827b769f9207034f8da2bd7ef019f0e585",
+    "name": "@react-aria/spinbutton",
+    "size": 26799,
+    "version": "3.7.1"
+  },
+  {
+    "digest": "sha256:a5fe12fa75178912eb6841180a3f770404f000199cf4c31884f4fac32fd6e2e4",
+    "name": "@react-aria/ssr",
+    "size": 13389,
+    "version": "3.9.10"
+  },
+  {
+    "digest": "sha256:989371e055d192ab154d780cc022aa4d9f3a79cdd3607eae61216729e2255fcb",
+    "name": "@react-aria/switch",
+    "size": 7024,
+    "version": "3.7.9"
+  },
+  {
+    "digest": "sha256:3570e16f2d8c84ce1942091749508858c3328e848f8790bcb16e81b7b22040d5",
+    "name": "@react-aria/table",
+    "size": 79883,
+    "version": "3.17.9"
+  },
+  {
+    "digest": "sha256:0e9d8eabe1bfa6edf270b7b8d325ba64d4fced5394dbcc93f2e25c003ae9c4c4",
+    "name": "@react-aria/tabs",
+    "size": 16951,
+    "version": "3.10.9"
+  },
+  {
+    "digest": "sha256:70ad8df343fe9fc5194dfee7fa35040059a9e82e90390df902bae428066edb39",
+    "name": "@react-aria/textfield",
+    "size": 20517,
+    "version": "3.18.3"
+  },
+  {
+    "digest": "sha256:1ca3e22c3e63ac06e9e69331e6ac5f35c2ed9632c4880bfd4fbd9825b4368f8a",
+    "name": "@react-aria/toast",
+    "size": 33636,
+    "version": "3.0.9"
+  },
+  {
+    "digest": "sha256:e2122ddc53c77b0e15d8372ecf70cf179d38cce29d7119e78baa39b2de85df8f",
+    "name": "@react-aria/toggle",
+    "size": 9051,
+    "version": "3.12.4"
+  },
+  {
+    "digest": "sha256:24a9aee544f556acea0eddd26ba6b0cd7e4e94b9c157be4eac160ca1cb896856",
+    "name": "@react-aria/toolbar",
+    "size": 9538,
+    "version": "3.0.0-beta.22"
+  },
+  {
+    "digest": "sha256:58736d2507cc219400e310537a1ffef02ac144324dce20ccf56e5ba68d040f74",
+    "name": "@react-aria/tooltip",
+    "size": 10795,
+    "version": "3.9.0"
+  },
+  {
+    "digest": "sha256:70bf4b9bde9738f87418d14357ba3b4989550da1f88af2af3fbfcf512363260d",
+    "name": "@react-aria/utils",
+    "size": 136415,
+    "version": "3.32.0"
+  },
+  {
+    "digest": "sha256:f9c8208ef430a47f334a213f4010ddfc304960c494262dfe65c33facaff4f40f",
+    "name": "@react-aria/utils",
+    "size": 136779,
+    "version": "3.33.0"
+  },
+  {
+    "digest": "sha256:ff4fe21f26b69929a154f89aafec32f76549b42f5cd26a963115ae070af30980",
+    "name": "@react-aria/visually-hidden",
+    "size": 8204,
+    "version": "3.8.29"
+  },
+  {
+    "digest": "sha256:0bfa0d5b04351d7e0747773ccf8c68d09fe0b1b6fe179154a845e8dd0afa9367",
+    "name": "@react-stately/calendar",
+    "size": 33447,
+    "version": "3.9.1"
+  },
+  {
+    "digest": "sha256:11f1092a798214574d7a9db60a4f843d2f7ac2b179c8f2a4ae640bf40bcc8e4b",
+    "name": "@react-stately/checkbox",
+    "size": 8823,
+    "version": "3.7.3"
+  },
+  {
+    "digest": "sha256:f06fe1d58ea67237e81829e5375644b4cf50ca945ad734e68e429c309f0b31eb",
+    "name": "@react-stately/collections",
+    "size": 27962,
+    "version": "3.12.8"
+  },
+  {
+    "digest": "sha256:2e61c9bf3e399a3f88735af944723421662008912c02a97c3695e6f2e1afcdf0",
+    "name": "@react-stately/collections",
+    "size": 27962,
+    "version": "3.12.9"
+  },
+  {
+    "digest": "sha256:8e046847ce4572e87b22cfefc3be50f068b355944d998d98d1999c781f09ad24",
+    "name": "@react-stately/combobox",
+    "size": 20675,
+    "version": "3.12.1"
+  },
+  {
+    "digest": "sha256:45671c12b7d888a1fbb766ad37c11fe98d2966b9f1950531e679cda76e441b56",
+    "name": "@react-stately/datepicker",
+    "size": 103113,
+    "version": "3.15.3"
+  },
+  {
+    "digest": "sha256:eb5dba9bae15dff464f094d73c4fdc81e8d94abf27c98a9d6b7124f3d4d0c8c0",
+    "name": "@react-stately/flags",
+    "size": 5714,
+    "version": "3.1.2"
+  },
+  {
+    "digest": "sha256:cf11546d5050bebaae367f722f8c2b55c5f472b0e1ab93d95c79a1bec252dcd2",
+    "name": "@react-stately/form",
+    "size": 14163,
+    "version": "3.2.2"
+  },
+  {
+    "digest": "sha256:52859e50b1c670eb36d799ffd0722a5cc77db25a8e6a9e4b42a6bdda93b53a8c",
+    "name": "@react-stately/grid",
+    "size": 16513,
+    "version": "3.11.8"
+  },
+  {
+    "digest": "sha256:a87fc0a9e44e0ef2a0ee2af3428b9633699f2ba712a6ed91f268804121e6fee9",
+    "name": "@react-stately/list",
+    "size": 17864,
+    "version": "3.13.2"
+  },
+  {
+    "digest": "sha256:8ceec373561903d261376e579eeed44526eb936402c204973361272658485eb7",
+    "name": "@react-stately/menu",
+    "size": 10830,
+    "version": "3.9.9"
+  },
+  {
+    "digest": "sha256:ae22bb574450ae63c502ccecc765e1a2da776c3d6b21a4bab91b6afea08803e8",
+    "name": "@react-stately/numberfield",
+    "size": 14644,
+    "version": "3.10.3"
+  },
+  {
+    "digest": "sha256:243417fe0e3b3bab87f8a782b41d08491a029adccd63e124780ef99a1d1ac614",
+    "name": "@react-stately/overlays",
+    "size": 6872,
+    "version": "3.6.21"
+  },
+  {
+    "digest": "sha256:31b881027826fcf74b916a934a1645621c09c305ed57db75ba1880b5cfafb41e",
+    "name": "@react-stately/radio",
+    "size": 8257,
+    "version": "3.11.3"
+  },
+  {
+    "digest": "sha256:6bc2be1039b5f986fd2e9ffc16d126af02d136afbbdefc19f2626899fe4bd5c9",
+    "name": "@react-stately/selection",
+    "size": 26815,
+    "version": "3.20.8"
+  },
+  {
+    "digest": "sha256:ef3d682450a5dacf692b11a6fe201b865cf1ea5d19c445181051f2bb009ab5d9",
+    "name": "@react-stately/slider",
+    "size": 13828,
+    "version": "3.7.3"
+  },
+  {
+    "digest": "sha256:559f941da28e31a260a1e36f67863de34561f224dc911a48d0484da2bcff2a7f",
+    "name": "@react-stately/table",
+    "size": 71927,
+    "version": "3.15.2"
+  },
+  {
+    "digest": "sha256:4a2a6a072e2e8bbf286e786ecf9eb207e1fdedcbe949a4d35d71b6755f2bc02c",
+    "name": "@react-stately/tabs",
+    "size": 8654,
+    "version": "3.8.7"
+  },
+  {
+    "digest": "sha256:50c78ab91d4d40feb1e3a2c70e1973886dfdea29bdfaa389101adaabf47fbf4b",
+    "name": "@react-stately/toast",
+    "size": 11588,
+    "version": "3.1.2"
+  },
+  {
+    "digest": "sha256:7a7134a5f54d6b3938c34b7562d86e060bfb97ed3add8ca6cf5dc1c6580c72d5",
+    "name": "@react-stately/toggle",
+    "size": 9963,
+    "version": "3.9.3"
+  },
+  {
+    "digest": "sha256:15a91e97bdaa3f07040f8b1e59c839c13aab1c4182698f07f5b3d066f97f40c5",
+    "name": "@react-stately/toggle",
+    "size": 9962,
+    "version": "3.9.4"
+  },
+  {
+    "digest": "sha256:e8c8dc78091b0d37a4edbd554112744b607c73a401a2e31eaabf80eaa64c0df1",
+    "name": "@react-stately/tooltip",
+    "size": 9113,
+    "version": "3.5.9"
+  },
+  {
+    "digest": "sha256:5dd200ce8311627d3aa22be36c13cddd790daee70c0143caf7ca9f2e0e45d602",
+    "name": "@react-stately/tree",
+    "size": 11693,
+    "version": "3.9.4"
+  },
+  {
+    "digest": "sha256:04721e793b57d11ad22e1cd26bae7c7c772cc9a342a29db06851036fc8ba2d03",
+    "name": "@react-stately/utils",
+    "size": 11311,
+    "version": "3.11.0"
+  },
+  {
+    "digest": "sha256:bc8e949c2694699e0c399c8dbd741340adde768f1894f754fd842fa8a671d0a3",
+    "name": "@react-stately/virtualizer",
+    "size": 45944,
+    "version": "4.4.4"
+  },
+  {
+    "digest": "sha256:54b0f8f7b2493d18bfca1b2dd61a9b3cf9bcdb0b36d676aae57ef7268479b86e",
+    "name": "@react-types/accordion",
+    "size": 4681,
+    "version": "3.0.0-alpha.26"
+  },
+  {
+    "digest": "sha256:64874cdb48bf2166dbbecf8af3c204229a02536e2d8d3f328026d144a93eef8e",
+    "name": "@react-types/breadcrumbs",
+    "size": 5199,
+    "version": "3.7.17"
+  },
+  {
+    "digest": "sha256:6cde771347f63e16c28a22ec2be7f6397aaf502194e2cd664a063cddc6d76482",
+    "name": "@react-types/button",
+    "size": 6474,
+    "version": "3.14.1"
+  },
+  {
+    "digest": "sha256:b63a83a4f9f238b86be99cf6711a31943afd04e220c1968a1c547dee953c205d",
+    "name": "@react-types/button",
+    "size": 6504,
+    "version": "3.15.0"
+  },
+  {
+    "digest": "sha256:fbd1e85d787a8ae5d4d6ef3588cb931e9fc7724b9128bf7c9afbeb1032be068a",
+    "name": "@react-types/calendar",
+    "size": 5817,
+    "version": "3.8.1"
+  },
+  {
+    "digest": "sha256:54330f9d41dac696735a0d8143333c5680eceb03d97353ad6116f4b5e60615e1",
+    "name": "@react-types/checkbox",
+    "size": 5517,
+    "version": "3.10.2"
+  },
+  {
+    "digest": "sha256:34d8354218818de61be899cf82fa895ddd9815375d8accc68c558422f3da7567",
+    "name": "@react-types/checkbox",
+    "size": 5520,
+    "version": "3.10.3"
+  },
+  {
+    "digest": "sha256:06d9fa7cc98fc2c78e6909968c9de2b0dfae84528a3c9ee1d4d3abbb171497dd",
+    "name": "@react-types/combobox",
+    "size": 5790,
+    "version": "3.13.10"
+  },
+  {
+    "digest": "sha256:64a6af2fa9f6118e846d44f94e91646d1526c1f6c26e7eb901ecb0967d4b509a",
+    "name": "@react-types/datepicker",
+    "size": 6611,
+    "version": "3.13.3"
+  },
+  {
+    "digest": "sha256:8b3fc5fc0ea82483c6a9906e1c3c20dfd2260efcc23208a4bf2545da8d4cb9d4",
+    "name": "@react-types/dialog",
+    "size": 5675,
+    "version": "3.5.23"
+  },
+  {
+    "digest": "sha256:d4b68fcf2b22b6ad374a5c81366ed2ccc31e23f4c21a6622b19b9f4738ec95c6",
+    "name": "@react-types/form",
+    "size": 5686,
+    "version": "3.7.16"
+  },
+  {
+    "digest": "sha256:0a84cfe8567811fb7d4c5332c3241c571640cb86168ba1f67992a429043b5a19",
+    "name": "@react-types/grid",
+    "size": 4893,
+    "version": "3.3.6"
+  },
+  {
+    "digest": "sha256:ef047b595382c326c7a64758448d965aa15249d6e0b49841c5788bba0336bafe",
+    "name": "@react-types/grid",
+    "size": 4897,
+    "version": "3.3.7"
+  },
+  {
+    "digest": "sha256:674ed44867360655f99eb543ba1ce55e630bd82a0db3f3dd870ddda3a40a01d1",
+    "name": "@react-types/link",
+    "size": 4852,
+    "version": "3.6.5"
+  },
+  {
+    "digest": "sha256:87e4b9a990803fef1e639649ed35f3aa870843b3722cecee22ee756c10e94752",
+    "name": "@react-types/link",
+    "size": 4855,
+    "version": "3.6.6"
+  },
+  {
+    "digest": "sha256:c6eaea92554f4a791a091731c8bace466afb4cf8832c1c3d2fa244929550ad46",
+    "name": "@react-types/listbox",
+    "size": 5259,
+    "version": "3.7.5"
+  },
+  {
+    "digest": "sha256:c32a844b6e3fe08a4a5f27c0d506de42242b2a71e5229f2c05c6f2a9013cae61",
+    "name": "@react-types/menu",
+    "size": 5438,
+    "version": "3.10.5"
+  },
+  {
+    "digest": "sha256:c150e9d97db87ee6bc9d3a54b48d114dedf2a2845461c34c284fb60a92689ee2",
+    "name": "@react-types/numberfield",
+    "size": 5101,
+    "version": "3.8.16"
+  },
+  {
+    "digest": "sha256:574ecf44e62e25c34c9b20c843a78e0945966c78170f9af8b336157fcc063426",
+    "name": "@react-types/overlays",
+    "size": 5494,
+    "version": "3.9.2"
+  },
+  {
+    "digest": "sha256:ecef8ca22dc822fafacb8ad1367d52309ca723bbd486375bbac90e033a63d4fc",
+    "name": "@react-types/overlays",
+    "size": 5497,
+    "version": "3.9.3"
+  },
+  {
+    "digest": "sha256:28917c12906f76ddacb6a6595db98a86f4f01b538d265c934532b140a3f7e5f1",
+    "name": "@react-types/progress",
+    "size": 5286,
+    "version": "3.5.16"
+  },
+  {
+    "digest": "sha256:210b2d57e86ca0522671d1da49f96e9bfb3d91d622f4b93ce483c47ca6027625",
+    "name": "@react-types/radio",
+    "size": 5199,
+    "version": "3.9.2"
+  },
+  {
+    "digest": "sha256:13a542005f2e07a33e9725ad92d83965a8b3f1faa6737e1af33e100da8ce6849",
+    "name": "@react-types/shared",
+    "size": 19329,
+    "version": "3.32.1"
+  },
+  {
+    "digest": "sha256:709c3dc25dde6a65e2a7334ba69138fbaf73c683d92e6f814aaf67b374841604",
+    "name": "@react-types/shared",
+    "size": 19384,
+    "version": "3.33.0"
+  },
+  {
+    "digest": "sha256:99954a66c7610fe16195818198652ad853f676c6a33e43f3581c5eef2568358e",
+    "name": "@react-types/slider",
+    "size": 5688,
+    "version": "3.8.3"
+  },
+  {
+    "digest": "sha256:83bb842952b7b980773c497b6af16b04a143ee6304f28169f8b9c1ba6454db7e",
+    "name": "@react-types/switch",
+    "size": 5047,
+    "version": "3.5.16"
+  },
+  {
+    "digest": "sha256:079191dff060898feda04f369d49a082ce026963a96d790155946c5717e6b904",
+    "name": "@react-types/table",
+    "size": 7130,
+    "version": "3.13.4"
+  },
+  {
+    "digest": "sha256:8b663a06b2f0dc5fc596e3b927c3c16d974246a0ccada3a12ba335ddb78ebe97",
+    "name": "@react-types/tabs",
+    "size": 5421,
+    "version": "3.3.21"
+  },
+  {
+    "digest": "sha256:2c92e44e8ccb4d4557cf9b25c30ddc92a438976fb35ac50c425eb30a1a987de9",
+    "name": "@react-types/textfield",
+    "size": 5529,
+    "version": "3.12.6"
+  },
+  {
+    "digest": "sha256:46e663e4a7d965f53ccbeafa6b22b5172db23b81f6958205bb9d33033c11f0b9",
+    "name": "@react-types/tooltip",
+    "size": 5264,
+    "version": "3.5.0"
+  },
+  {
+    "digest": "sha256:7c9aa3085d21b5542976d02eb7041a97933185dba283fb5115fb683b13337f7e",
+    "name": "@rtsao/scc",
+    "size": 1862,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:0c0c75e61677727a0f745f90a1c7b8126862cff51b72e3d9cf830d296cf04c16",
+    "name": "@rushstack/eslint-patch",
+    "size": 64059,
+    "version": "1.15.0"
+  },
+  {
+    "digest": "sha256:97e22cf245b7f60a14f14305e07211b459321cef2c3349f33df8adcd58396456",
+    "name": "@swc/helpers",
+    "size": 54016,
+    "version": "0.5.15"
+  },
+  {
+    "digest": "sha256:ad9313c629bf774937274cac59a790b80f90cda96e8a73ab0f4fbdc2ec4ba216",
+    "name": "@swc/helpers",
+    "size": 57079,
+    "version": "0.5.18"
+  },
+  {
+    "digest": "sha256:2fa581ce21e016bd550cf0ac4554887ea4be24775c544d38ad6e2cc0d49df16d",
+    "name": "@tailwindcss/node",
+    "size": 36744,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:5b2a20efbad0433b0be020dc9495df8aa165f6747d2ebb35cd34505379b68973",
+    "name": "@tailwindcss/oxide",
+    "size": 4580,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:493480e2314ddcd691ed5dcdff42e754e64a4a6a1c6d1f51a7545dd63522b1bf",
+    "name": "@tailwindcss/oxide-linux-x64-gnu",
+    "size": 1256655,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:7ffa037867bead1c8e820549ca13d3b44c7a24c1dfc1873f58fdf565717e8108",
+    "name": "@tailwindcss/oxide-linux-x64-musl",
+    "size": 1254471,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:24b5300d95fcf960b1de60e37c6f072dea32b32055ccb2a67417abc08e98a702",
+    "name": "@tailwindcss/postcss",
+    "size": 28538,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:0490006975cde689af548a2755f9c263344b7896f7fcc1d6b6f6680b59af3465",
+    "name": "@tailwindcss/typography",
+    "size": 17665,
+    "version": "0.5.19"
+  },
+  {
+    "digest": "sha256:12f1e65fbdc47b2819b01dce4e20e2620c2cb4ec78fb7cfafa445177ea1b1d4f",
+    "name": "@tanstack/query-core",
+    "size": 292669,
+    "version": "5.90.20"
+  },
+  {
+    "digest": "sha256:3d8a9e8251e01590303e6e1b170a5fa463dee27c6eb1fca7fdd11430ff2d209d",
+    "name": "@tanstack/react-query",
+    "size": 76520,
+    "version": "5.90.20"
+  },
+  {
+    "digest": "sha256:c406eeb78522c53415982f128c17491bf70b5ab0f21a4a1d62b9158e3e3bd074",
+    "name": "@tanstack/react-virtual",
+    "size": 3915,
+    "version": "3.11.3"
+  },
+  {
+    "digest": "sha256:3e975b82254c577f512751bb944c0f06d3661284835e2e6d206b4d296fc2e435",
+    "name": "@tanstack/virtual-core",
+    "size": 42741,
+    "version": "3.11.3"
+  },
+  {
+    "digest": "sha256:d6069e73849ac707a08d5d9df4452150e6df4c4b719db6ea913dbb19ac02df34",
+    "name": "@tiptap/core",
+    "size": 522463,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:f53f3b054d4c552f316877465b792b1d1499919b09f75ed7b5953ad14d65946d",
+    "name": "@tiptap/extension-blockquote",
+    "size": 5447,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:b15a3167a20dad4ae887afe5269cb45ad1f1b06d04b6c50d0047c004bf767428",
+    "name": "@tiptap/extension-bold",
+    "size": 5397,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:67553c6ff18fc481403367b0a762f0019ec83d9617f56bb4f5984c3fb274c2bb",
+    "name": "@tiptap/extension-bubble-menu",
+    "size": 17189,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:a6feb04b645a8b8234462303576252c712a5807414ba4a39b9301618f6045645",
+    "name": "@tiptap/extension-bullet-list",
+    "size": 2638,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:92bf6a3dea04f9ebac24b29f46cb25fd21079320e40c43ee1802236809221541",
+    "name": "@tiptap/extension-code",
+    "size": 4864,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:c78d171e0fc937ffa16667680ee471f16b0ec224edaf4371c4d2cc782b5cb815",
+    "name": "@tiptap/extension-code-block",
+    "size": 11638,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:4f6068f82b0cc2025fc5e530b5d72cbe2e6d4e7ee6f4d5ac4772ff347c3e5d46",
+    "name": "@tiptap/extension-document",
+    "size": 3061,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:21275bb579239e31e3dee762407d8ec9bcd6aec19f0b3cdf505729543e06ef0f",
+    "name": "@tiptap/extension-dropcursor",
+    "size": 2638,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:31757285e37329c05d93e7be0d73c2929237f4055e007892e6c86b39c80c0460",
+    "name": "@tiptap/extension-floating-menu",
+    "size": 15270,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:1ad1962c4f007fbc7a77d120d7f62adefc50999aa9cf1b9f55715f29b15a5adc",
+    "name": "@tiptap/extension-gapcursor",
+    "size": 2606,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:ced8e8b09939333c7362b0b502d39ebf164a5cb9cb014a36cec0ee75dd0d7a25",
+    "name": "@tiptap/extension-hard-break",
+    "size": 4854,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:eb7d0c08cbfc07832db8fb87df28aefad7e2b1dfe26ca3b688850a298c3cf7cc",
+    "name": "@tiptap/extension-heading",
+    "size": 5439,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:00e7cd8c01254bd30a5714202cc48e4b226e039a62d2097e5b9f691c71ecd6d1",
+    "name": "@tiptap/extension-horizontal-rule",
+    "size": 5475,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:fd81ca341a69ca2af876bca5f1c7daa7e4cee8ed0ddddf065200b00276aefe3f",
+    "name": "@tiptap/extension-italic",
+    "size": 5170,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:3c057b9d3d1d9ef764b631e9ba50f47f01763e3d5293226649c16b5088235ce9",
+    "name": "@tiptap/extension-link",
+    "size": 28520,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:a907b25f1676b59a5e7fb93af7a29d292e09292de57d9bfb215341f5bfdc802f",
+    "name": "@tiptap/extension-list",
+    "size": 133736,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:c81e251e1a1753340af90ad983b951f1992555d7af46099279fdf4b6a35a2999",
+    "name": "@tiptap/extension-list-item",
+    "size": 2629,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:d7a1e827b768d2cb51eab2f9ca088b31244027f88d77716abe69cebf200cbc27",
+    "name": "@tiptap/extension-list-keymap",
+    "size": 2677,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:2455259c783c8e70ba42692dd8eef9d9a6d652461d7f1245c1f0d26f34d4014c",
+    "name": "@tiptap/extension-mention",
+    "size": 11698,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:9e05101a23db6adcb830cff617b7a7db550ef9dbccb72bdf1b69e51f4275fd4d",
+    "name": "@tiptap/extension-ordered-list",
+    "size": 2639,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:ddd8e3a9015d3fc5dbfc237df086b45b32664f29d4ef5d65c6b4505bacfdf765",
+    "name": "@tiptap/extension-paragraph",
+    "size": 5488,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:6d7b9643a34a64ceb19ebb24ceefdcbe7d57adbaedc7e691df2f0e8356844e1a",
+    "name": "@tiptap/extension-placeholder",
+    "size": 2636,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:976eb4f8074e8aabd27d24ef5d98cd3cf5594f18c991177c3dcc5e804510acf9",
+    "name": "@tiptap/extension-strike",
+    "size": 4784,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:b568e09d93500755cece5aa243be4eff14f7ca79837465c7404d9e99ec751b35",
+    "name": "@tiptap/extension-text",
+    "size": 3084,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:d47d449f32cad6373b9f0bf78f10a972d24f574a9def1baa3e5f7e361a6556cf",
+    "name": "@tiptap/extension-underline",
+    "size": 4822,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:062baf487e07235479abd6385317be74f55c38988176fdd8a6f2cc703e0a9aab",
+    "name": "@tiptap/extensions",
+    "size": 63653,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:45374cd846a5858e30a60c852232b4e3368c3f313d4bec72a7e5760081935bc5",
+    "name": "@tiptap/pm",
+    "size": 4141,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:007f42ecced042db77f1dd5cea7cc7977d43875cfffa0cdd53be2a8c90467079",
+    "name": "@tiptap/react",
+    "size": 109203,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:faa6fef63c339ff7c121c02d4dc25d1e11cbd63918efd8dec1a41a6a524be401",
+    "name": "@tiptap/starter-kit",
+    "size": 7278,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:e276c7ae182f67ef9d97a6910b78ae7ccb8dda08d1306b673ed7bd4422b1f899",
+    "name": "@tiptap/suggestion",
+    "size": 21724,
+    "version": "3.23.6"
+  },
+  {
+    "digest": "sha256:ca73ea290f4a58c9ae961e0abb5c6a42d7c90cc720cd855758d4b1b636ff6792",
+    "name": "@types/d3-color",
+    "size": 4453,
+    "version": "3.1.3"
+  },
+  {
+    "digest": "sha256:4e8144e5a8b1d065aa9dbee8f7b4abb23c35fa5c957e6145f650bf00824c0244",
+    "name": "@types/d3-drag",
+    "size": 5988,
+    "version": "3.0.7"
+  },
+  {
+    "digest": "sha256:1600127c3e338461c6fa93fb88f5438151041f56ec4b40cdbb07c0ab3e5c4217",
+    "name": "@types/d3-interpolate",
+    "size": 6102,
+    "version": "3.0.4"
+  },
+  {
+    "digest": "sha256:14eb308880c570428b2a5597230d3aeff21cfe583ac33a40752b9f3d1e55c1e4",
+    "name": "@types/d3-selection",
+    "size": 12691,
+    "version": "3.0.11"
+  },
+  {
+    "digest": "sha256:c2bb47a6737215473c81785812e5af1c354dbc5a2e0739a554b36fdbb10c30db",
+    "name": "@types/d3-transition",
+    "size": 7602,
+    "version": "3.0.9"
+  },
+  {
+    "digest": "sha256:c342ffc416e3ebb966ebb75d1ffdee436b2c5affb0074434152df568504c780f",
+    "name": "@types/d3-zoom",
+    "size": 8320,
+    "version": "3.0.8"
+  },
+  {
+    "digest": "sha256:6caaf30997ddb5ad1cfc69f6df68c8c41a301fcc2d8eb31b7dc36f3d4a62e652",
+    "name": "@types/dagre",
+    "size": 2683,
+    "version": "0.7.54"
+  },
+  {
+    "digest": "sha256:390453eb7132da6a92238589a4f49b5d4f5dc0cee76b7c44a915d824a440d54a",
+    "name": "@types/estree",
+    "size": 5928,
+    "version": "1.0.8"
+  },
+  {
+    "digest": "sha256:12dcb1dcff7099bff0663fc220551ba53fcf23c136a22375e323bb6626d95724",
+    "name": "@types/json-schema",
+    "size": 6145,
+    "version": "7.0.15"
+  },
+  {
+    "digest": "sha256:439d14e46f574bc1a62a72ad4598e7f22ebd8021410ab7d869723801c436e95d",
+    "name": "@types/json5",
+    "size": 1507,
+    "version": "0.0.29"
+  },
+  {
+    "digest": "sha256:f2a363c02bc4234cfde9ce3e8f9dce161b334475446d2f67db4edab8c77e4fd9",
+    "name": "@types/node",
+    "size": 441747,
+    "version": "22.18.8"
+  },
+  {
+    "digest": "sha256:711fb0141aec1d8fd03a2ce24825c2e21c6cbdcdf5eaeac9269b71fba2e786b7",
+    "name": "@types/react",
+    "size": 146387,
+    "version": "19.1.4"
+  },
+  {
+    "digest": "sha256:ed028e2a20d0c9886972bc40afef55e17db89a1cbb72ab29c870fe8fca3cc2e9",
+    "name": "@types/react-dom",
+    "size": 6529,
+    "version": "19.1.5"
+  },
+  {
+    "digest": "sha256:cb5d9d0fdab3037ebb6a035f3de4f14376310e41449a5b519aff8a198eae5357",
+    "name": "@types/use-sync-external-store",
+    "size": 1813,
+    "version": "0.0.6"
+  },
+  {
+    "digest": "sha256:1aee939b0193f7bc5bdcbbcbd706f5fd1dcc7f77a5d8d7494506a22288b0c4c8",
+    "name": "@typescript-eslint/eslint-plugin",
+    "size": 311252,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:6354acc54648a4e8809dbbd65b48c0a1f81521fe78d5b70aab334c1425707009",
+    "name": "@typescript-eslint/parser",
+    "size": 4316,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:0fa469f9edc278e145347a0d2dc75964ab254e3509cbc92dd797bf196c84478c",
+    "name": "@typescript-eslint/project-service",
+    "size": 4928,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:a51348e2d4648e85944dda05c2f54c1fabcdf0d3fb9367ec15b535f44ab7d57c",
+    "name": "@typescript-eslint/scope-manager",
+    "size": 61446,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:a45644fcc4016b8f4de8e1f04a322500065f4a6f8ceca17eec68d8398f3da71b",
+    "name": "@typescript-eslint/tsconfig-utils",
+    "size": 3487,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:94f0b135ed841c814e26ab9b8f3a9989120d50a377b3ff4032a4260a6ac4157a",
+    "name": "@typescript-eslint/type-utils",
+    "size": 16882,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:0d7460175c7995da1e8cc60976902015e0ed16c19be349fd22ca2880f3800c90",
+    "name": "@typescript-eslint/types",
+    "size": 19043,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:00ca9b95bf5b53ad870c63b56eed3201e928e4b877dc948658d25a0fbf34750f",
+    "name": "@typescript-eslint/typescript-estree",
+    "size": 71622,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:212653b799908c5d2655d3c0dbacde60d78625b1e1a66c8fa0c2505ab048f751",
+    "name": "@typescript-eslint/utils",
+    "size": 42713,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:472ca11999e618229a7bb037f7c86d13083a80d9a908e9cd0bebbc1bcb34b03f",
+    "name": "@typescript-eslint/visitor-keys",
+    "size": 4166,
+    "version": "8.46.0"
+  },
+  {
+    "digest": "sha256:6bb251207f51ff13d71751f9cdcd1474407ddb19bbc6d016b7be745f8fdeba96",
+    "name": "@unrs/resolver-binding-linux-x64-gnu",
+    "size": 990692,
+    "version": "1.11.1"
+  },
+  {
+    "digest": "sha256:f50d732cc4ae199ac3f8ae96df329a29873d310ef78a7470c4083401a2ade6fe",
+    "name": "@unrs/resolver-binding-linux-x64-musl",
+    "size": 982622,
+    "version": "1.11.1"
+  },
+  {
+    "digest": "sha256:bb68abf0dcddf3c40efae53dd2ebd7dbb6f469e59c84ce2c3d4209044b7e6491",
+    "name": "@xyflow/react",
+    "size": 245515,
+    "version": "12.10.2"
+  },
+  {
+    "digest": "sha256:14c746c18e366491db1fe164e4c561843a1ccd9dea95f6d48717391f406056cc",
+    "name": "@xyflow/system",
+    "size": 141247,
+    "version": "0.0.76"
+  },
+  {
+    "digest": "sha256:e46eae89bd9761f16d1d25563b837b55b4b78f3ece06ee0b9789cb2644f523b3",
+    "name": "acorn",
+    "size": 130851,
+    "version": "8.15.0"
+  },
+  {
+    "digest": "sha256:d967b05e40c5396a56d70e0d3150477b969cb6cc1058d68bc2b95ab0159158cc",
+    "name": "acorn-jsx",
+    "size": 7635,
+    "version": "5.3.2"
+  },
+  {
+    "digest": "sha256:9975345b80dbf809b9bfe0c698e45c0d5223c281d3b258c74528ccfc6d13134a",
+    "name": "ajv",
+    "size": 202371,
+    "version": "6.12.6"
+  },
+  {
+    "digest": "sha256:2c539a46d85ab6033183997434d2d9a5ca2ceefc12b4db9022f564784cd7987f",
+    "name": "ansi-styles",
+    "size": 5849,
+    "version": "4.3.0"
+  },
+  {
+    "digest": "sha256:27903847fc8215e6fc5a33e81490f7baba66403f8aade33771b988cca097728c",
+    "name": "argparse",
+    "size": 39740,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:bb3ff0d0a5b0c4a5ab5e579d79e91fbd41cd1700028ddf91ebd3154b3c13749e",
+    "name": "aria-hidden",
+    "size": 5360,
+    "version": "1.2.6"
+  },
+  {
+    "digest": "sha256:62691953222d8acef97db2daa0e84adedc8eb6b074c33ec02367291a32e4ad37",
+    "name": "aria-query",
+    "size": 25695,
+    "version": "5.3.2"
+  },
+  {
+    "digest": "sha256:57852a03833607fcc71ed3ccf0d1f1f638e09a6aacb16fa1f038945d27adf44e",
+    "name": "array-buffer-byte-length",
+    "size": 4891,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:7602dddd994d387f461e996e0ea14c2230b945af72a9aa95bd3dd8a3336c9b85",
+    "name": "array-includes",
+    "size": 9115,
+    "version": "3.1.9"
+  },
+  {
+    "digest": "sha256:91f29784757cf098dbd02453474d10859e661c1f8b3f2f27b3ae3f9d05d8ce10",
+    "name": "array.prototype.findlast",
+    "size": 9479,
+    "version": "1.2.5"
+  },
+  {
+    "digest": "sha256:f5e56d23ad13e1e8dfc5e6ad76ceeaea4c4abd4e061bdb8f544955d2197a1aad",
+    "name": "array.prototype.findlastindex",
+    "size": 9559,
+    "version": "1.2.6"
+  },
+  {
+    "digest": "sha256:3827277c1b4e0d729a81dcb61dc0302f78a8c752bb1b67f9be8551a4eba778b4",
+    "name": "array.prototype.flat",
+    "size": 7141,
+    "version": "1.3.3"
+  },
+  {
+    "digest": "sha256:79b603009d76c63d5d02b6bdb7e35f5c1accb33936a055a387611aca340df43a",
+    "name": "array.prototype.flatmap",
+    "size": 7435,
+    "version": "1.3.3"
+  },
+  {
+    "digest": "sha256:a95c4a08a3dfb246738f0e2822bfa1adbe4504f1616a8484c2ff00d5e2cc63f6",
+    "name": "array.prototype.tosorted",
+    "size": 7210,
+    "version": "1.1.4"
+  },
+  {
+    "digest": "sha256:6fbb55c0292fa73ae484f5c276c4fe8319bfad89c51b35951ba7b118373789b2",
+    "name": "arraybuffer.prototype.slice",
+    "size": 7207,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:47ac5dfe9f143959cac2e1fca8fa3d009d8801954fad3ee263e8576cf11d1911",
+    "name": "ast-types-flow",
+    "size": 8683,
+    "version": "0.0.8"
+  },
+  {
+    "digest": "sha256:c196bf959c5478704aa39c11d2d87ce5e05d9cc6d20c3f04fccef74102cc6fdc",
+    "name": "async-function",
+    "size": 4380,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:e809ae398241364c2703132e77607d5254c27e1947d68590d3e44094eec0180e",
+    "name": "autoprefixer",
+    "size": 46383,
+    "version": "10.4.24"
+  },
+  {
+    "digest": "sha256:8b140e0fa3fede3d81d1dffcc400c9755d7388e8a4add228487f5e20c9cf7863",
+    "name": "available-typed-arrays",
+    "size": 7360,
+    "version": "1.0.7"
+  },
+  {
+    "digest": "sha256:5b86f813d96904f2d925fed5715877c75fc1cc140f89565fb42145e7801b2305",
+    "name": "axe-core",
+    "size": 595025,
+    "version": "4.11.1"
+  },
+  {
+    "digest": "sha256:040d97829212e5e9f48fb4069ca38d2d23b34d4e65b7c7cab2a55ae3546c8d02",
+    "name": "axobject-query",
+    "size": 19716,
+    "version": "4.1.0"
+  },
+  {
+    "digest": "sha256:d854f7abdd0c7a8120cf381e0ad5f972cbd0255f5d987424bd672c8c4fcebcc1",
+    "name": "balanced-match",
+    "size": 2668,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:661ac73b43fc9659709b09a6fc0733aff45d370177ad326b8c8bf365161ace88",
+    "name": "baseline-browser-mapping",
+    "size": 51695,
+    "version": "2.9.19"
+  },
+  {
+    "digest": "sha256:95d2bea840be54653d22a096256d86ccd9f7d8191e4d9b9c5ae23e6df53bcac8",
+    "name": "brace-expansion",
+    "size": 4246,
+    "version": "1.1.12"
+  },
+  {
+    "digest": "sha256:e363c68e40fc83ab1c4a58b7954ac089534a8054d0dbfac2a1fc577cd387ae75",
+    "name": "brace-expansion",
+    "size": 4372,
+    "version": "2.0.2"
+  },
+  {
+    "digest": "sha256:1cd18e862c8640b4568b1425a7df4ee030ff201d45b2da8f9f222d2987494ffc",
+    "name": "braces",
+    "size": 13972,
+    "version": "3.0.3"
+  },
+  {
+    "digest": "sha256:2e3c9b9e665358cd2e9a8f1fa6a0475645ba63251b93c762d3064323a5451dd5",
+    "name": "browserslist",
+    "size": 17351,
+    "version": "4.28.1"
+  },
+  {
+    "digest": "sha256:30e2bdf3ce00c012527ae4161df4145cbf4c797e9fa30e43fc7324b2e07b0523",
+    "name": "call-bind",
+    "size": 7779,
+    "version": "1.0.8"
+  },
+  {
+    "digest": "sha256:073e9ff9dbabedf5c128020a677381e9f92c90188d118830b30a7656a7c37d2c",
+    "name": "call-bind-apply-helpers",
+    "size": 6067,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:32086f492fedf1b9b34811f2ee50ca2cca53da5c783f7cd5f939d3f1e86bbd32",
+    "name": "call-bound",
+    "size": 6382,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:170242bd32bf6e70c8521caeaa375209ce9585273d346ac6245aecbe84e3c89d",
+    "name": "callsites",
+    "size": 2433,
+    "version": "3.1.0"
+  },
+  {
+    "digest": "sha256:9b9ff2bf3c76563f23584b9155d493efcd5b73ba2187f61b4fab40dfb69ef275",
+    "name": "caniuse-lite",
+    "size": 338204,
+    "version": "1.0.30001769"
+  },
+  {
+    "digest": "sha256:e84c643aa53e87ace6c3d368b3cddda24a2d1434a06b6dfbdb628ad2107df90a",
+    "name": "chalk",
+    "size": 11577,
+    "version": "4.1.2"
+  },
+  {
+    "digest": "sha256:4c24f5daa630142252da89de655f7df090ea479450a8825897751d78321b1360",
+    "name": "chownr",
+    "size": 4405,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:a8bcf3309162b18c914f4f2440d0a5b176e3735e0787108b3be2d4ae7f470611",
+    "name": "class-variance-authority",
+    "size": 6219,
+    "version": "0.7.1"
+  },
+  {
+    "digest": "sha256:e0968992357c1ce4d0ab183986debed34971aff8a440338f0ea8a5b5ed04ed24",
+    "name": "classcat",
+    "size": 2579,
+    "version": "5.0.5"
+  },
+  {
+    "digest": "sha256:6c9e10fc21a14499b74bfe1e8e8dd7a6152da02fb575c3ffd3cd71f67390ebf1",
+    "name": "classnames",
+    "size": 8659,
+    "version": "2.5.1"
+  },
+  {
+    "digest": "sha256:dcd7bc3868e2d3518d08944559952e4a68f581d89a84b6892de9fd8f40860b19",
+    "name": "client-only",
+    "size": 481,
+    "version": "0.0.1"
+  },
+  {
+    "digest": "sha256:6320104b491ca645120e8f99589ce663ff1fb337ba80066719a011bd95320303",
+    "name": "clsx",
+    "size": 3936,
+    "version": "2.1.1"
+  },
+  {
+    "digest": "sha256:a9aca115dd43bdb24b902dc67795a664841968a73838e06d4f156eac4e563bad",
+    "name": "color",
+    "size": 5778,
+    "version": "4.2.3"
+  },
+  {
+    "digest": "sha256:920fa43538c019a085dbbf04cb6f72cc337624e5f5217519f0e7b2ef784e7ce1",
+    "name": "color-convert",
+    "size": 8996,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:507b7c4461e8eb941355af9a59e9a7e02cd0e7c6176b48d1809766344f3f1708",
+    "name": "color-name",
+    "size": 2868,
+    "version": "1.1.4"
+  },
+  {
+    "digest": "sha256:323b0dd52ed9d843fe10136661762b1d529cf922dae0cc465944e9dbfc14b286",
+    "name": "color-string",
+    "size": 3384,
+    "version": "1.9.1"
+  },
+  {
+    "digest": "sha256:3e5c35d7fec8db97ac6cafb19ba5ca9167c3f405705df1838f4c7150dc6a95f2",
+    "name": "color2k",
+    "size": 68335,
+    "version": "2.0.3"
+  },
+  {
+    "digest": "sha256:e00a19e29e50d7af70d83d9e3a870cbb428dbb7097407a8a53892146708ac584",
+    "name": "compute-scroll-into-view",
+    "size": 17806,
+    "version": "3.1.1"
+  },
+  {
+    "digest": "sha256:35902dd620cf0058c49ea614120f18a889d984269a90381b7622e79c2cfe4261",
+    "name": "concat-map",
+    "size": 2263,
+    "version": "0.0.1"
+  },
+  {
+    "digest": "sha256:188c320cdc413adfec03098fda72af7a9b02152ba13d3a8f87f172d93ced38ea",
+    "name": "cross-spawn",
+    "size": 6255,
+    "version": "7.0.6"
+  },
+  {
+    "digest": "sha256:31a59523b764560845e79191632d9967d6f83514cc4c97394b0810287c101743",
+    "name": "cssesc",
+    "size": 6495,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:2f083f7cf2a398f05a624b4efa2b14496c45e77cd2b12a0647e2697567186777",
+    "name": "csstype",
+    "size": 184337,
+    "version": "3.1.3"
+  },
+  {
+    "digest": "sha256:d41bbcd99dd4f00e696546bffc73fed9b8fb6c3354905b6ea1721bff25f33b42",
+    "name": "d3-color",
+    "size": 14297,
+    "version": "3.1.0"
+  },
+  {
+    "digest": "sha256:3d1a0b5c003e0e9608ad57f6ca21a0c8368031fcbe5f5317fe4e50b3f797ea23",
+    "name": "d3-dispatch",
+    "size": 5011,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:a3ccc9d31d85135f35a4eda3ec0fae6ac22435d4e3fe2d2e0c73b5246460d4db",
+    "name": "d3-drag",
+    "size": 11088,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:b249afe4aa8b741beeaf2d14f625ccf49270adb645e3f1c755d11476c1fdbe2a",
+    "name": "d3-ease",
+    "size": 7848,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:7e8df78d233cd102a0bb518658dc0b7d5c38442b6f2dbc8b95ffc14ba87c7c33",
+    "name": "d3-interpolate",
+    "size": 18040,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:a1f872f30dca23b76de89cae9e882f56c325433e7f3aee87b95fa830d12789f3",
+    "name": "d3-selection",
+    "size": 33016,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:05cdf901e1876a7f24f4c365a879252752e22e3cc52b131ca616639f07e8ed05",
+    "name": "d3-timer",
+    "size": 5774,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:260eb8eaed565581afc00634ec83c83fd3b7e830e2a6b73b49f3f744dce0254c",
+    "name": "d3-transition",
+    "size": 22980,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:846d28725c4889d6a2069c6cf084ca7e7730ee917a9b87960ecc53247f840f85",
+    "name": "d3-zoom",
+    "size": 18107,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:ffaf576ea24546aed65aa2bed174d77fe4fbfe7985aa6c4a7cd0293c1994c4ed",
+    "name": "dagre",
+    "size": 201545,
+    "version": "0.8.5"
+  },
+  {
+    "digest": "sha256:a23cfcb0fcac3cab70443595dc31266a6e20efbdc63857cab53c985d95075688",
+    "name": "damerau-levenshtein",
+    "size": 4134,
+    "version": "1.0.8"
+  },
+  {
+    "digest": "sha256:28ad2e951d40c48e52fd58caf873d721cd8735cbad0b2b5641e7298cac5677c8",
+    "name": "data-view-buffer",
+    "size": 4903,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:bed046edc7cf71ff00ceb68f950f1fbcf1099a151285468a37846617b0186e12",
+    "name": "data-view-byte-length",
+    "size": 4863,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:c3604d4e7f1a72926d315ae9056a174cebb71b20011daa861e505d7d5ba36441",
+    "name": "data-view-byte-offset",
+    "size": 4779,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:72378f4db53abdf4c6d094e85169b0dc35a404ea4257da13ecafeda029a21c84",
+    "name": "debug",
+    "size": 16872,
+    "version": "3.2.7"
+  },
+  {
+    "digest": "sha256:89c1ac9c946ee8905a875837114528e97eeae35e03be3190584b2216af43e4a7",
+    "name": "debug",
+    "size": 13449,
+    "version": "4.4.3"
+  },
+  {
+    "digest": "sha256:433210122e8149972f64054c54b0ce0872e5f15a3c5835aab57ff1a8e6d071b1",
+    "name": "decimal.js",
+    "size": 69924,
+    "version": "10.6.0"
+  },
+  {
+    "digest": "sha256:0c03aa83c6bf68e7c2cc2c5b5a2d732c1879e7711b08011b0bc48df10d10bf3c",
+    "name": "deep-is",
+    "size": 3400,
+    "version": "0.1.4"
+  },
+  {
+    "digest": "sha256:4003a0a348276a95543fa969f561f6b5968629acbbb59d66018dd23e7b8f1d5c",
+    "name": "deepmerge",
+    "size": 8452,
+    "version": "4.3.1"
+  },
+  {
+    "digest": "sha256:7ed508b85306a97351a0c5202836180917624e984183202cdc2aa87b7c416a59",
+    "name": "deepmerge-ts",
+    "size": 26464,
+    "version": "7.1.5"
+  },
+  {
+    "digest": "sha256:16304ad73df1364ca8623c28a8969de01cd7189b4f9b05668fadb598f110e4d2",
+    "name": "define-data-property",
+    "size": 8913,
+    "version": "1.1.4"
+  },
+  {
+    "digest": "sha256:5de7e3804fadee9d773cd494b695e6efedfee8837e751fd9b9b77c3e9c6b40f4",
+    "name": "define-properties",
+    "size": 5203,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:270dec0fc06cff86481da8af2dd8f18dee6b602790b14ef0e1c2c18d7da39427",
+    "name": "detect-libc",
+    "size": 7776,
+    "version": "2.1.2"
+  },
+  {
+    "digest": "sha256:bc0bc6ee6c25bfd3db4e44dbaa210011dc5a1937a381bbbd92ad857bf5183678",
+    "name": "detect-node-es",
+    "size": 1854,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:220d8b27410873a935daa31af93f3f4cac69be2c76b066cc7eabdd7040fd1dcd",
+    "name": "doctrine",
+    "size": 22263,
+    "version": "2.1.0"
+  },
+  {
+    "digest": "sha256:ed1342228c82c10df9921c59d684df516a0cd6ed25b61e5f9d6330895326cfdb",
+    "name": "dunder-proto",
+    "size": 5049,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:6d16898d6e0fd02ce6469221cfe3214f724b7bf743437e3933e4d3dd1d40bfcb",
+    "name": "electron-to-chromium",
+    "size": 31942,
+    "version": "1.5.286"
+  },
+  {
+    "digest": "sha256:1dc78dfa80b23abd0ca36501eaa3241ce1440c2478b2a9da20718a26bc67ae7e",
+    "name": "emoji-regex",
+    "size": 11118,
+    "version": "9.2.2"
+  },
+  {
+    "digest": "sha256:3609414b15895007503dee275b35b7411de1a7d9786a4e9d58b1d4f5f4201a15",
+    "name": "enhanced-resolve",
+    "size": 42922,
+    "version": "5.18.3"
+  },
+  {
+    "digest": "sha256:cf9582b4a5e376b2b5a9add185d546820d854fe644c7f1d70b0f55f8979f8cb2",
+    "name": "es-abstract",
+    "size": 235561,
+    "version": "1.24.1"
+  },
+  {
+    "digest": "sha256:5986b8b13121340a8b0d5c7d8f0f961aa80ef3a74515ca9cb7a78d86ed0385f7",
+    "name": "es-define-property",
+    "size": 4431,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:d14dd1c35b4bd3b8aca3219fd3627eb7f3eb49cf6b4c8a7ca58b91fd7a190993",
+    "name": "es-errors",
+    "size": 5338,
+    "version": "1.3.0"
+  },
+  {
+    "digest": "sha256:3ccc5698e759e5aca58caaef287bd192d6dca242e685005a49a9dae824e3a1f2",
+    "name": "es-iterator-helpers",
+    "size": 42921,
+    "version": "1.2.2"
+  },
+  {
+    "digest": "sha256:3e18e4d757818aee7bf1921686c6c3e7f9676d17c5c6fec560567c6beee579ce",
+    "name": "es-object-atoms",
+    "size": 4658,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:5675f51a5c33ee402bff8a2a341a0390f85e82d3c199859244d2f67091b0b93d",
+    "name": "es-set-tostringtag",
+    "size": 5583,
+    "version": "2.1.0"
+  },
+  {
+    "digest": "sha256:3b5c43f9dee182d4e7c3242069ee8a5c03c5a3bca8e2df763a6044f1dc844d07",
+    "name": "es-shim-unscopables",
+    "size": 5058,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:440d56133ca746a77f4a67baa5792cc2d1232268c5e4ef203c54bb63cdd5d3a7",
+    "name": "es-to-primitive",
+    "size": 10059,
+    "version": "1.3.0"
+  },
+  {
+    "digest": "sha256:ba2755afc0e6c6705326711fd218ebe107a527eccbd6485155fde98ed000bee7",
+    "name": "escalade",
+    "size": 4483,
+    "version": "3.2.0"
+  },
+  {
+    "digest": "sha256:4b44a14da6987a3c0585c2ff16b3800425732ff35cad710c65e72d7f8e33b11b",
+    "name": "escape-string-regexp",
+    "size": 2017,
+    "version": "4.0.0"
+  },
+  {
+    "digest": "sha256:59735db66beb117b74951de8001857bfa233587a6201172d27ba9a76fc1c03a7",
+    "name": "eslint",
+    "size": 640164,
+    "version": "9.37.0"
+  },
+  {
+    "digest": "sha256:60fa560fc391e96d7ae839fb25ccad0b803be9a118f44da9a33bbd1e7620ba1f",
+    "name": "eslint-config-next",
+    "size": 2008,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:de290c23fe9e565adf2dfceb5929e98668d6570b7c25b8c5fe1af0fc401ebd8e",
+    "name": "eslint-config-prettier",
+    "size": 15295,
+    "version": "10.1.8"
+  },
+  {
+    "digest": "sha256:4dc92ec24667c9ab57bbeaa08b368aea22b742037fb19e935f85b52528a3e9f6",
+    "name": "eslint-import-resolver-node",
+    "size": 2480,
+    "version": "0.3.9"
+  },
+  {
+    "digest": "sha256:12801e0a5ea0aeb04bb7420f51a2974cd5d7529f94ca68771e28b93b7e638b23",
+    "name": "eslint-import-resolver-typescript",
+    "size": 15335,
+    "version": "3.10.1"
+  },
+  {
+    "digest": "sha256:beaccf38feea95b7d295610e6486e822e3d501252c85da408c0d5b1420eacca0",
+    "name": "eslint-module-utils",
+    "size": 16180,
+    "version": "2.12.1"
+  },
+  {
+    "digest": "sha256:4c122b593c52e40f3167a89b388d0b9a155aaddc08f05935ccece7b4ff51ecde",
+    "name": "eslint-plugin-import",
+    "size": 411146,
+    "version": "2.32.0"
+  },
+  {
+    "digest": "sha256:2740719a2bddb1a1b80e514503284b8e76915ea80e4d86aa978ff3aa7923271b",
+    "name": "eslint-plugin-jsx-a11y",
+    "size": 133708,
+    "version": "6.10.2"
+  },
+  {
+    "digest": "sha256:45cc9f87030c2d56bf53b5db62367d3cde946cd63e6dde865d66a6b21051ba0b",
+    "name": "eslint-plugin-react",
+    "size": 186219,
+    "version": "7.37.5"
+  },
+  {
+    "digest": "sha256:4bd34c576dfbc6e449360a0dcdfa70dc1b592f83125198531c390d545df240aa",
+    "name": "eslint-plugin-react-hooks",
+    "size": 54865,
+    "version": "5.2.0"
+  },
+  {
+    "digest": "sha256:c3a28a402da98e9d83b9beb82c18a0194d78f1450cd84c0b1abc5621a1dddb4b",
+    "name": "eslint-scope",
+    "size": 30023,
+    "version": "8.4.0"
+  },
+  {
+    "digest": "sha256:30ce592c610e46e141ffc5653545d33f24089e57316c1057e5a68d106841aaea",
+    "name": "eslint-visitor-keys",
+    "size": 8109,
+    "version": "3.4.3"
+  },
+  {
+    "digest": "sha256:b77834169546330fa6ff3ea00a2d66c0cc15a0873f01e6dc4e7b2244d569d74f",
+    "name": "eslint-visitor-keys",
+    "size": 9146,
+    "version": "4.2.1"
+  },
+  {
+    "digest": "sha256:4a5bbaef81b350ba5918fdd06e2081834401bbca14051d2276497caf200971d7",
+    "name": "espree",
+    "size": 17313,
+    "version": "10.4.0"
+  },
+  {
+    "digest": "sha256:30b7373277b6fd8d9bba16360e0cb05f50d290313a9c0b80b1d35b27ef92c483",
+    "name": "esquery",
+    "size": 162341,
+    "version": "1.6.0"
+  },
+  {
+    "digest": "sha256:3ecf9370d7296b47b570c88a11f70b35bb965af8d536536b259eb55f9b793b61",
+    "name": "esrecurse",
+    "size": 4053,
+    "version": "4.3.0"
+  },
+  {
+    "digest": "sha256:3e8d45da5b8085a4a8d51368ffead5b551a502c286978962a05d5c8e0d72fda6",
+    "name": "estraverse",
+    "size": 8052,
+    "version": "5.3.0"
+  },
+  {
+    "digest": "sha256:c5adbd730a495a3c635bbae9ee5f693b95c7e13b395f7036efab8232c5f0640f",
+    "name": "esutils",
+    "size": 9542,
+    "version": "2.0.3"
+  },
+  {
+    "digest": "sha256:b019a0980f27638dc3f85836b0e478f188e00d7a6e5852c0819fa86f56e47b8f",
+    "name": "fast-deep-equal",
+    "size": 3656,
+    "version": "3.1.3"
+  },
+  {
+    "digest": "sha256:e6dd40093b2c5d45facfbc9d7dc67358df270cadf4b23c812c23174927812ec8",
+    "name": "fast-equals",
+    "size": 54120,
+    "version": "5.4.0"
+  },
+  {
+    "digest": "sha256:0dace4224a1f9878cfe3f005eab7aca89d7004e2f815886e7a8bbc2c041ba951",
+    "name": "fast-glob",
+    "size": 24936,
+    "version": "3.3.1"
+  },
+  {
+    "digest": "sha256:5571ed1750bd1e77a0e4b5fea6e9afb3f2eb390a9576358c9aaacd04d3f60de8",
+    "name": "fast-glob",
+    "size": 25301,
+    "version": "3.3.3"
+  },
+  {
+    "digest": "sha256:1e2df822c43e0a2b448e5df79bf8e6d3e085c86e30456cd383a2f96215fd1687",
+    "name": "fast-json-stable-stringify",
+    "size": 6318,
+    "version": "2.1.0"
+  },
+  {
+    "digest": "sha256:bb4b50306b8b0f048475efddae11810e245937dca8ae85498ab4a171697bbf3c",
+    "name": "fast-levenshtein",
+    "size": 3699,
+    "version": "2.0.6"
+  },
+  {
+    "digest": "sha256:42b4c40f6c3f85e08ecb579bb34721281dd699fc78a363614040271b18335813",
+    "name": "fastq",
+    "size": 9646,
+    "version": "1.19.1"
+  },
+  {
+    "digest": "sha256:241ddcd9f31e2a1fca405326017dbb8333ce174198e887f0f96387c29f0d365e",
+    "name": "fdir",
+    "size": 9742,
+    "version": "6.5.0"
+  },
+  {
+    "digest": "sha256:67ac5a6cea2268114a1f8935ca3ad60fe634fed04dd7914939bf24ceaa2d57b8",
+    "name": "file-entry-cache",
+    "size": 5512,
+    "version": "8.0.0"
+  },
+  {
+    "digest": "sha256:1a6c3a3446cb1d693cf6b62785e2f6d8f9596305aff474dd2b31b2d8d427593c",
+    "name": "fill-range",
+    "size": 5723,
+    "version": "7.1.1"
+  },
+  {
+    "digest": "sha256:f4a64efb583769c09638d81963fd3f7aa883b632f9992a256de3fbe962ca75b4",
+    "name": "find-up",
+    "size": 3806,
+    "version": "5.0.0"
+  },
+  {
+    "digest": "sha256:e2085ae2b084792812a4f4102f6b4967e93cfda8457361b7debe610cf2aedaf0",
+    "name": "flat-cache",
+    "size": 8903,
+    "version": "4.0.1"
+  },
+  {
+    "digest": "sha256:8cac5326533184e7deaeaba8ef088d30a34c7a425ff381fb7502ba2c5b4d5819",
+    "name": "flatted",
+    "size": 9014,
+    "version": "3.3.3"
+  },
+  {
+    "digest": "sha256:4bd2cfc8e674c93cf7abb3bd3d6fd8e388fa10324bec011223a8fa4f287185d1",
+    "name": "for-each",
+    "size": 8133,
+    "version": "0.3.5"
+  },
+  {
+    "digest": "sha256:27e23d8e5ad285541e13e4befc51d39739354abe1f71a348de08a1c88a54a124",
+    "name": "fraction.js",
+    "size": 34715,
+    "version": "5.3.4"
+  },
+  {
+    "digest": "sha256:023edcc970aac15f131d05b24764120fdd2affa1102fdf10d86896781a7e1507",
+    "name": "framer-motion",
+    "size": 1179973,
+    "version": "12.33.0"
+  },
+  {
+    "digest": "sha256:704402651b02a1454f17d445fc7dd716efc282d059407126d58ef30a47e807aa",
+    "name": "function-bind",
+    "size": 9799,
+    "version": "1.1.2"
+  },
+  {
+    "digest": "sha256:151d3dbddae9d8233ce60186c7787b6e60519cf29c68c50ce72d800220e35589",
+    "name": "function.prototype.name",
+    "size": 9379,
+    "version": "1.1.8"
+  },
+  {
+    "digest": "sha256:3be0c99c006f7c53093e3f6a56a1128f1a72fec3b041ec585a4175b809fab1dc",
+    "name": "functions-have-names",
+    "size": 6003,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:817d539f17b5c53295c82f50380c4c79608a15d70f753d26496cdf1a194acb66",
+    "name": "generator-function",
+    "size": 4441,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:662e27e54e00fe46fbb08f9f4aacb054e3695dbe72cc14b436613fbcfb780544",
+    "name": "get-intrinsic",
+    "size": 13800,
+    "version": "1.3.0"
+  },
+  {
+    "digest": "sha256:943112eb62102f2ef56bad6eb50a3fe12bc0b386da0893614d81c735baa05897",
+    "name": "get-nonce",
+    "size": 2677,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:eb2cc52afb1f1fd82c5fc2a58c2380f0f16fdcdb5631538f3c66887435d70681",
+    "name": "get-proto",
+    "size": 4474,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:c91174bcb11cfbd59deb0ccf06d08c470909a5600d3ebe9c1d971828d12cd8ce",
+    "name": "get-symbol-description",
+    "size": 6452,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:8995c5241955a9c0356408a618e4eb321413e75cebbf2adac0539befdefcecdc",
+    "name": "get-tsconfig",
+    "size": 47123,
+    "version": "4.13.6"
+  },
+  {
+    "digest": "sha256:9616afebd18b93592a79d48cce6a841604593ae90563f0ec5554a07b6952d6d5",
+    "name": "glob-parent",
+    "size": 4853,
+    "version": "5.1.2"
+  },
+  {
+    "digest": "sha256:345bb942f3be1fe234cab09ddc1df2c443cb2e84aaf5743c1862cf2b4e8d5066",
+    "name": "glob-parent",
+    "size": 3449,
+    "version": "6.0.2"
+  },
+  {
+    "digest": "sha256:fabbac02995dca1c432f08c675f3b40f871edd8d0609ac580a66cd7064f88e6a",
+    "name": "globals",
+    "size": 17235,
+    "version": "14.0.0"
+  },
+  {
+    "digest": "sha256:de98da383c6f5c2ae39c847cedd2a2e4fd4ba344312c4309d8cee6a3a07076eb",
+    "name": "globalthis",
+    "size": 8504,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:d536d0de4dd285dc1468fbb7f39334a47ee0eec9c27f9b626a6e71466c9fda82",
+    "name": "gopd",
+    "size": 4584,
+    "version": "1.2.0"
+  },
+  {
+    "digest": "sha256:3961374aa161e6fed80d6f4b6aaf2fb7eafd2c9e5be34e865b375f0114dd099c",
+    "name": "graceful-fs",
+    "size": 9804,
+    "version": "4.2.11"
+  },
+  {
+    "digest": "sha256:6799758298737e05d6d6a2ab32d77dd8c1adeea70cc3a8931ffc48e995aed411",
+    "name": "graphemer",
+    "size": 58380,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:81848a4b3f03343148da3ebbce25dc71bc0164a17276ce469ec3ba67e86f6f3c",
+    "name": "graphlib",
+    "size": 91476,
+    "version": "2.1.8"
+  },
+  {
+    "digest": "sha256:4312b2ec05bff4cf50d8086bd79e429a9e2a81c660dd732e6dcda0cbd0b9d49b",
+    "name": "has-bigints",
+    "size": 5837,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:77a7eb1411d927bb8a5ca7069dbe168886d63c88f446f0b81500a2cf23ddb5b1",
+    "name": "has-flag",
+    "size": 2206,
+    "version": "4.0.0"
+  },
+  {
+    "digest": "sha256:0219bbd8f32e268eeb6efff55a2c6ff2d502098f49c583ff023b2d9d5a8bfa87",
+    "name": "has-property-descriptors",
+    "size": 4429,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:fade2c30ade4f39fb2293538e6f827ce08accf0f40cdc942a9c382cd2484a9df",
+    "name": "has-proto",
+    "size": 5434,
+    "version": "1.2.0"
+  },
+  {
+    "digest": "sha256:4460c7532f28b8df2ddc9a1ec17816d43c24d4b9591dc6c5936b82f7f86ae7c5",
+    "name": "has-symbols",
+    "size": 8059,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:dc1c74e3f1179a6271f84747d72c89f258aa46ad3e6464fae0e41737a7f0ef7b",
+    "name": "has-tostringtag",
+    "size": 6465,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:50cdc4d2cd11ae04b6ee29f328d09022244962e5dfab303c8fc223ff8dfa807d",
+    "name": "hasown",
+    "size": 4109,
+    "version": "2.0.2"
+  },
+  {
+    "digest": "sha256:8e9652205f5fca36dec78e11650ed998e639f5744600e1dbfc024cd627eed8bd",
+    "name": "ignore",
+    "size": 15266,
+    "version": "5.3.2"
+  },
+  {
+    "digest": "sha256:e82d6c39de5ffda78391cfe066a1641b32367ead63d06d4700e9bd35aa84c280",
+    "name": "ignore",
+    "size": 17273,
+    "version": "7.0.5"
+  },
+  {
+    "digest": "sha256:cd60f450e2b1a585d8f19c14307f0396f7920ecdc9f933b93d7c3473e6f74ff7",
+    "name": "import-fresh",
+    "size": 2225,
+    "version": "3.3.1"
+  },
+  {
+    "digest": "sha256:ac23a031966a7371d192e35c7852ab31c772b7d4e468ddd886ad3c014372cb60",
+    "name": "imurmurhash",
+    "size": 4312,
+    "version": "0.1.4"
+  },
+  {
+    "digest": "sha256:430bf0a962030fd421a45f6dfa24c6088c3f3a69c86aa01a2d8d63cfdb32e526",
+    "name": "input-otp",
+    "size": 33958,
+    "version": "1.4.1"
+  },
+  {
+    "digest": "sha256:1849bc0bc00b8049bfccd7d42c3a1f86221a966d4cab35c029319d65b38a388c",
+    "name": "internal-slot",
+    "size": 7836,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:03ace6bf5e50e28bd6c4017f6285c3d62cedc641fbe3da0053c01d666bdafc29",
+    "name": "intl-messageformat",
+    "size": 40736,
+    "version": "10.7.18"
+  },
+  {
+    "digest": "sha256:e199725bf272b3088568b3309e918ce623e616f005b43e23b132182b58d791ef",
+    "name": "is-array-buffer",
+    "size": 6323,
+    "version": "3.0.5"
+  },
+  {
+    "digest": "sha256:7b8b4790349e21eaf456fc7f7a4710361ac14ab6bdbb1865d751cc1576ebeaa2",
+    "name": "is-arrayish",
+    "size": 1811,
+    "version": "0.3.4"
+  },
+  {
+    "digest": "sha256:6cf446960f88f71ecd10d2810336f1c4e51102f7af4bf19dd5c4f6fea7105707",
+    "name": "is-async-function",
+    "size": 8157,
+    "version": "2.1.1"
+  },
+  {
+    "digest": "sha256:3380f7a296bcd1d9da6db3087f77a2553061e5d93a1ebe3758db3fe03072691e",
+    "name": "is-bigint",
+    "size": 6689,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:8e0e688c1073d55353616f99ba5a09796e16cc4b0f08840066cea8a79cff612e",
+    "name": "is-boolean-object",
+    "size": 9108,
+    "version": "1.2.2"
+  },
+  {
+    "digest": "sha256:43a4fd2e6bc87eed330d5e2b06bf8594e9d1c9f6f3070d214ecc1e4ea029adc5",
+    "name": "is-bun-module",
+    "size": 5603,
+    "version": "2.0.0"
+  },
+  {
+    "digest": "sha256:1b5c6e4e8ab142a6857fca2fb79d880ba64f2c4ad87907b583934d04b503c3a1",
+    "name": "is-callable",
+    "size": 9896,
+    "version": "1.2.7"
+  },
+  {
+    "digest": "sha256:e3ddb1d0d54ac68db74dd0ae30f5ff51387c30a01bf6a8d55ffb65a42e3a3be3",
+    "name": "is-core-module",
+    "size": 10079,
+    "version": "2.16.1"
+  },
+  {
+    "digest": "sha256:da85f7e762877cd22d3c7da2c86371c9826cfcec2af57435b0924a36442fb080",
+    "name": "is-data-view",
+    "size": 5343,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:7f5706a6c60e16ac23bba98ce6f30b05128dfbe07b2bcfd8235a9995fe030256",
+    "name": "is-date-object",
+    "size": 8567,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:8c5d4286146ad62fc1096981700ce1c22a167708926fca01f9ca74f9bb50bc19",
+    "name": "is-extglob",
+    "size": 2663,
+    "version": "2.1.1"
+  },
+  {
+    "digest": "sha256:3287c872bfa85c997e9018a1258fb6b954eea9b5db584dd716cc6741f760cae8",
+    "name": "is-finalizationregistry",
+    "size": 6315,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:11b6db078092427ac985003432e9ae1fad56d1df398ad87a02b8ce1b81d803d0",
+    "name": "is-generator-function",
+    "size": 11594,
+    "version": "1.1.2"
+  },
+  {
+    "digest": "sha256:3fe453fb193bb58f6f0505dfb1151230935380b5b55e1f9864261c2aafc1bec6",
+    "name": "is-glob",
+    "size": 4255,
+    "version": "4.0.3"
+  },
+  {
+    "digest": "sha256:9b981d8ca28db4343aa5b285d20342a175ef34ae25840a302c1e39d3fcb6e98f",
+    "name": "is-map",
+    "size": 7928,
+    "version": "2.0.3"
+  },
+  {
+    "digest": "sha256:f9d424a84182460185f4e4a8ca11630148ed48e47e4c539e40686311625c1a3a",
+    "name": "is-negative-zero",
+    "size": 9383,
+    "version": "2.0.3"
+  },
+  {
+    "digest": "sha256:7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+    "name": "is-number",
+    "size": 3730,
+    "version": "7.0.0"
+  },
+  {
+    "digest": "sha256:5801fb3fd5d48e12fbf5cd76226ac18033c76a0fb35cb97026a9e5053ecadc4e",
+    "name": "is-number-object",
+    "size": 8796,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:a73e499153621af82d1f0f1ba77f21a01f95612b09d50d57253fc9e123a98b0d",
+    "name": "is-regex",
+    "size": 12196,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:3ee20ceea3b279a42646c98df116e4534bc1bb4a5e6b9a395092e7029e9221d7",
+    "name": "is-set",
+    "size": 7653,
+    "version": "2.0.3"
+  },
+  {
+    "digest": "sha256:25a1adc92d64dcd3a153f336b452e7ea8e200aa9e9e8ce8cb8d05674f8b6878d",
+    "name": "is-shared-array-buffer",
+    "size": 6324,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:3e36bf072a5561d2440fe7cea5bc79754c3c8110650e94c960842f08d328023e",
+    "name": "is-string",
+    "size": 8542,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:0f008bf151bb061999f6bf3324b37d5859695865b34773cc34e6f7669999c8a5",
+    "name": "is-symbol",
+    "size": 9572,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:d1ef6229208ce395c816f88637e45b970f6d742d616d3c980fb0dbb679cb7690",
+    "name": "is-typed-array",
+    "size": 7454,
+    "version": "1.1.15"
+  },
+  {
+    "digest": "sha256:f18a4e9f7f9f15c07aae52b9d0e98ed3c0f0d937a970ae29417ee313eb55a997",
+    "name": "is-weakmap",
+    "size": 7794,
+    "version": "2.0.2"
+  },
+  {
+    "digest": "sha256:86c24711a2424e7d5e9842d881ddb7b8cd1fab5a13a4a6eeb46869788d78678f",
+    "name": "is-weakref",
+    "size": 6265,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:eccb40f9397738297c0d0af831f668f860f91ec2ac7107783382fde91ac5e745",
+    "name": "is-weakset",
+    "size": 7471,
+    "version": "2.0.4"
+  },
+  {
+    "digest": "sha256:72bae463b81a604b4a118c00012c76ee9b8d155b9da62d1f362876c9f8b5f793",
+    "name": "isarray",
+    "size": 1859,
+    "version": "2.0.5"
+  },
+  {
+    "digest": "sha256:47cfe872e088e28c53b736fef305324b57cc1cfc9f72a9b0f769f92731cb8359",
+    "name": "isexe",
+    "size": 3756,
+    "version": "2.0.0"
+  },
+  {
+    "digest": "sha256:36391f2f905cd02e8ed39c1825871385358f20a397176e6467086a6db7c211bc",
+    "name": "iterator.prototype",
+    "size": 4848,
+    "version": "1.1.5"
+  },
+  {
+    "digest": "sha256:7984fc7841de02c0b2992a72e2069d4b569d23e58d097f9b050ea13b781fd5f1",
+    "name": "jiti",
+    "size": 412412,
+    "version": "2.6.1"
+  },
+  {
+    "digest": "sha256:d884c7a2d8adb5568c1272d92b4f9c62707f4226cf9e7b22e7b957c7361e3c53",
+    "name": "js-tokens",
+    "size": 6542,
+    "version": "4.0.0"
+  },
+  {
+    "digest": "sha256:0dae332559cf22b21c26ea70e732afd8303ff99412f9c3d9d209faa8882cf2ca",
+    "name": "js-yaml",
+    "size": 102356,
+    "version": "4.1.0"
+  },
+  {
+    "digest": "sha256:d1f7464db9713c5f73c919da72de334fce0bcbd76fb08727d36712ef5dfef5a5",
+    "name": "json-buffer",
+    "size": 2618,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:f735add93641842e13096c8b3239f54e9b0b10e8ffd8a377400f4d61eabec065",
+    "name": "json-schema-traverse",
+    "size": 5141,
+    "version": "0.4.1"
+  },
+  {
+    "digest": "sha256:5dbd60ac858b8eb9fb8219cd0dbe89cb866405749cbac90c2f8bc18acc77aeea",
+    "name": "json-stable-stringify-without-jsonify",
+    "size": 4621,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:90b2f676282469d5beb40943003a815e30e80cf84ea3d72b812a7e13b0b7d80b",
+    "name": "json5",
+    "size": 22200,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:dc4a211eac0aeb795723c6cd74ba47b554a8d468faf2bc9c0d0d682b3d25fc86",
+    "name": "jsx-ast-utils",
+    "size": 34201,
+    "version": "3.3.5"
+  },
+  {
+    "digest": "sha256:eb26f1c561e57af4a4365e6b54f5f3e745e3963747a93845af1f000a747b6098",
+    "name": "keyv",
+    "size": 8620,
+    "version": "4.5.4"
+  },
+  {
+    "digest": "sha256:a9d037f6bec7c1e98979edf8dc4a3dc455826bdc759ffb4ee542148d46cafee6",
+    "name": "language-subtag-registry",
+    "size": 198850,
+    "version": "0.3.23"
+  },
+  {
+    "digest": "sha256:3352fb1423dbbd178d8e4af5d94396115d78fa5994aa4c234f5689f54b0ecdd8",
+    "name": "language-tags",
+    "size": 8216,
+    "version": "1.0.9"
+  },
+  {
+    "digest": "sha256:1f4457d4df0f93521899c0fdee0263de0f243ecb90ea6bc6d744fadd132067d1",
+    "name": "levn",
+    "size": 7465,
+    "version": "0.4.1"
+  },
+  {
+    "digest": "sha256:7d3f0b73b863f20305fd819d7c4dd06d025b0c23df5454cee2a6bec3b3958628",
+    "name": "lightningcss",
+    "size": 85556,
+    "version": "1.30.1"
+  },
+  {
+    "digest": "sha256:51bc692713197bda33648467af3c8bb16ea59d667f580dc27c490ceb581c6ec6",
+    "name": "lightningcss-linux-x64-gnu",
+    "size": 3428821,
+    "version": "1.30.1"
+  },
+  {
+    "digest": "sha256:13b285323ad7e0284c58b69fd888b31e5c6afc5c65393ff866a613ebe51cd62a",
+    "name": "lightningcss-linux-x64-musl",
+    "size": 3427470,
+    "version": "1.30.1"
+  },
+  {
+    "digest": "sha256:112278d64bbbeae926fbbecb1931cb44ecce1e1332e7737be7ba7fc495f15191",
+    "name": "linkifyjs",
+    "size": 78197,
+    "version": "4.3.3"
+  },
+  {
+    "digest": "sha256:71d20b2743581b997191a760edc54df51dcea7c53b12c613cabc360f636d832a",
+    "name": "locate-path",
+    "size": 2954,
+    "version": "6.0.0"
+  },
+  {
+    "digest": "sha256:696942c2a488c9d7428e9ca5f12ccf03b52de01dcdbfe4d4751d392f0491ae16",
+    "name": "lodash",
+    "size": 315640,
+    "version": "4.18.1"
+  },
+  {
+    "digest": "sha256:a34e27a950d64a15ee31c652ff1f29c29b42eadaace1d203c680ca314959ef96",
+    "name": "lodash.merge",
+    "size": 13081,
+    "version": "4.6.2"
+  },
+  {
+    "digest": "sha256:1218830a93538a4f730d530138e945ea6a65b45e099ee7a9ea538a05141babdc",
+    "name": "loose-envify",
+    "size": 2842,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:be16d08bcf1573cc41d75c93ae469e541bbba03968cbd15f18d4abcb8bf6c14d",
+    "name": "lucide-react",
+    "size": 3118890,
+    "version": "0.511.0"
+  },
+  {
+    "digest": "sha256:07ae8364d101ecc3967ca5a1ef7c278bb54d14e6e5ed523bf60ef7e784968275",
+    "name": "magic-string",
+    "size": 88263,
+    "version": "0.30.19"
+  },
+  {
+    "digest": "sha256:9cc71529c2d8e01d1843c81838d5b74b704c050169a0e4dc01affa9e53899c8a",
+    "name": "marked",
+    "size": 110560,
+    "version": "17.0.3"
+  },
+  {
+    "digest": "sha256:b8c2c35575493dc086df88cfc468a9e2651b6617336480ab3f00fcf853f443a7",
+    "name": "math-intrinsics",
+    "size": 6355,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:b8381291c9b3c859c5b58e75da8bdde64b424344054893c774c68c3c443d7881",
+    "name": "merge2",
+    "size": 3409,
+    "version": "1.4.1"
+  },
+  {
+    "digest": "sha256:c78d05f20aff3bc95f024b19e53f72998cfc5f69c42b126c49dff8b1b271bc46",
+    "name": "micromatch",
+    "size": 14663,
+    "version": "4.0.8"
+  },
+  {
+    "digest": "sha256:13964b10b60a3b66dd6eec90a2d39af28590721b8c9d1df8ff754f90b081a34d",
+    "name": "minimatch",
+    "size": 11940,
+    "version": "3.1.2"
+  },
+  {
+    "digest": "sha256:17d107a4b13e2dd4f4b7deacf22f97df984f8d70da985fdd80642b14b1045f8d",
+    "name": "minimatch",
+    "size": 96471,
+    "version": "9.0.5"
+  },
+  {
+    "digest": "sha256:350a76c115b393c19d24654834261e5dc9f0e8cc5e08f3937fa80140f3e4ce83",
+    "name": "minimist",
+    "size": 15520,
+    "version": "1.2.8"
+  },
+  {
+    "digest": "sha256:548f561a19434971254f09f21484c6bf9d1b9d037cdac62310616b351c44d516",
+    "name": "minipass",
+    "size": 62112,
+    "version": "7.1.2"
+  },
+  {
+    "digest": "sha256:99bf2e29618172dd71f0654737490c68f71bc7e2379d473e38f9fef2dbece2e3",
+    "name": "minizlib",
+    "size": 18461,
+    "version": "3.1.0"
+  },
+  {
+    "digest": "sha256:9a3c2384bbdf85a43ea6d39014671f905de6937cce07a56d07a1892244003599",
+    "name": "motion-dom",
+    "size": 724181,
+    "version": "12.33.0"
+  },
+  {
+    "digest": "sha256:e5f5a91e7a7d1a1983ca37e309cfb92e487eedd7ed75a278b1f8428fbfb55973",
+    "name": "motion-utils",
+    "size": 22508,
+    "version": "12.29.2"
+  },
+  {
+    "digest": "sha256:f6616e15e530ed552f9daa2d3ce71963947c6bc7c98c9b64fd3e673fd02622c6",
+    "name": "ms",
+    "size": 2967,
+    "version": "2.1.3"
+  },
+  {
+    "digest": "sha256:9618e802e7bd1b46a6e747f05c4120db7db6af0fe18121e6887535e9d6848759",
+    "name": "nanoid",
+    "size": 7127,
+    "version": "3.3.11"
+  },
+  {
+    "digest": "sha256:3f577c1ffc2cf8a3374f6d060fe3486c1480688eba25547f9d1be3fa8796f588",
+    "name": "napi-postinstall",
+    "size": 15465,
+    "version": "0.3.4"
+  },
+  {
+    "digest": "sha256:5e5569ecd12064f73632a8c18a45b1d1de4a27b699a671864801f1c35ee779ee",
+    "name": "natural-compare",
+    "size": 2510,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:449851737a8ba12a7cf8c7d076099f7e15fe682d810b08505dc86fbebe9f2a67",
+    "name": "next",
+    "size": 30290670,
+    "version": "15.5.2"
+  },
+  {
+    "digest": "sha256:7ba0a43673e36ffb18211bea5dec9a5ba1356e39417d81fa5d7468f78d1b5a85",
+    "name": "node-releases",
+    "size": 5223,
+    "version": "2.0.27"
+  },
+  {
+    "digest": "sha256:b290bbb35b9e72c3ef84edbe041f28c4479c4d9ee79f555817b8caafe7ce4bba",
+    "name": "npm",
+    "size": 2966037,
+    "version": "11.17.0"
+  },
+  {
+    "digest": "sha256:782d726a263ba7b26cced612af97b80035516df4b0cd788524e7b2cebc4e29ed",
+    "name": "object-assign",
+    "size": 2675,
+    "version": "4.1.1"
+  },
+  {
+    "digest": "sha256:8324967a3afd8a45b0401e3554aebc1843f493bec46a89a7ce8cf072e62e90bf",
+    "name": "object-inspect",
+    "size": 28026,
+    "version": "1.13.4"
+  },
+  {
+    "digest": "sha256:9678d9055619767c8a134033709e88a6e0a19600f3d3f2cda40acdfd75e7f212",
+    "name": "object-keys",
+    "size": 7677,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:08e4dcd218f7ac619100ac3d3bb76b54c66257cabf0b2409dbfbb6dff01bfcf3",
+    "name": "object.assign",
+    "size": 20235,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:c1bd4a4bfe2532826f41c7cef76d6e3cac8aeaacad927ff2c38446f8d9f4d88f",
+    "name": "object.entries",
+    "size": 10874,
+    "version": "1.1.9"
+  },
+  {
+    "digest": "sha256:e7263c0e3c9c70d9b14fabc8201d22a2db1ac8145d5bb8fa6f6f0d6b44bbf56a",
+    "name": "object.fromentries",
+    "size": 6085,
+    "version": "2.0.8"
+  },
+  {
+    "digest": "sha256:c7f0a27150bf0d971fccd19f6956a6db9cef38b957a2b57157f5fd6ebc013ecc",
+    "name": "object.groupby",
+    "size": 5828,
+    "version": "1.0.3"
+  },
+  {
+    "digest": "sha256:27eb37fa4bbd88445966e5271e5718c8eb96128709855325b3d11b5543033bd7",
+    "name": "object.values",
+    "size": 10764,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:a772bbe141b4af2c1e65f7530353cd6e978f0349067ea3dc2b0aac2428c2826b",
+    "name": "optionator",
+    "size": 14017,
+    "version": "0.9.4"
+  },
+  {
+    "digest": "sha256:9ad98abe6ac4156daef2232d7c1d2c8b3681545604c54f7f3754e791f12c168d",
+    "name": "orderedmap",
+    "size": 3308,
+    "version": "2.1.1"
+  },
+  {
+    "digest": "sha256:689f1e90ccb29a1d2c7d2439a513b2cbbf5447e402c2fc5f5472fdc479ad89e1",
+    "name": "own-keys",
+    "size": 4464,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:36e6519736cafaa158dc1bca8137683f5bf1bc1c476d40519028b3f3a96bc9e0",
+    "name": "p-limit",
+    "size": 3265,
+    "version": "3.1.0"
+  },
+  {
+    "digest": "sha256:2ec11480a90965a753b141be5432d24f4ca98860b844fd1b10cab0a1023423fc",
+    "name": "p-locate",
+    "size": 3151,
+    "version": "5.0.0"
+  },
+  {
+    "digest": "sha256:607e83127ea471fdf079c501148a17936cb4137ec779ce6ec52f083f149ae407",
+    "name": "parent-module",
+    "size": 2008,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:dbb535c9302ce9b3f777ece3ff055cc8d88890a1e1deddc045340aef76fb775c",
+    "name": "path-exists",
+    "size": 2073,
+    "version": "4.0.0"
+  },
+  {
+    "digest": "sha256:4b8999acb914830edcd3c5b8fec632b32c6bc759ac3edc86336f5a9e08ba7b92",
+    "name": "path-key",
+    "size": 2258,
+    "version": "3.1.1"
+  },
+  {
+    "digest": "sha256:a07a198ca727816296616928237bfab6571f211750d798030b3b7a3f4a5473a3",
+    "name": "path-parse",
+    "size": 2067,
+    "version": "1.0.7"
+  },
+  {
+    "digest": "sha256:d3aedb2807967b7eb37fd11b03b7e3701e725af79c650d0812ff7213f8f882d9",
+    "name": "picocolors",
+    "size": 2625,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:1b14ee9ec867c090d7b52c77193d83e77910553b3d18b2f86dd2b7b55e82c11f",
+    "name": "picomatch",
+    "size": 24289,
+    "version": "2.3.1"
+  },
+  {
+    "digest": "sha256:ad6211fd159de67764a3bdce517497688eddf5da1fd1d68f3115f2013c108a9c",
+    "name": "picomatch",
+    "size": 22248,
+    "version": "4.0.3"
+  },
+  {
+    "digest": "sha256:b2c26cd72ae4f4c3d9dc1476d60faf04845c0e15d043c99f43e11f1843b97bbe",
+    "name": "plotly.js-dist",
+    "size": 2418635,
+    "version": "2.35.3"
+  },
+  {
+    "digest": "sha256:c29791211b8e2f181c049247214843292380e4134c140c5105376b7c6ae3e3c7",
+    "name": "possible-typed-array-names",
+    "size": 4178,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:803bd4d3de6bd009828978749db0558375bcde95d76683fad3fdcf4aa37c8453",
+    "name": "postcss",
+    "size": 45889,
+    "version": "8.4.31"
+  },
+  {
+    "digest": "sha256:21595b4d4c069b22358bf7eb861b6807e0c55645ebf7605c673ae27650a0f94d",
+    "name": "postcss",
+    "size": 47839,
+    "version": "8.5.6"
+  },
+  {
+    "digest": "sha256:f6520bf5428cb673de03644374e8bb18c0cabe3cdbb05fe9b791864b49fd6104",
+    "name": "postcss-selector-parser",
+    "size": 42276,
+    "version": "6.0.10"
+  },
+  {
+    "digest": "sha256:3de5372cf95b66a344b258a046b1b298b20ecaf187637f4d59f50017836a90a7",
+    "name": "postcss-value-parser",
+    "size": 7997,
+    "version": "4.2.0"
+  },
+  {
+    "digest": "sha256:14e8fc397f1f852ffda5bed29d012605add8866feff1790b388ad8f7abb8d291",
+    "name": "prelude-ls",
+    "size": 9408,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:1c739eb05d8a462c286a4e9dd02f2ce5485c6fa3529244e9ff9b13a3671aa557",
+    "name": "prop-types",
+    "size": 22651,
+    "version": "15.8.1"
+  },
+  {
+    "digest": "sha256:2bd8574d4ffa904e03ebb352ac3c01f6d1528f5a587fced728f7fa5f0aefc38f",
+    "name": "prosemirror-changeset",
+    "size": 31000,
+    "version": "2.4.1"
+  },
+  {
+    "digest": "sha256:0364d5f139d69f8ac958a69ff7bf74501fc7ab03ce248d227c9e5410151a9e95",
+    "name": "prosemirror-commands",
+    "size": 30098,
+    "version": "1.7.1"
+  },
+  {
+    "digest": "sha256:3afcf5a6726bee8c9146696885f22dfb31d6457438f2b2175641dc53d567125f",
+    "name": "prosemirror-dropcursor",
+    "size": 9128,
+    "version": "1.8.2"
+  },
+  {
+    "digest": "sha256:961e88b82ce7f434cc781ba644a82810461cf9ba3993834f654384c493998eba",
+    "name": "prosemirror-gapcursor",
+    "size": 11035,
+    "version": "1.4.1"
+  },
+  {
+    "digest": "sha256:5ffc66c053f3e2d4d6c1f7d5f352c4401fee49b075a5b1bb5b03e7b9d84172a7",
+    "name": "prosemirror-history",
+    "size": 17697,
+    "version": "1.5.0"
+  },
+  {
+    "digest": "sha256:3131823ce73eaf3487cada22c85b76349da02c114dee3de696f4c1c3c645ca8c",
+    "name": "prosemirror-keymap",
+    "size": 7470,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:077cf3403c430df1acba6ec6e4e800aa7258edb277542dae9478874624b43ccd",
+    "name": "prosemirror-model",
+    "size": 129322,
+    "version": "1.25.7"
+  },
+  {
+    "digest": "sha256:c60638c4fd055328cebada5a36a661d454eb87114919bfc2bfbfbcda2b939c2e",
+    "name": "prosemirror-schema-list",
+    "size": 12028,
+    "version": "1.5.1"
+  },
+  {
+    "digest": "sha256:ad3eb60bd6db8e74b2576dc0b7c2800d6def362e0e990c9fb108fc4b724ee651",
+    "name": "prosemirror-state",
+    "size": 43710,
+    "version": "1.4.4"
+  },
+  {
+    "digest": "sha256:589a633cd06d12c0ab2a210846ea208d3be9dd37f5b068be19f437733f22089b",
+    "name": "prosemirror-tables",
+    "size": 106155,
+    "version": "1.8.5"
+  },
+  {
+    "digest": "sha256:ec7e960ad356cd5b485a85d7a6123935f871f33484172f84cb01bd327bbb8914",
+    "name": "prosemirror-transform",
+    "size": 75331,
+    "version": "1.12.0"
+  },
+  {
+    "digest": "sha256:363c1bce022921df01a1eca2a52827602bf37046b605ab602b58dd9fb432dc27",
+    "name": "prosemirror-view",
+    "size": 224186,
+    "version": "1.41.8"
+  },
+  {
+    "digest": "sha256:e4ce59f9fbac44349abab87279ab658f6b4614916bec5e088ae3be9323e193bb",
+    "name": "punycode",
+    "size": 7603,
+    "version": "2.3.1"
+  },
+  {
+    "digest": "sha256:ffaf0a20a201865e143aa27e57a83bf69a75547729a65cd3180bcba4f0f29ecd",
+    "name": "queue-microtask",
+    "size": 3676,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:f0737e0160f06b213b946d019e788b1f2a902c93428ff891c92c6f6ef14e4190",
+    "name": "radix-ui",
+    "size": 7820,
+    "version": "1.4.3"
+  },
+  {
+    "digest": "sha256:f15433d7e5b3159b616a74dcdb5248eed16721ec3a199c6009f4464bc6e7ff55",
+    "name": "react",
+    "size": 24066,
+    "version": "19.1.0"
+  },
+  {
+    "digest": "sha256:5604d62da58ade7f057816eb1057b3c7bb7111ff7eeffcc5afb03c7c0b8b5357",
+    "name": "react-dom",
+    "size": 1157331,
+    "version": "19.1.0"
+  },
+  {
+    "digest": "sha256:0bdbb5d473ddc13e850987f3937666e261b6a3a8fcaffddd8195953ff0faee8f",
+    "name": "react-is",
+    "size": 5463,
+    "version": "16.13.1"
+  },
+  {
+    "digest": "sha256:b9c7cc76fbd5cfb209e03b668228d56e14a76afc922434e5964f2d2f36ccf1cc",
+    "name": "react-remove-scroll",
+    "size": 13764,
+    "version": "2.7.2"
+  },
+  {
+    "digest": "sha256:ccc872d7a2dc007cbf9d755f30d56b8d80eabdbe22c44c95a709129bfdc46f01",
+    "name": "react-remove-scroll-bar",
+    "size": 4937,
+    "version": "2.3.8"
+  },
+  {
+    "digest": "sha256:8cd3380ee25e0ac80060dcee138c61433862a992fc21d665da823efbfe43ff0f",
+    "name": "react-style-singleton",
+    "size": 4876,
+    "version": "2.2.3"
+  },
+  {
+    "digest": "sha256:648a3eae6d4a8708e215b7272907ba018b5f77430acbb568a2c5aebd238ce945",
+    "name": "react-textarea-autosize",
+    "size": 8410,
+    "version": "8.5.9"
+  },
+  {
+    "digest": "sha256:3fe0e7744865534beed96452a1e36c0ea522bf96c3463dccdbed5171ced09e1b",
+    "name": "reflect.getprototypeof",
+    "size": 7601,
+    "version": "1.0.10"
+  },
+  {
+    "digest": "sha256:e3336e954c29414c532721aa3f6e1e7f15c26a67a63dd77072d273f8431a0c9f",
+    "name": "regexp.prototype.flags",
+    "size": 13056,
+    "version": "1.5.4"
+  },
+  {
+    "digest": "sha256:46ecc1f3f578dcfd932bedea833fa9a4aeb52a9c417992235101108a91314ab5",
+    "name": "resolve",
+    "size": 27550,
+    "version": "1.22.10"
+  },
+  {
+    "digest": "sha256:d32225557f0c32a1f1c2c42c7cfe0d158eea451c773b8bd5360907cd2cd47824",
+    "name": "resolve",
+    "size": 25373,
+    "version": "2.0.0-next.5"
+  },
+  {
+    "digest": "sha256:244228f4c2bdeb058f2ceaac25e22124897145c400a7267aaa0da37fc10021dc",
+    "name": "resolve-from",
+    "size": 2149,
+    "version": "4.0.0"
+  },
+  {
+    "digest": "sha256:4a7cbdb7054b1dd6e466067129be9577b495ff69d02064913e1723405db0df76",
+    "name": "resolve-pkg-maps",
+    "size": 5194,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:2460004412100eea8e96b98f14d3dfb4e22a6628654e5431d14f974c6201ca18",
+    "name": "reusify",
+    "size": 4683,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:2a483ee02e5a21b59b63a29bca162e6aa2cd8fafb474261040c3d8538a1f067c",
+    "name": "rope-sequence",
+    "size": 5305,
+    "version": "1.3.4"
+  },
+  {
+    "digest": "sha256:6ba231f5377e0b18ef7ab0c65ca895708e21f1abff5999b24629436b0ff77ac8",
+    "name": "run-parallel",
+    "size": 2813,
+    "version": "1.2.0"
+  },
+  {
+    "digest": "sha256:cc051bfa6b425a60a94cfc2378bf2fa496570820cc62e2f24e979601b054ff99",
+    "name": "safe-array-concat",
+    "size": 6542,
+    "version": "1.1.3"
+  },
+  {
+    "digest": "sha256:53f5165c3816909c74218dcc0f47999523cf0c64069fb893b89ab9a088deec25",
+    "name": "safe-push-apply",
+    "size": 4053,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:e92ad20e8549ef06adab664f8a6e9c0a349e38f34c9548ebb526f24f7d8cf12e",
+    "name": "safe-regex-test",
+    "size": 5064,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:1bbc5d3401d25b848a2a76d4f8f77d99cc95cdff6db054483a7d4067c279d72a",
+    "name": "scheduler",
+    "size": 10015,
+    "version": "0.26.0"
+  },
+  {
+    "digest": "sha256:1f171e02961618ffffbd2133a9cda279524b896acce1d2d26f01ba7ce1439991",
+    "name": "scroll-into-view-if-needed",
+    "size": 10579,
+    "version": "3.0.10"
+  },
+  {
+    "digest": "sha256:3c9b042a38e099cbd00a9bd792042aefb62a70b3f0f1ba1a3cbddf07e5eb1230",
+    "name": "semver",
+    "size": 19093,
+    "version": "6.3.1"
+  },
+  {
+    "digest": "sha256:b49572086d1e04c9a014cafc232685cc74570320d4e7091c2e30a7138c8522bd",
+    "name": "semver",
+    "size": 28442,
+    "version": "7.7.3"
+  },
+  {
+    "digest": "sha256:a339df70dfa3507a3fe2137464915212d69a9585d201c253b90f0c13fd952b4a",
+    "name": "set-function-length",
+    "size": 5784,
+    "version": "1.2.2"
+  },
+  {
+    "digest": "sha256:9240e77a97e0532e6eeee5a46df853cf4aa858e2c98c22dd1ffdac8177033ef3",
+    "name": "set-function-name",
+    "size": 6437,
+    "version": "2.0.2"
+  },
+  {
+    "digest": "sha256:0e78ebcf75963063993ea6691459133fe8a3f6082904817597c188fb47f70bc7",
+    "name": "set-proto",
+    "size": 4194,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:460712506f9df808cf25bc2ba15be828bfa9179bd31b6ca47a9db624980026c3",
+    "name": "sharp",
+    "size": 119719,
+    "version": "0.34.5"
+  },
+  {
+    "digest": "sha256:9acba5bd18a51e9cdf5898380e4df63f803e1844def64ae1a46f88cff86d556e",
+    "name": "shebang-command",
+    "size": 1506,
+    "version": "2.0.0"
+  },
+  {
+    "digest": "sha256:fedbabaa6db26c6be0183f82777dfa852d59a62f8885de93bd32ebc28758958f",
+    "name": "shebang-regex",
+    "size": 1503,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:a2c0f7fd6b161890ccaf10174d9edcd27d811d6907d256a08596d510dcc801cf",
+    "name": "shepherd.js",
+    "size": 341556,
+    "version": "15.0.0"
+  },
+  {
+    "digest": "sha256:8493e77b990b242efebd824d0912df161bf640fc75071d5bc844ce0d7706a485",
+    "name": "side-channel",
+    "size": 7750,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:58074eb0c2ebc8aca9945cdbe405dbed0b43106ae5265879b7049424b27d1ccd",
+    "name": "side-channel-list",
+    "size": 5659,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:3b256b6421300bcc962d891b1588fd4b64e84e339b9c29f78c61b72f2a7116d6",
+    "name": "side-channel-map",
+    "size": 5280,
+    "version": "1.0.1"
+  },
+  {
+    "digest": "sha256:3b2a54f0c5e7ad898c8f0ffda2a6805fb2cc5d68f53addf0b4a9ec0db9d0d06e",
+    "name": "side-channel-weakmap",
+    "size": 5442,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:6c63587ef4b42e7ff0b7b064666a702a78dd572550186b76290ab107b3277d26",
+    "name": "simple-swizzle",
+    "size": 2219,
+    "version": "0.2.4"
+  },
+  {
+    "digest": "sha256:f126a6f9fca487a43219d8cb8c3a955279187a966119d548eb5cd47e999d4853",
+    "name": "source-map-js",
+    "size": 35340,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:4aa15e229c6c7d70805789e5480ab4762e028e7ee5cf2368aa723eb666fd04e9",
+    "name": "stable-hash",
+    "size": 2483,
+    "version": "0.0.5"
+  },
+  {
+    "digest": "sha256:c30017f9d125d9d2fec5915a600184e727491ed7c278a7cea6f5342c47f32ac8",
+    "name": "stop-iteration-iterator",
+    "size": 4949,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:250bc4027c715c9d6756518705f253b776aa3f221c419bf118ebe4696442f939",
+    "name": "string.prototype.includes",
+    "size": 5514,
+    "version": "2.0.1"
+  },
+  {
+    "digest": "sha256:168bd276736852c56240e761be0fba3b35d46fdea6ed899b29b50e7ed658592c",
+    "name": "string.prototype.matchall",
+    "size": 11515,
+    "version": "4.0.12"
+  },
+  {
+    "digest": "sha256:7c9722f7b40900fb00af848060892f1e2ee77ab744bdbe20410a9bdc9f09b00b",
+    "name": "string.prototype.repeat",
+    "size": 3638,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:7d26fdcacb81f23ebb485e44984619f507339427641b1fef3c18e41e30938f2b",
+    "name": "string.prototype.trim",
+    "size": 11013,
+    "version": "1.2.10"
+  },
+  {
+    "digest": "sha256:3b1ac57b02a853efbdd47a3ed1db4a6f5ff561a08166755f13f987396e238900",
+    "name": "string.prototype.trimend",
+    "size": 8088,
+    "version": "1.0.9"
+  },
+  {
+    "digest": "sha256:bcc9cb52ebf0175ee1c79904516ea8a287e1e3de6dc3d3a77e92f8d76b82fb0e",
+    "name": "string.prototype.trimstart",
+    "size": 7820,
+    "version": "1.0.8"
+  },
+  {
+    "digest": "sha256:48094c11a1f7faa867eb6919c09380232ce9b6d61fb3c43618ca6235b6013ee2",
+    "name": "strip-bom",
+    "size": 1736,
+    "version": "3.0.0"
+  },
+  {
+    "digest": "sha256:0213fe6b1c1c470cf5c60ffca0d362142117c8e303ffbcabbd9a4c4700b6ceed",
+    "name": "strip-json-comments",
+    "size": 2847,
+    "version": "3.1.1"
+  },
+  {
+    "digest": "sha256:42484b6c98ce658ee672927a3f7b9ac8920dfff3e406c01fbd62e2a8761bb7f9",
+    "name": "styled-jsx",
+    "size": 156474,
+    "version": "5.1.6"
+  },
+  {
+    "digest": "sha256:f16acafd1634624e60c24a5538004c4e168c82607f10dbe28395e9df3e7d5e4a",
+    "name": "supports-color",
+    "size": 3210,
+    "version": "7.2.0"
+  },
+  {
+    "digest": "sha256:97da1160af5344534182e72502978374d20875d32c6071cd2dae997be604f7f9",
+    "name": "supports-preserve-symlinks-flag",
+    "size": 3810,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:2ba2d9ff05c4c916ef383b9506adba97f2017ddda7419fbbd150f86b1ffb723d",
+    "name": "tailwind-merge",
+    "size": 162325,
+    "version": "3.4.0"
+  },
+  {
+    "digest": "sha256:044090f6337c277c70ed9a65eda456ac2a022376d71ec713ed2ae997d3b85950",
+    "name": "tailwind-variants",
+    "size": 12286,
+    "version": "3.2.2"
+  },
+  {
+    "digest": "sha256:dfc907dd7fa5ae59ffafad99d06c5919e9db7ecb6b0dafcc05d263dd0f1c8ee2",
+    "name": "tailwindcss",
+    "size": 155121,
+    "version": "4.1.7"
+  },
+  {
+    "digest": "sha256:7f21107de460a37d5d0af5ecc44b1c632137e92cdb843e870f724235da215529",
+    "name": "tailwindcss-animate",
+    "size": 4049,
+    "version": "1.0.7"
+  },
+  {
+    "digest": "sha256:dac0c6502e8da5b256d5be04ffb69ba8d83543e4a2711c9620349c9d7b2e9d0b",
+    "name": "tapable",
+    "size": 11386,
+    "version": "2.3.0"
+  },
+  {
+    "digest": "sha256:87355a4cb10e7e7cdb4326e3e3c89232eaf5266d0792b998a396ddf6c11502bb",
+    "name": "tar",
+    "size": 199242,
+    "version": "7.5.7"
+  },
+  {
+    "digest": "sha256:b991f5effd373dfbd952107fcd08f5a41725c9167d1796d8989fd34a8c1c29dd",
+    "name": "tinyglobby",
+    "size": 7740,
+    "version": "0.2.15"
+  },
+  {
+    "digest": "sha256:a63a255ec20a935c3a3334a6645f9245db36e2319ddf1eb6bc0eab2bfe5b42d7",
+    "name": "to-regex-range",
+    "size": 7479,
+    "version": "5.0.1"
+  },
+  {
+    "digest": "sha256:96d0f1aea75f8e9965513fcb762daba2548a088ce2d6ed6193c9edbaca248c75",
+    "name": "ts-api-utils",
+    "size": 51777,
+    "version": "2.1.0"
+  },
+  {
+    "digest": "sha256:e6971309e1cf11ec90c75b539116f3cf28e2732d429641ea7a019ead7970f48f",
+    "name": "tsconfig-paths",
+    "size": 44053,
+    "version": "3.15.0"
+  },
+  {
+    "digest": "sha256:66f635d5eeabae44807534976913a102cf615b9a045368359c9f79ae6ee2119e",
+    "name": "tslib",
+    "size": 18477,
+    "version": "2.8.1"
+  },
+  {
+    "digest": "sha256:8035d10cc48e2692358ac06cbadfa795279aaf6b3c04f29bd322f6df09513f8e",
+    "name": "type-check",
+    "size": 6779,
+    "version": "0.4.0"
+  },
+  {
+    "digest": "sha256:0feb415846d1ae52a89710494bfbabdef311988d9a239a29fa917d6663e561ad",
+    "name": "typed-array-buffer",
+    "size": 5117,
+    "version": "1.0.3"
+  },
+  {
+    "digest": "sha256:87d365ce179ad49d093c33a3ddb7c52b371a1bc27f11428e01e46f7f5bafc3d4",
+    "name": "typed-array-byte-length",
+    "size": 6319,
+    "version": "1.0.3"
+  },
+  {
+    "digest": "sha256:a71eaca038e299792b2d0315dd6a19850a0c21b05d709073f5efbee10877e4f7",
+    "name": "typed-array-byte-offset",
+    "size": 6633,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:64258413d6a031e2d8cc97802687d3c7605ffba41aaefd36874e563b0508f5d5",
+    "name": "typed-array-length",
+    "size": 8167,
+    "version": "1.0.7"
+  },
+  {
+    "digest": "sha256:72e75dbeb92c2e6eb9a34cb59d74fab5c2ee6f32a0324a89405f6165d5a08374",
+    "name": "typescript",
+    "size": 4250436,
+    "version": "5.8.3"
+  },
+  {
+    "digest": "sha256:1dd44be9e68f90af5e1ec67dd7dea1a5fc5c604a4b5cd53842e6dece53d51aa7",
+    "name": "unbox-primitive",
+    "size": 7004,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:cfa1a9a5e18988850e548f4f6b629c58da32dc32bebb116e58ea301e516fd16d",
+    "name": "undici-types",
+    "size": 21020,
+    "version": "6.21.0"
+  },
+  {
+    "digest": "sha256:042dbdf5a54c95b8ac25afc2c585d55820f22cb3320b40dd90ef9ce67abfea19",
+    "name": "unrs-resolver",
+    "size": 10843,
+    "version": "1.11.1"
+  },
+  {
+    "digest": "sha256:6bafda00d4356a4df5d0463b4e4ad45ebc9f438bfede793e218a9f9f7c6844c3",
+    "name": "update-browserslist-db",
+    "size": 5240,
+    "version": "1.2.3"
+  },
+  {
+    "digest": "sha256:5612de52afe83da73e66b519e83aa56aa81151c844b90bcf8e045df5ecec8d2d",
+    "name": "uri-js",
+    "size": 132003,
+    "version": "4.4.1"
+  },
+  {
+    "digest": "sha256:f1c0efff7a48011a8ad317c555fd043ef6e427c78b00ca2d438682958d880600",
+    "name": "use-callback-ref",
+    "size": 9288,
+    "version": "1.3.3"
+  },
+  {
+    "digest": "sha256:e96570f537b0911cfcfdacb026d5680df679edd4747602d027ad451412501cae",
+    "name": "use-composed-ref",
+    "size": 1997,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:331c0a474c75659a60904212a5e4468e02756689ae38d15e06896d6e6b4050d4",
+    "name": "use-isomorphic-layout-effect",
+    "size": 2864,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:8d94c40d509de14aea2901616beac444e12d63a39f3e9df54226fa21627f1d00",
+    "name": "use-latest",
+    "size": 2400,
+    "version": "1.3.0"
+  },
+  {
+    "digest": "sha256:06e3040fe38ac958402bbda2cd640b556786048b6bd3d97900eec1d80702c0f8",
+    "name": "use-sidecar",
+    "size": 11241,
+    "version": "1.1.3"
+  },
+  {
+    "digest": "sha256:4f003b4c39114ca6a6989033ae2013a583fbd4073ee40badb7dd9cbacc1af3ae",
+    "name": "use-sync-external-store",
+    "size": 4198,
+    "version": "1.6.0"
+  },
+  {
+    "digest": "sha256:79a1de983c1b393180c47456d6b73caab278a00ea6e37d5c6675f2dcdec2a3e5",
+    "name": "util-deprecate",
+    "size": 2246,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:05d21484026d1f2dd842c843181e391e66d60f1d5dff292d562c3f40302dab36",
+    "name": "w3c-keyname",
+    "size": 2970,
+    "version": "2.2.8"
+  },
+  {
+    "digest": "sha256:a13adf5fddeb769655edce551e81fbb11904b9c9be76d95e41da8c4c499d4edc",
+    "name": "which",
+    "size": 4496,
+    "version": "2.0.2"
+  },
+  {
+    "digest": "sha256:ce9a5c3b02e59b8d016a2ee39d26d088720142e62870731cf988af18e2696751",
+    "name": "which-boxed-primitive",
+    "size": 6732,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:fbd210f350082bf46b765b06f0d52bff687f54003987a04e2903c4096abf9c1e",
+    "name": "which-builtin-type",
+    "size": 9377,
+    "version": "1.2.1"
+  },
+  {
+    "digest": "sha256:79a4a124b0c8ce71bb1bf1572c1c4ade2af6c21a08db59109b545f7570724554",
+    "name": "which-collection",
+    "size": 7277,
+    "version": "1.0.2"
+  },
+  {
+    "digest": "sha256:1fd51b846e5c7e250561e7b480269c03945fc0bb3535a119b28fab19397bd515",
+    "name": "which-typed-array",
+    "size": 13133,
+    "version": "1.1.20"
+  },
+  {
+    "digest": "sha256:d0d7cc3b19863faa09d3822d1386b6b62ccc4551f7190ffaa25c792bbaf59dec",
+    "name": "word-wrap",
+    "size": 4409,
+    "version": "1.2.5"
+  },
+  {
+    "digest": "sha256:7c9d43dbab7cab3b3133b0e6a5af14014482285316b39ec9f508efadd9ebce95",
+    "name": "yallist",
+    "size": 9821,
+    "version": "5.0.0"
+  },
+  {
+    "digest": "sha256:c772bceca58f20f0ea08ac6121ba385f55db715cd3c2c46b2b38d06d3c6129f1",
+    "name": "yocto-queue",
+    "size": 2765,
+    "version": "0.1.0"
+  },
+  {
+    "digest": "sha256:5240b7736397aa0e8442d290dea0ce7a6dd324c986e1a8644ff91bf61864e863",
+    "name": "zustand",
+    "size": 52378,
+    "version": "4.5.7"
+  }
+]

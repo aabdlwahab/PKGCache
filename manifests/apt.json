@@ -1,0 +1,578 @@
+[
+  {
+    "digest": "sha256:83c3e20b53e1fbd84d764c3ba27d26a0376e361ae5d7fb37120196934dd87424",
+    "name": "binutils",
+    "size": 64980,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:ab314134f43a0891a48f69a9bc33d825da748fa5e0ba2bebb7a5c491b026f1a0",
+    "name": "binutils-common",
+    "size": 2486664,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:2d7ea8a570d768224d7f2424abbe6f373d2154865a1fa7f56c80d43ecf492521",
+    "name": "binutils-x86-64-linux-gnu",
+    "size": 2245848,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:a63db920f7aa1857a57beab185423deffb6111fa09437a99bbb4ef724fb7ba78",
+    "name": "cpp",
+    "size": 6836,
+    "version": "12.2.0-3"
+  },
+  {
+    "digest": "sha256:fedbb98e877adde83c983c6071537ea25ac52b277ac6e4637d85025949ca1454",
+    "name": "cpp-12",
+    "size": 9767788,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:e1b7edaa74085515f1837dbae792a9561de91c4b7ceab612807c72951a5af115",
+    "name": "curl",
+    "size": 315708,
+    "version": "7.88.1-10+deb12u14"
+  },
+  {
+    "digest": "sha256:d85e296212cc54d93e5371c93c4473dd8e3c254a59bd75b5598a8627b02da34e",
+    "name": "curl",
+    "size": 269848,
+    "version": "8.14.1-2+deb13u3"
+  },
+  {
+    "digest": "sha256:bb63b0fb2797e2a3a294dab8a02614930c557ec1f4ea96637c244b8b5f87e630",
+    "name": "gcc",
+    "size": 5216,
+    "version": "12.2.0-3"
+  },
+  {
+    "digest": "sha256:b46f33cc2ec245e435e043807038cecf4b201ef004800e9dfc1455240360e49d",
+    "name": "gcc-12",
+    "size": 19268852,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:e7ac5d797d7d438a130674a8e463530f06aa02ecf919ca054d75eaa2f7849ec7",
+    "name": "libasan8",
+    "size": 2192652,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:fbd4e154a6b444229ea002cc209df099209c0adc09102e5fd21239a3d2b55e2d",
+    "name": "libatomic1",
+    "size": 9376,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:fcf55b99e5f8a78f3c8ce9b6957f1024f394cf20c196b100d308a57e43547710",
+    "name": "libbinutils",
+    "size": 572104,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:563b4caec1aa5e876bd3355b36e7a38e1484baf5a293b48d1e8bd22db786e4d7",
+    "name": "libbrotli1",
+    "size": 275248,
+    "version": "1.0.9-2+b6"
+  },
+  {
+    "digest": "sha256:0fb79f88db210afbd69282ab9649e525f393ec6950ca34da1a6b359250b8d7db",
+    "name": "libbrotli1",
+    "size": 306624,
+    "version": "1.1.0-2+b7"
+  },
+  {
+    "digest": "sha256:bb31cc8b40f962a85b2cec970f7f79cc704a1ae4bad24257a822055404b2c60b",
+    "name": "libbsd0",
+    "size": 117416,
+    "version": "0.11.7-2"
+  },
+  {
+    "digest": "sha256:f61d923b703401023bec2ac3d9d1c9ad7341930fbe11736f7f5ef64b489d03c4",
+    "name": "libc-dev-bin",
+    "size": 48056,
+    "version": "2.36-9+deb12u14"
+  },
+  {
+    "digest": "sha256:0218fc2befcd784c1b0c6292c0a137ce89fad054efaa579ad083bee0f2c01aae",
+    "name": "libc6-dev",
+    "size": 1903668,
+    "version": "2.36-9+deb12u14"
+  },
+  {
+    "digest": "sha256:4ee6009633003f47de98333ea7f7d8835ec563ae2ac4f30251dbfee04d75d46b",
+    "name": "libcc1-0",
+    "size": 41736,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:e1feff126b3e8b3a7b18087e88681469b70d8f6d1b7c4e4b89d98577e1a2fdd7",
+    "name": "libcom-err2",
+    "size": 25036,
+    "version": "1.47.2-3+b11"
+  },
+  {
+    "digest": "sha256:81ccd29130f75a9e3adabc80e61921abff42f76761e1f792fa2d1bb69af7f52f",
+    "name": "libcrypt-dev",
+    "size": 118144,
+    "version": "4.4.33-2"
+  },
+  {
+    "digest": "sha256:ef1dfcf22de41ea90ebd3d505447ccccd999e96b85aa777a1d7d981dc3b347aa",
+    "name": "libctf-nobfd0",
+    "size": 153384,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:3fb7b6f326be3fae4a87a3d33b9269bd06c1e4346a24bd737f265067e3b7427f",
+    "name": "libctf0",
+    "size": 89796,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:7a203bc59523e510aa776f1b5b1798c8f65ea58be1c1f5e35f99b5e3c988f0df",
+    "name": "libcurl4",
+    "size": 391508,
+    "version": "7.88.1-10+deb12u14"
+  },
+  {
+    "digest": "sha256:0cf846c4c59d319734e6f14e9ddccb7b56c3f8d966200a2a75e343274491dceb",
+    "name": "libcurl4t64",
+    "size": 390880,
+    "version": "8.14.1-2+deb13u3"
+  },
+  {
+    "digest": "sha256:d720259380a84f2ffc6fe516eff5cbe9c8a005138e8d6a5748747ba4b3404a82",
+    "name": "libgcc-12-dev",
+    "size": 2437204,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:18a8bdfd91c7e3bcb01719d55a2b56849c7160b34f1f52b1c4fdfdd41bf1352b",
+    "name": "libgnutls30t64",
+    "size": 1469024,
+    "version": "3.8.9-3+deb13u4"
+  },
+  {
+    "digest": "sha256:48fec46bda7f5b1638b9e959889bfbc20491247d402d120bb152687eb48143d7",
+    "name": "libgomp1",
+    "size": 115772,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:a3c4092d84f19d13caf90f3c96eec53db8819f0e3a5247434944d71ed75fa53d",
+    "name": "libgprofng0",
+    "size": 812120,
+    "version": "2.40-2"
+  },
+  {
+    "digest": "sha256:d8b87aea91b956b416c01a28c44ff6228315ae3b73de40acddac3dc5043607d2",
+    "name": "libgssapi-krb5-2",
+    "size": 135168,
+    "version": "1.20.1-2+deb12u5"
+  },
+  {
+    "digest": "sha256:30847c1fde4240567d7ed3aeab4f655dd591203758b857e85e824045aae70299",
+    "name": "libgssapi-krb5-2",
+    "size": 138356,
+    "version": "1.21.3-5+deb13u1"
+  },
+  {
+    "digest": "sha256:9d111d7e07104f7b9cc284d32e811ab01f376613f163b0580fbd7b61440ff669",
+    "name": "libice-dev",
+    "size": 67052,
+    "version": "1.0.10-1"
+  },
+  {
+    "digest": "sha256:452796e565c9d42386bd59990000ae9c37d85e142e00ee2b14df0787e2bbf970",
+    "name": "libice6",
+    "size": 58540,
+    "version": "1.0.10-1"
+  },
+  {
+    "digest": "sha256:90b039bcdc4578f8e1c4935adf8dbb525e36a164deefdbbb8c45bac347d48278",
+    "name": "libidn2-0",
+    "size": 109096,
+    "version": "2.3.8-2"
+  },
+  {
+    "digest": "sha256:ebff0b2f8b220c74224197523019366e97ee4770d464bebc48e4865114e4da0e",
+    "name": "libisl23",
+    "size": 683060,
+    "version": "0.25-1.1"
+  },
+  {
+    "digest": "sha256:0ed5b35dfd1346cccbf065408ec789db6c44c1d0a16ae84533411dea09632979",
+    "name": "libitm1",
+    "size": 26140,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:3fc9742f9f1a37bcb9931df6074b4d1483419ef832ad5349f47323e75fc27864",
+    "name": "libjansson4",
+    "size": 40788,
+    "version": "2.14-2"
+  },
+  {
+    "digest": "sha256:7b6e47d15c5c9cdcd456137533d8308aeba608a54cec73b28bd59bfc4b54cf06",
+    "name": "libk5crypto3",
+    "size": 79712,
+    "version": "1.20.1-2+deb12u5"
+  },
+  {
+    "digest": "sha256:7da07ee674b47f1f0be7cc89317c25310086a1f1761217d0f72e6ae2c5a69b84",
+    "name": "libk5crypto3",
+    "size": 81152,
+    "version": "1.21.3-5+deb13u1"
+  },
+  {
+    "digest": "sha256:cfac89e6a7a54ff3c6a4f843310e25efeddaa771baeae470bd98bd588c373563",
+    "name": "libkeyutils1",
+    "size": 8808,
+    "version": "1.6.3-2"
+  },
+  {
+    "digest": "sha256:0b11ad17be0300b63ad4eeb4c6450fed24d34b7b740f23e5363dcb29ee6d5eba",
+    "name": "libkeyutils1",
+    "size": 9456,
+    "version": "1.6.3-6"
+  },
+  {
+    "digest": "sha256:c90801be09701af221b54dd502a59cb378b7284ff31e480738baca317d2f7653",
+    "name": "libkrb5-3",
+    "size": 332280,
+    "version": "1.20.1-2+deb12u5"
+  },
+  {
+    "digest": "sha256:47d71d6a7f2e59b9bae5f89602397594805113b95889ad18fa703cd53abafc97",
+    "name": "libkrb5-3",
+    "size": 326056,
+    "version": "1.21.3-5+deb13u1"
+  },
+  {
+    "digest": "sha256:8b9c05f2d8d461a10d657b118f572af5bf8fd6c8f93dcef81e852c5ab0f428ab",
+    "name": "libkrb5support0",
+    "size": 33212,
+    "version": "1.20.1-2+deb12u5"
+  },
+  {
+    "digest": "sha256:3a0acd8b37955c0e102c756b52c97df2a31f67b96453c35dab70df218d309117",
+    "name": "libkrb5support0",
+    "size": 33124,
+    "version": "1.21.3-5+deb13u1"
+  },
+  {
+    "digest": "sha256:4b6c30f6554149c594628d945edc6003f0eea8d0cc1341638c0e71375db147ed",
+    "name": "libldap-2.5-0",
+    "size": 183248,
+    "version": "2.5.13+dfsg-5"
+  },
+  {
+    "digest": "sha256:60069e4a550ca890113fa89d3001417781b18e146ec5d637d31e368dec9909bd",
+    "name": "libldap2",
+    "size": 193576,
+    "version": "2.6.10+dfsg-1"
+  },
+  {
+    "digest": "sha256:d234ab339c0ba31a4fb44e2334cf5a8d15b87f2c2f9e74fadfaa877f92dcf22a",
+    "name": "liblsan0",
+    "size": 969300,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:d7f79544790e44f9b0c8cb9034a18c58d37f8702a15f32539050718679e52f80",
+    "name": "libmpc3",
+    "size": 51480,
+    "version": "1.3.1-1"
+  },
+  {
+    "digest": "sha256:37b7a2b4e78890b6a074777f27b96c84f58e81558ba08410c2b6c0ca4a4ad77b",
+    "name": "libmpfr6",
+    "size": 700900,
+    "version": "4.2.0-1"
+  },
+  {
+    "digest": "sha256:5a5736cee57e51c1baed869979e6ecdbc6495e939e33203d6cfe3b6e5a149e3f",
+    "name": "libnghttp2-14",
+    "size": 72404,
+    "version": "1.52.0-1+deb12u3"
+  },
+  {
+    "digest": "sha256:896cb217537c09251fb909b8541349010ac279d802d871e98c06a62a2c67ce2c",
+    "name": "libnghttp2-14",
+    "size": 76188,
+    "version": "1.64.0-1.1+deb13u1"
+  },
+  {
+    "digest": "sha256:388e4c33b72829cbf0d098afdc8539fa5ba7458eddb077f5538fdb4d5538716b",
+    "name": "libnghttp3-9",
+    "size": 67656,
+    "version": "1.8.0-1"
+  },
+  {
+    "digest": "sha256:bb81a188c119cd7fdebae723cbc95887b6c549b2fe4fb7e268a9c8846444da99",
+    "name": "libnsl-dev",
+    "size": 66436,
+    "version": "1.3.0-2"
+  },
+  {
+    "digest": "sha256:c0d83437fdb016cb289436f49f28a36be44b3e8f1f2498c7e3a095f709c0d6f8",
+    "name": "libnsl2",
+    "size": 39480,
+    "version": "1.3.0-2"
+  },
+  {
+    "digest": "sha256:784bf2063e166c8bc851a32623b74ebd85c499043a9d57c5bbd64fa63447f45a",
+    "name": "libp11-kit0",
+    "size": 425240,
+    "version": "0.25.5-3"
+  },
+  {
+    "digest": "sha256:4f0d35610204e4e754b057748719744114621f2f6f4202d846c314860a981afb",
+    "name": "libpsl5",
+    "size": 58684,
+    "version": "0.21.2-1"
+  },
+  {
+    "digest": "sha256:59d42bb1f9ebc0d1776fe616efb08a7a8568b05982e00f70b03c63863db768ab",
+    "name": "libpsl5t64",
+    "size": 57188,
+    "version": "0.21.2-1.1+b1"
+  },
+  {
+    "digest": "sha256:54632f160e1e8a43656a87195a547391038c4ca0f53291b849cd4457ba5dfde9",
+    "name": "libpthread-stubs0-dev",
+    "size": 5344,
+    "version": "0.4-1"
+  },
+  {
+    "digest": "sha256:3f0c9a4c730da2fdab001cae596625438598fd2996d29d888feeb4c1cdc9011f",
+    "name": "libquadmath0",
+    "size": 144616,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:e1f69020dc2c466e421ec6a58406b643be8b5c382abf0f8989011c1d3df91c87",
+    "name": "librtmp1",
+    "size": 60824,
+    "version": "2.4+20151223.gitfa8646d.1-2+b2"
+  },
+  {
+    "digest": "sha256:93baa2004cbe6c8721b9e81beed078612540aef120970b4751305c51c6697368",
+    "name": "librtmp1",
+    "size": 58840,
+    "version": "2.4+20151223.gitfa8646d.1-2+b5"
+  },
+  {
+    "digest": "sha256:11ee190ad39f8d7af441d2c8347388b9449434c73acc67b4b372445ac4152efa",
+    "name": "libsasl2-2",
+    "size": 59712,
+    "version": "2.1.28+dfsg-10"
+  },
+  {
+    "digest": "sha256:66e49d7ae026811b49a0050f18b0325960a2625ffd1ff60d91b7844a815fa9d2",
+    "name": "libsasl2-2",
+    "size": 57512,
+    "version": "2.1.28+dfsg1-9"
+  },
+  {
+    "digest": "sha256:3ac4fd6cbe3b3b06e68d24b931bf3eb9385b42f15604a37ed25310e948ca0ee6",
+    "name": "libsasl2-modules-db",
+    "size": 20336,
+    "version": "2.1.28+dfsg-10"
+  },
+  {
+    "digest": "sha256:a5c38659fbd62c33c6d9bfa2be43e75a572d1818531aad32dd74d0a58cc4bd19",
+    "name": "libsasl2-modules-db",
+    "size": 19768,
+    "version": "2.1.28+dfsg1-9"
+  },
+  {
+    "digest": "sha256:2ff8641d3217dc1a0f26514f5d8de2009669423a4aa0db46b3df564a8b367026",
+    "name": "libsm-dev",
+    "size": 37956,
+    "version": "1.2.3-1"
+  },
+  {
+    "digest": "sha256:22a420890489023346f30fecef14ea900a0788e7bf959ef826aabb83944fccfb",
+    "name": "libsm6",
+    "size": 35108,
+    "version": "1.2.3-1"
+  },
+  {
+    "digest": "sha256:d20a3ee34fa84ad8bd381e8be6e9c2c2ea32347cff5e1169c10e978d43f54f24",
+    "name": "libssh2-1",
+    "size": 178704,
+    "version": "1.10.0-3+b1"
+  },
+  {
+    "digest": "sha256:7cd32dd28148c672f156d1d4ae56d6129bf776980bc6abb4f27c5714c190b958",
+    "name": "libssh2-1t64",
+    "size": 244608,
+    "version": "1.11.1-1"
+  },
+  {
+    "digest": "sha256:89be24b41bff568ee6e7caf5680a3d808e80315ed92e407056ce0fa7a5bda025",
+    "name": "libssl3",
+    "size": 2036016,
+    "version": "3.0.20-1~deb12u2"
+  },
+  {
+    "digest": "sha256:296509910b09cfa62608818bd55423bbd27c0542d8176d612afe03521882e830",
+    "name": "libtasn1-6",
+    "size": 49880,
+    "version": "4.20.0-2"
+  },
+  {
+    "digest": "sha256:3e3ef129b4bf61513144236e15e1b4ec57fa5ae3dc8a72137abdbefb7a63af85",
+    "name": "libtirpc-common",
+    "size": 14048,
+    "version": "1.3.3+ds-1"
+  },
+  {
+    "digest": "sha256:03326473eed54ffa27efae19aa5d6aeb402930968f869f318445513093691d55",
+    "name": "libtirpc-dev",
+    "size": 191428,
+    "version": "1.3.3+ds-1"
+  },
+  {
+    "digest": "sha256:2a46d5a5e9486da11ffeff5740931740d6deae4f92cd6098df060dc5dff1e1c7",
+    "name": "libtirpc3",
+    "size": 85192,
+    "version": "1.3.3+ds-1"
+  },
+  {
+    "digest": "sha256:06906663d644a75a1a836382ecd80b61461129c06f02935ce408b25809f6c958",
+    "name": "libtsan2",
+    "size": 2196972,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:744f52adf00ffd45d44806b1c7e802a36bd27e479c9bc8457128fde357faa530",
+    "name": "libubsan1",
+    "size": 883056,
+    "version": "12.2.0-14+deb12u1"
+  },
+  {
+    "digest": "sha256:6dd3490bef06ea1096f32d10766b7e016cf579bfae8451d1b7df15ce05b8aa46",
+    "name": "libunistring5",
+    "size": 476768,
+    "version": "1.3-2"
+  },
+  {
+    "digest": "sha256:d88c973e79fd9b65838d77624142952757e47a6eb1a58602acf0911cf35989f4",
+    "name": "libx11-6",
+    "size": 759544,
+    "version": "1.8.4-2+deb12u2"
+  },
+  {
+    "digest": "sha256:987a848aeb1c358e4186368871b0526f10bb14c6b53214ab3bf8b69abb830191",
+    "name": "libx11-data",
+    "size": 291884,
+    "version": "1.8.4-2+deb12u2"
+  },
+  {
+    "digest": "sha256:8493220d4309af1907a1f2f6eeb204c8103dafcc368394fbc4a0858c28612ff9",
+    "name": "libx11-dev",
+    "size": 836976,
+    "version": "1.8.4-2+deb12u2"
+  },
+  {
+    "digest": "sha256:d1a7f5d484e0879b3b2e8d512894744505e53d078712ce65903fef2ecfd824bb",
+    "name": "libxau-dev",
+    "size": 22912,
+    "version": "1.0.9-1"
+  },
+  {
+    "digest": "sha256:679db1c4579ec7c61079adeaae8528adeb2e4bf5465baa6c56233b995d714750",
+    "name": "libxau6",
+    "size": 19720,
+    "version": "1.0.9-1"
+  },
+  {
+    "digest": "sha256:fdc61332a3892168f3cc9cfa1fe9cf11a91dc3e0acacbc47cbc50ebaa234cc71",
+    "name": "libxcb1",
+    "size": 144052,
+    "version": "1.15-1"
+  },
+  {
+    "digest": "sha256:c078c024114fdada06d3158af1771d7ed8763ab434cfbcbe6a334aa8a9cae358",
+    "name": "libxcb1-dev",
+    "size": 180776,
+    "version": "1.15-1"
+  },
+  {
+    "digest": "sha256:c6733e5f6463afd261998e408be6eb37f24ce0a64b63bed50a87ddb18ebc1699",
+    "name": "libxdmcp-dev",
+    "size": 42158,
+    "version": "1.1.2-3"
+  },
+  {
+    "digest": "sha256:ecb8536f5fb34543b55bb9dc5f5b14c9dbb4150a7bddb3f2287b7cab6e9d25ef",
+    "name": "libxdmcp6",
+    "size": 26344,
+    "version": "1.1.2-3"
+  },
+  {
+    "digest": "sha256:4d1ccc5406d14b47a5bf3a40504d84d731a8efaf7fd971c792283b2279dcbb70",
+    "name": "libxt-dev",
+    "size": 405460,
+    "version": "1.2.1-1.1"
+  },
+  {
+    "digest": "sha256:f736fe003286af34935460662f52d32267703d6a1931580ca01641aedf00e8dd",
+    "name": "libxt6",
+    "size": 186140,
+    "version": "1.2.1-1.1"
+  },
+  {
+    "digest": "sha256:c38e82965d27bfc56e79d0bb8c2261242cd48a31495170d829b1c73352363b37",
+    "name": "linux-libc-dev",
+    "size": 2271880,
+    "version": "6.1.174-1"
+  },
+  {
+    "digest": "sha256:a1a83af8cbd854af887b72ad196b1f4af58387815e21ced1000253a116a46e2a",
+    "name": "make",
+    "size": 395632,
+    "version": "4.3-4.1"
+  },
+  {
+    "digest": "sha256:32ac0692694f8a34cc90c895f4fc739680fb2ef0e2d4870a68833682bf1c81a3",
+    "name": "rpcsvc-proto",
+    "size": 63268,
+    "version": "1.4.3-1"
+  },
+  {
+    "digest": "sha256:b3d9529c34382cc8d2e6cc8299a18536504edbc284b9133ffbe522704865068e",
+    "name": "unzip",
+    "size": 166496,
+    "version": "6.0-28"
+  },
+  {
+    "digest": "sha256:fc97c2f4495eb33a77501c7960928c0d2001e5c4b2aa438f1713e2082c23bacd",
+    "name": "x11-common",
+    "size": 252272,
+    "version": "7.7+23"
+  },
+  {
+    "digest": "sha256:3cab66a6591774188a568f9b54c4e7956f18da76e0e0fc4a779db5f6bcc3f148",
+    "name": "x11proto-dev",
+    "size": 598924,
+    "version": "2022.1-1"
+  },
+  {
+    "digest": "sha256:168345058319094e475a87ace66f5fb6ae802109650ea8434d672117982b5d0a",
+    "name": "xorg-sgml-doctools",
+    "size": 22064,
+    "version": "1.11-1.1"
+  },
+  {
+    "digest": "sha256:9ce1af9464faee0c679348dd11cdf63934c12e734a64e0903692b0cb5af38e06",
+    "name": "xtrans-dev",
+    "size": 98740,
+    "version": "1.4.0-1"
+  }
+]

@@ -1,0 +1,6 @@
+outs:
+- md5: 54a61389bb09e6091837222690726276.dir
+  size: 895315415
+  nfiles: 1401
+  hash: md5
+  path: npm

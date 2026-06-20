@@ -1,0 +1,98 @@
+[
+  {
+    "digest": "sha256:0476769da6d4a45d5b9d4d25bef0d2a5358a34d88ea4aa6bd0c42d657011a681",
+    "name": "dockerhub/chainguard/minio",
+    "size": 63142962,
+    "version": "latest"
+  },
+  {
+    "digest": "sha256:07afc18d8a9706eb9d85c5c5d2752e5270f91bbc2894caeaecb73e4d0f603bf5",
+    "name": "dockerhub/clickhouse/clickhouse-server",
+    "size": 261162875,
+    "version": "latest"
+  },
+  {
+    "digest": "sha256:4bd56332dd45090bff85e089ab0f23a7aabfb8b7b9c08fc3e4db3a939f65f651",
+    "name": "dockerhub/clickhouse/clickhouse-server",
+    "size": 3273584,
+    "version": "sha256:4bd56332dd45090bff85e089ab0f23a7aabfb8b7b9c08fc3e4db3a939f65f651"
+  },
+  {
+    "digest": "sha256:77f2372272fed46a64fcddda95b0fcad71ce4e0ce9f8bac26dc8c39a49d675f0",
+    "name": "dockerhub/langfuse/langfuse",
+    "size": 294148095,
+    "version": "3"
+  },
+  {
+    "digest": "sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716",
+    "name": "dockerhub/library/debian",
+    "size": 28238077,
+    "version": "bookworm-slim"
+  },
+  {
+    "digest": "sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d",
+    "name": "dockerhub/library/docker",
+    "size": 75621093,
+    "version": "28-cli"
+  },
+  {
+    "digest": "sha256:156b55f92e98ccd5ef49578a8cea0df4679826564bad1c9d4ef04462b9f0ded6",
+    "name": "dockerhub/library/node",
+    "size": 57401731,
+    "version": "lts-alpine"
+  },
+  {
+    "digest": "sha256:2203e6282d9e7de7c24d7da234e2a744fb325df366a3fd8ed940e8abbee39527",
+    "name": "dockerhub/library/postgres",
+    "size": 161223456,
+    "version": "17"
+  },
+  {
+    "digest": "sha256:d138439b70b5ec098420541566e210525d398488554ad5aa133c9b4150a2894c",
+    "name": "dockerhub/library/postgres",
+    "size": 5780938,
+    "version": "sha256:d138439b70b5ec098420541566e210525d398488554ad5aa133c9b4150a2894c"
+  },
+  {
+    "digest": "sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9",
+    "name": "dockerhub/library/python",
+    "size": 10373,
+    "version": "3.12-slim"
+  },
+  {
+    "digest": "sha256:76d4b7b6305788c6b4c6a19d6a22a3921bf802e9af4d5e1e5bd771208dba74bf",
+    "name": "dockerhub/library/python",
+    "size": 45431145,
+    "version": "3.12-slim-bookworm"
+  },
+  {
+    "digest": "sha256:33d7c9a245edd95e6703a0addbeaa48fe40c3b3b4783627a72085155462ebfdb",
+    "name": "dockerhub/library/redis",
+    "size": 43595638,
+    "version": "7"
+  },
+  {
+    "digest": "sha256:4a55d0ba577fc91cdf5983498d2fa78811795cef0e23a032c65ec140451d9e80",
+    "name": "dockerhub/library/redis",
+    "size": 2398454,
+    "version": "sha256:4a55d0ba577fc91cdf5983498d2fa78811795cef0e23a032c65ec140451d9e80"
+  },
+  {
+    "digest": "sha256:be400b50812ab2cc908ed78593fda2e51e3b45fe774fa637f1c7b16e68531d95",
+    "name": "dockerhub/pgvector/pgvector",
+    "size": 157687578,
+    "version": "pg17"
+  },
+  {
+    "digest": "sha256:c6954648a3f285c350f34e444a103bf82c401cffb9bf34d3b4fcb2ee6f430b0a",
+    "name": "dockerhub/pgvector/pgvector",
+    "size": 2205,
+    "version": "sha256:c6954648a3f285c350f34e444a103bf82c401cffb9bf34d3b4fcb2ee6f430b0a"
+  },
+  {
+    "digest": "sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58",
+    "name": "ghcr/astral-sh/uv",
+    "size": 2222,
+    "version": "python3.12-bookworm-slim"
+  }
+]

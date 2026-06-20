@@ -1,0 +1,974 @@
+[
+  {
+    "digest": "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8",
+    "name": "aiohappyeyeballs",
+    "size": 15265,
+    "version": "2.6.1"
+  },
+  {
+    "digest": "sha256:b18f31b80d5a33661e08c89e202edabf1986e9b49c42b4504371daeaa11b47c1",
+    "name": "aiohttp",
+    "size": 1767934,
+    "version": "3.13.5"
+  },
+  {
+    "digest": "sha256:3180cf304c5c712d626b9162b195b1db7ddf976a2a25172b35bb2448b890a80d",
+    "name": "aiohttp-cors",
+    "size": 25231,
+    "version": "0.8.1"
+  },
+  {
+    "digest": "sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e",
+    "name": "aiosignal",
+    "size": 7490,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:6b8733129a6224a9a711e17c99b08462dbf7cc9670ba8f2e2ae9af860ceb1953",
+    "name": "alembic",
+    "size": 232990,
+    "version": "1.13.2"
+  },
+  {
+    "digest": "sha256:a5ed4adcf6d8a4cb575f3d759f071b03cd6e5c7618eb796cb52497be25bfe19a",
+    "name": "alembic",
+    "size": 263893,
+    "version": "1.18.4"
+  },
+  {
+    "digest": "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320",
+    "name": "annotated-doc",
+    "size": 5303,
+    "version": "0.0.4"
+  },
+  {
+    "digest": "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53",
+    "name": "annotated-types",
+    "size": 13643,
+    "version": "0.7.0"
+  },
+  {
+    "digest": "sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708",
+    "name": "anyio",
+    "size": 114353,
+    "version": "4.13.0"
+  },
+  {
+    "digest": "sha256:1292b84ee06ac8a2ad8e51c7475aa309245874b61333d97411aab835c4a2f737",
+    "name": "asyncpg",
+    "size": 3575059,
+    "version": "0.30.0"
+  },
+  {
+    "digest": "sha256:aad7a33913fb8bcb5454313377cc330fbb19a0cd5faa7272407d8a0c4257b671",
+    "name": "asyncpg",
+    "size": 3520321,
+    "version": "0.31.0"
+  },
+  {
+    "digest": "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+    "name": "attrs",
+    "size": 67548,
+    "version": "26.1.0"
+  },
+  {
+    "digest": "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8",
+    "name": "backoff",
+    "size": 15148,
+    "version": "2.2.1"
+  },
+  {
+    "digest": "sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a",
+    "name": "certifi",
+    "size": 135707,
+    "version": "2026.4.22"
+  },
+  {
+    "digest": "sha256:3c52e209ba0a4ad7aebe60436a4ab349c39e1e602e8c134221e546902ad25897",
+    "name": "certifi",
+    "size": 134134,
+    "version": "2026.5.20"
+  },
+  {
+    "digest": "sha256:3e17ed538242334bf70832644a32a7aae3d83b57567f9fd60a26257e992b79ba",
+    "name": "cffi",
+    "size": 219572,
+    "version": "2.0.0"
+  },
+  {
+    "digest": "sha256:5649fd1c7bade02f320a462fdefd0b4bd3ce036065836d4f42e0de958038e116",
+    "name": "charset-normalizer",
+    "size": 216589,
+    "version": "3.4.7"
+  },
+  {
+    "digest": "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6",
+    "name": "click",
+    "size": 108274,
+    "version": "8.3.1"
+  },
+  {
+    "digest": "sha256:a2bf429bb3033c89fa4936ffb35d5cb471e3719e1f3c8a7c3fff0b8314305613",
+    "name": "click",
+    "size": 110502,
+    "version": "8.3.3"
+  },
+  {
+    "digest": "sha256:a9381fdda3337fbaba5771991020abc69676afa102646650b759927892875992",
+    "name": "colorful",
+    "size": 201334,
+    "version": "0.5.8"
+  },
+  {
+    "digest": "sha256:4d00e655fcef08aba35ec9610536bfe90267d7ab5ba944f7032549c55a146da1",
+    "name": "contourpy",
+    "size": 362601,
+    "version": "1.3.3"
+  },
+  {
+    "digest": "sha256:bd72e68b06bb1e96913f97dd4901119bc17f39d4586a5adf2d3e47bc2b9d58b5",
+    "name": "cryptography",
+    "size": 4743326,
+    "version": "48.0.0"
+  },
+  {
+    "digest": "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30",
+    "name": "cycler",
+    "size": 8321,
+    "version": "0.12.1"
+  },
+  {
+    "digest": "sha256:9659f7d87e46584a30b5780e43ac7a2143098441670ff0a49d5f9034c54a6c16",
+    "name": "distlib",
+    "size": 469047,
+    "version": "0.4.0"
+  },
+  {
+    "digest": "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2",
+    "name": "distro",
+    "size": 20277,
+    "version": "1.9.0"
+  },
+  {
+    "digest": "sha256:b336fcc2b319958041d2abf9c6c245c1fe6e928c71ada8b688eb723be54cf863",
+    "name": "dlisio",
+    "size": 2216731,
+    "version": "1.0.4"
+  },
+  {
+    "digest": "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+    "name": "et-xmlfile",
+    "size": 18059,
+    "version": "2.0.0"
+  },
+  {
+    "digest": "sha256:0af0447d541867e8db2a6a25c23a8c4bd80e2394ac5529bd87501bbb9e240ca5",
+    "name": "fastapi",
+    "size": 117407,
+    "version": "0.135.2"
+  },
+  {
+    "digest": "sha256:a6e9d7eeada96c93a4d69cb03836b44fa34e2854accb7244a1ece36cd4781c3f",
+    "name": "fastapi",
+    "size": 117683,
+    "version": "0.136.1"
+  },
+  {
+    "digest": "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258",
+    "name": "filelock",
+    "size": 39812,
+    "version": "3.29.0"
+  },
+  {
+    "digest": "sha256:58dc6bb86a78d782f00f9190ca02c119cf5bbe2807536e361e18d42019f877d8",
+    "name": "fonttools",
+    "size": 4999800,
+    "version": "4.63.0"
+  },
+  {
+    "digest": "sha256:494a5952b1c597ba44e0e78113a7266e656b9794eec897b19ead706bd7074383",
+    "name": "frozenlist",
+    "size": 242411,
+    "version": "1.8.0"
+  },
+  {
+    "digest": "sha256:11ef7bb35dab8a394fde6e608221d5cf3e8499401c249bebaeaad760a1a8dec2",
+    "name": "fsspec",
+    "size": 203402,
+    "version": "2026.4.0"
+  },
+  {
+    "digest": "sha256:a85761ba72c444dad5d611c2220633480b2b6be2521eca69cca2dbb3ffd6bfe8",
+    "name": "google-api-core",
+    "size": 173274,
+    "version": "2.30.3"
+  },
+  {
+    "digest": "sha256:6e7449917c599b35126a99ec268ec6880301f2fea41dce198fe8fd83ff642b68",
+    "name": "google-auth",
+    "size": 246071,
+    "version": "2.53.0"
+  },
+  {
+    "digest": "sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed",
+    "name": "googleapis-common-protos",
+    "size": 300631,
+    "version": "1.75.0"
+  },
+  {
+    "digest": "sha256:9d280a7f5c331622c69f97eb167f33577ff2d1df282c41cd15907fc0a3ca198c",
+    "name": "greenlet",
+    "size": 611388,
+    "version": "3.5.0"
+  },
+  {
+    "digest": "sha256:4e78c4ac0d97dc2e569b2f4bcbbb447491167cb358d1a389fc4af71ab6f70411",
+    "name": "grpcio",
+    "size": 6782121,
+    "version": "1.80.0"
+  },
+  {
+    "digest": "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+    "name": "h11",
+    "size": 37515,
+    "version": "0.16.0"
+  },
+  {
+    "digest": "sha256:3531b1823a0e6d77d80f9ed15ca0e00f0d115094f8ac033d5cae88f4564cc949",
+    "name": "hf-xet",
+    "size": 4465986,
+    "version": "1.5.0"
+  },
+  {
+    "digest": "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+    "name": "httpcore",
+    "size": 78784,
+    "version": "1.0.9"
+  },
+  {
+    "digest": "sha256:2c15f37ef679ab9ecc06bfc4e6e8628c32a8e4b305459de7cf6785acd57e4d03",
+    "name": "httptools",
+    "size": 517655,
+    "version": "0.7.1"
+  },
+  {
+    "digest": "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+    "name": "httpx",
+    "size": 73517,
+    "version": "0.28.1"
+  },
+  {
+    "digest": "sha256:48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
+    "name": "huggingface-hub",
+    "size": 566395,
+    "version": "0.36.2"
+  },
+  {
+    "digest": "sha256:048adeaf8c2d788c40fee287673ccaa74c24ffd8dcf09ffa555a2fbb59f10ac8",
+    "name": "idna",
+    "size": 72340,
+    "version": "3.15"
+  },
+  {
+    "digest": "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151",
+    "name": "importlib-metadata",
+    "size": 27865,
+    "version": "8.7.1"
+  },
+  {
+    "digest": "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+    "name": "jinja2",
+    "size": 134899,
+    "version": "3.1.6"
+  },
+  {
+    "digest": "sha256:c1dcfbeb93d9ecd9ca128bbf8910120367777973fa193fb9a39c31237d8df165",
+    "name": "jiter",
+    "size": 353859,
+    "version": "0.14.0"
+  },
+  {
+    "digest": "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713",
+    "name": "joblib",
+    "size": 309071,
+    "version": "1.5.3"
+  },
+  {
+    "digest": "sha256:0ae28c0cd062bbd8b8ecc26d7d164fbbea9652a1a3693f3b956c1eae5145dade",
+    "name": "jsonpatch",
+    "size": 12898,
+    "version": "1.33"
+  },
+  {
+    "digest": "sha256:8ff8b95779d071ba472cf5bc913028df06031797532f08a7d5b602d8b2a488ca",
+    "name": "jsonpointer",
+    "size": 7659,
+    "version": "3.1.1"
+  },
+  {
+    "digest": "sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+    "name": "jsonschema",
+    "size": 90630,
+    "version": "4.26.0"
+  },
+  {
+    "digest": "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+    "name": "jsonschema-specifications",
+    "size": 18437,
+    "version": "2025.9.1"
+  },
+  {
+    "digest": "sha256:bb5136fb5352d3f422df33f0c879a1b0c204004324150cc3b5e3c4f310c9049f",
+    "name": "kiwisolver",
+    "size": 1477934,
+    "version": "1.5.0"
+  },
+  {
+    "digest": "sha256:154e9c30c90b391eba4315296f6bf6b6fac6b058ddea4cc771a10470968fe36f",
+    "name": "langchain",
+    "size": 114345,
+    "version": "1.3.1"
+  },
+  {
+    "digest": "sha256:23cbbdb46e38ddd1dd5247e6167e96013eae74bea4c5949c550809970a9e565c",
+    "name": "langchain-core",
+    "size": 548120,
+    "version": "1.4.0"
+  },
+  {
+    "digest": "sha256:ca2482b136c45fb67c0db84a9817de675e0eb8fb2203a33914c1b7a96f273940",
+    "name": "langchain-openai",
+    "size": 85769,
+    "version": "1.1.9"
+  },
+  {
+    "digest": "sha256:461eb794358f83d5e42635a5797799ffec7b4702314e34edf73ac21e75d3ef79",
+    "name": "langchain-protocol",
+    "size": 6982,
+    "version": "0.0.15"
+  },
+  {
+    "digest": "sha256:a696ac3089a0c8431bf7f1b47b7f6417da311f418dd04ce9ef62d63608fd8797",
+    "name": "langfuse",
+    "size": 481237,
+    "version": "4.6.1"
+  },
+  {
+    "digest": "sha256:03fd5895a8d4b70db1ff63ebc3bacead29dd20cd794a8b1a483e7ec9018f7a65",
+    "name": "langgraph",
+    "size": 234262,
+    "version": "1.2.0"
+  },
+  {
+    "digest": "sha256:8bc2a0466a20c38b865ce6671b42093fd5c041133f32351cae4222e0eeaf7fb5",
+    "name": "langgraph-checkpoint",
+    "size": 56047,
+    "version": "4.1.0"
+  },
+  {
+    "digest": "sha256:51e311747d755b751d5c6b39b0c1446124d3a7643d2515017e6714b323508fc9",
+    "name": "langgraph-prebuilt",
+    "size": 41043,
+    "version": "1.1.0"
+  },
+  {
+    "digest": "sha256:68935bf6f4924eda92617a9e5dfb4f4281197508c648cb9d62ff083907607f9d",
+    "name": "langgraph-sdk",
+    "size": 97028,
+    "version": "0.3.14"
+  },
+  {
+    "digest": "sha256:efc779f9d450dcaf9d97bc8894f4926276509d6e730e05289af9a64debce06ae",
+    "name": "langsmith",
+    "size": 399564,
+    "version": "0.8.5"
+  },
+  {
+    "digest": "sha256:4c0daa5f99d99b505a62ce58144d2512944ac6ee8e620ab251109d8f2a6ca7f8",
+    "name": "lasio",
+    "size": 46477,
+    "version": "0.32"
+  },
+  {
+    "digest": "sha256:8f61569480282dbf557145ce441e4ba888be453c30989f879f0d652e39f53ea9",
+    "name": "mako",
+    "size": 78521,
+    "version": "1.3.12"
+  },
+  {
+    "digest": "sha256:d6dd0be5b5b189d31db7cda48b91d7e0a9795f31430b7f271219ab30f1d3ac9d",
+    "name": "markupsafe",
+    "size": 22947,
+    "version": "3.0.3"
+  },
+  {
+    "digest": "sha256:be5f93a1d21981bfb802ded0d77a0caa92d4342a47d45754fac77e314a506344",
+    "name": "matplotlib",
+    "size": 10031353,
+    "version": "3.11.0"
+  },
+  {
+    "digest": "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+    "name": "mpmath",
+    "size": 536198,
+    "version": "1.3.0"
+  },
+  {
+    "digest": "sha256:372839311ccf6bdaf39b00b61288e0557916c3729529b301c52c2d88842add42",
+    "name": "msgpack",
+    "size": 427556,
+    "version": "1.1.2"
+  },
+  {
+    "digest": "sha256:bfde23ef6ed9db7eaee6c37dcec08524cb43903c60b285b172b6c094711b3961",
+    "name": "multidict",
+    "size": 256322,
+    "version": "6.7.1"
+  },
+  {
+    "digest": "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762",
+    "name": "networkx",
+    "size": 2068504,
+    "version": "3.6.1"
+  },
+  {
+    "digest": "sha256:685681e956fc8dcb75adc6ff26694e1dfd738b24bd8d4696c51ca0110157f912",
+    "name": "numpy",
+    "size": 16645703,
+    "version": "2.4.5"
+  },
+  {
+    "digest": "sha256:90f9849678c75fe7afa2d348ac842c168b0a4d3d61919687216dfc547976d853",
+    "name": "numpy",
+    "size": 16645538,
+    "version": "2.4.6"
+  },
+  {
+    "digest": "sha256:814633888b8f3b1ffd6615697c6e4ef93632d08b7c2e28c8c5ef3556e5a10107",
+    "name": "openai",
+    "size": 1303238,
+    "version": "2.37.0"
+  },
+  {
+    "digest": "sha256:a18487ce68bc19900336e0ff4655c5a116daf10c1b3685ece8d971bddad6a864",
+    "name": "opencensus",
+    "size": 128225,
+    "version": "0.11.4"
+  },
+  {
+    "digest": "sha256:073bb0590007af276853009fac7e4bab1d523c3f03baf4cb4511ca38967c6039",
+    "name": "opencensus-context",
+    "size": 5060,
+    "version": "0.1.3"
+  },
+  {
+    "digest": "sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+    "name": "openpyxl",
+    "size": 250910,
+    "version": "3.1.5"
+  },
+  {
+    "digest": "sha256:a22df900e75c76dc08440710e51f52f1aa6b451b429298896023e60db5b3139f",
+    "name": "opentelemetry-api",
+    "size": 69007,
+    "version": "1.41.1"
+  },
+  {
+    "digest": "sha256:558d88f88192a973579910ef6f2c13db47a268d5ec2e53e83e50e74a39a02922",
+    "name": "opentelemetry-api",
+    "size": 61310,
+    "version": "1.42.0"
+  },
+  {
+    "digest": "sha256:10da74dad6a49344b9b7b21b6182e3060373a235fde1528616d5f01f92e66aa9",
+    "name": "opentelemetry-exporter-otlp-proto-common",
+    "size": 18366,
+    "version": "1.41.1"
+  },
+  {
+    "digest": "sha256:92de67f096c9200770f16fbdb63b96fb6061d604b4bc266726d8355caeb864e8",
+    "name": "opentelemetry-exporter-otlp-proto-common",
+    "size": 17328,
+    "version": "1.42.0"
+  },
+  {
+    "digest": "sha256:1a21e8f49c7a946d935551e90947d6c3eb39236723c6624401da0f33d68edcb4",
+    "name": "opentelemetry-exporter-otlp-proto-http",
+    "size": 22673,
+    "version": "1.41.1"
+  },
+  {
+    "digest": "sha256:f2cb9ea5dfac29e91b7b04034ca5a4bfae14b51cb334172c5b42b86a48843324",
+    "name": "opentelemetry-exporter-otlp-proto-http",
+    "size": 21792,
+    "version": "1.42.0"
+  },
+  {
+    "digest": "sha256:7a0b8a6402e107e1f93e38f074a668797e1103936b189561959531a67ffeba55",
+    "name": "opentelemetry-exporter-prometheus",
+    "size": 13278,
+    "version": "0.62b1"
+  },
+  {
+    "digest": "sha256:0496713b804d127a4147e32849fbaf5683fac8ee98550e8e7679cd706c289720",
+    "name": "opentelemetry-proto",
+    "size": 72076,
+    "version": "1.41.1"
+  },
+  {
+    "digest": "sha256:2c0716a37e5c12efef37cbd01906d649b7fb85c85ac687518d0bd28527c6498e",
+    "name": "opentelemetry-proto",
+    "size": 71779,
+    "version": "1.42.0"
+  },
+  {
+    "digest": "sha256:edee379c126c1bce952b0c812b48fe8ff35b30df0eecf17e98afa4d598b7d85d",
+    "name": "opentelemetry-sdk",
+    "size": 180213,
+    "version": "1.41.1"
+  },
+  {
+    "digest": "sha256:ec4a4f69e15220b3d7bccd93217aac745682bb6435b9381f7bb44cb7e07b4f2b",
+    "name": "opentelemetry-sdk",
+    "size": 170879,
+    "version": "1.42.0"
+  },
+  {
+    "digest": "sha256:cf506938103d331fbb78eded0d9788095f7fd59016f2bda813c3324e5a74a93c",
+    "name": "opentelemetry-semantic-conventions",
+    "size": 231620,
+    "version": "0.62b1"
+  },
+  {
+    "digest": "sha256:1f3962732b04f43e4fef28173c9a3615b8847b4b2d6386fdc085361b29875ab9",
+    "name": "opentelemetry-semantic-conventions",
+    "size": 203712,
+    "version": "0.63b0"
+  },
+  {
+    "digest": "sha256:be4fa4f0af7fa18951f7ab3fc2148e223af211bf03f59e1c6034ec3f97f21d61",
+    "name": "orjson",
+    "size": 134014,
+    "version": "3.11.9"
+  },
+  {
+    "digest": "sha256:58d379d72b6c5e964851c77cfedfb386e474adee4fd39791c2c5d9efb53505cc",
+    "name": "ormsgpack",
+    "size": 212569,
+    "version": "1.12.2"
+  },
+  {
+    "digest": "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759",
+    "name": "packaging",
+    "size": 65451,
+    "version": "24.2"
+  },
+  {
+    "digest": "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+    "name": "packaging",
+    "size": 100195,
+    "version": "26.2"
+  },
+  {
+    "digest": "sha256:6dc0b3fd2169c9157deed50b4d519553a3655c8c6a96027136d654592be973a9",
+    "name": "pandas",
+    "size": 10894600,
+    "version": "3.0.3"
+  },
+  {
+    "digest": "sha256:549d45f7a18593783d5eec609ea1684a724ba8405c4cb182a0b2b08aeff04e08",
+    "name": "pgvector",
+    "size": 27441,
+    "version": "0.4.2"
+  },
+  {
+    "digest": "sha256:62f5409336adb0663b7caa0da5c7d9e7bdbaae9ce761d34669420c2a801b2780",
+    "name": "pillow",
+    "size": 7087215,
+    "version": "12.2.0"
+  },
+  {
+    "digest": "sha256:e61adb1d5e5cb3441b4b7710bea7e4c12250ca49439228cc1021c00dcfac0917",
+    "name": "platformdirs",
+    "size": 21348,
+    "version": "4.9.6"
+  },
+  {
+    "digest": "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1",
+    "name": "prometheus-client",
+    "size": 64154,
+    "version": "0.25.0"
+  },
+  {
+    "digest": "sha256:6f328175a2cde1f0ff2c4ed8ce968b9dcfb55f3a7153f39e2957ed994da13476",
+    "name": "propcache",
+    "size": 61639,
+    "version": "0.5.2"
+  },
+  {
+    "digest": "sha256:a630604310899e73c59ec302e5765c058d412b2f090b9c79c8822589f14955b8",
+    "name": "proto-plus",
+    "size": 50410,
+    "version": "1.28.0"
+  },
+  {
+    "digest": "sha256:e9db7e292e0ab79dd108d7f1a94fe31601ce1ee3f7b79e0692043423020b0593",
+    "name": "protobuf",
+    "size": 323436,
+    "version": "6.33.6"
+  },
+  {
+    "digest": "sha256:644d3973fe26908c73d4be746074f6e5224b03c1101d302d9a53bf565ad64907",
+    "name": "psycopg",
+    "size": 197934,
+    "version": "3.2.3"
+  },
+  {
+    "digest": "sha256:64a607e630d9f4b2797f641884e52b9f8e239d35943f51bef817a384ec1678fe",
+    "name": "psycopg-binary",
+    "size": 4188374,
+    "version": "3.2.3"
+  },
+  {
+    "digest": "sha256:9fe06d93e72f1c048e731a2e3e7854a5bfaa58fc736068df90b352cefe66f03f",
+    "name": "psycopg2-binary",
+    "size": 4274917,
+    "version": "2.9.12"
+  },
+  {
+    "digest": "sha256:aeb0323409199c785f730645e9f4bb7a7b9ca2c481f2c331a55642b5d13fa52f",
+    "name": "py-spy",
+    "size": 2936518,
+    "version": "0.4.2"
+  },
+  {
+    "digest": "sha256:a80184d120f0864a52a073acc6fc642847d0be408e7c7252f31390c0f4eadcde",
+    "name": "pyasn1",
+    "size": 83997,
+    "version": "0.6.3"
+  },
+  {
+    "digest": "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a",
+    "name": "pyasn1-modules",
+    "size": 181259,
+    "version": "0.4.2"
+  },
+  {
+    "digest": "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992",
+    "name": "pycparser",
+    "size": 48172,
+    "version": "3.0"
+  },
+  {
+    "digest": "sha256:45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+    "name": "pydantic",
+    "size": 472262,
+    "version": "2.13.4"
+  },
+  {
+    "digest": "sha256:926c9541b14b12b1681dca8a0b75feb510b06c6341b70a8e500c2fdcff837cce",
+    "name": "pydantic-core",
+    "size": 2094516,
+    "version": "2.46.4"
+  },
+  {
+    "digest": "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
+    "name": "pyparsing",
+    "size": 122781,
+    "version": "3.3.2"
+  },
+  {
+    "digest": "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427",
+    "name": "python-dateutil",
+    "size": 229892,
+    "version": "2.9.0.post0"
+  },
+  {
+    "digest": "sha256:ed188687ebb3b82c01a17cd5ac62fc94d9f6487a7f1a0f9dfe89753fec91039c",
+    "name": "python-discovery",
+    "size": 33185,
+    "version": "1.3.1"
+  },
+  {
+    "digest": "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a",
+    "name": "python-dotenv",
+    "size": 22101,
+    "version": "1.2.2"
+  },
+  {
+    "digest": "sha256:80bab7bfc629882493af4aa31a4cfa43a4c57c83813253626916b8c7ada83476",
+    "name": "pyyaml",
+    "size": 767542,
+    "version": "6.0.2"
+  },
+  {
+    "digest": "sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc",
+    "name": "pyyaml",
+    "size": 807870,
+    "version": "6.0.3"
+  },
+  {
+    "digest": "sha256:14f46363e9b4cf0c1c8b4d8623ec337c5bd408377831b5e5b50067930137bbca",
+    "name": "ray",
+    "size": 72370424,
+    "version": "2.53.0"
+  },
+  {
+    "digest": "sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+    "name": "referencing",
+    "size": 26766,
+    "version": "0.37.0"
+  },
+  {
+    "digest": "sha256:dd2810d22146b6d838acc5ec15602cb6b47920aa4e33015df3868eedfd20bab8",
+    "name": "regex",
+    "size": 801239,
+    "version": "2026.5.9"
+  },
+  {
+    "digest": "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+    "name": "requests",
+    "size": 73075,
+    "version": "2.34.2"
+  },
+  {
+    "digest": "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06",
+    "name": "requests-toolbelt",
+    "size": 54481,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:47f236970bccb2233267d89173d3ad2703cd36a0e2a6e92d0560d333871a3d23",
+    "name": "rpds-py",
+    "size": 394080,
+    "version": "0.30.0"
+  },
+  {
+    "digest": "sha256:dac7252938f0696ddea46f5e855dd3138444e82236e3be475f54929f0c510d48",
+    "name": "safetensors",
+    "size": 507152,
+    "version": "0.7.0"
+  },
+  {
+    "digest": "sha256:a0bcfe4d0d14aec44921545fd2af2338c7471de9cb701f1da4c9d85906ab847a",
+    "name": "scikit-learn",
+    "size": 8931904,
+    "version": "1.8.0"
+  },
+  {
+    "digest": "sha256:02ae3b274fde71c5e92ac4d54bc06c42d80e399fec704383dcd99b301df37458",
+    "name": "scipy",
+    "size": 35235890,
+    "version": "1.17.1"
+  },
+  {
+    "digest": "sha256:1f55797419e16e7f30cf88ffb3113ce0467f00cfe3f70d5c281730b21769bfc2",
+    "name": "scipy",
+    "size": 35287115,
+    "version": "1.18.0"
+  },
+  {
+    "digest": "sha256:9e65e8f837b4cce93a50cfb95c86f5ca40d156837f2830a38479af20a631ffd6",
+    "name": "segyio",
+    "size": 159974,
+    "version": "1.9.14"
+  },
+  {
+    "digest": "sha256:01050cc4053c49b9f5b78f6980b5a72db3fd3a0abb9169b1792ac83875505ee6",
+    "name": "sentence-transformers",
+    "size": 227071,
+    "version": "3.0.1"
+  },
+  {
+    "digest": "sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6",
+    "name": "setuptools",
+    "size": 1062021,
+    "version": "81.0.0"
+  },
+  {
+    "digest": "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+    "name": "six",
+    "size": 11050,
+    "version": "1.17.0"
+  },
+  {
+    "digest": "sha256:b4de6aebef023aca91cc9fb372052e1343ba3f152de215bd22391a663e3ddd21",
+    "name": "smart-open",
+    "size": 64845,
+    "version": "7.6.1"
+  },
+  {
+    "digest": "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+    "name": "sniffio",
+    "size": 10235,
+    "version": "1.3.1"
+  },
+  {
+    "digest": "sha256:6145afea51ff0af7f2564a05fa95eb46f542919e6523729663a5d285ecb3cf5e",
+    "name": "sqlalchemy",
+    "size": 3303364,
+    "version": "2.0.41"
+  },
+  {
+    "digest": "sha256:3bb9ec6436a820a4c006aad1ac351f12de2f2dbdaad171692ee457a02429b672",
+    "name": "sqlalchemy",
+    "size": 3351937,
+    "version": "2.0.49"
+  },
+  {
+    "digest": "sha256:d3ec55e0bb321692d275455ddfd3df75fff145d009685eb40dc91fc66b03d38b",
+    "name": "starlette",
+    "size": 72651,
+    "version": "1.0.0"
+  },
+  {
+    "digest": "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5",
+    "name": "sympy",
+    "size": 6299353,
+    "version": "1.14.0"
+  },
+  {
+    "digest": "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55",
+    "name": "tenacity",
+    "size": 28926,
+    "version": "9.1.4"
+  },
+  {
+    "digest": "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb",
+    "name": "threadpoolctl",
+    "size": 18638,
+    "version": "3.6.0"
+  },
+  {
+    "digest": "sha256:a116178fa7e1b4065bff05214360373a65cac22f965be7b3f73d00a0dbfe7649",
+    "name": "tiktoken",
+    "size": 1136523,
+    "version": "0.13.0"
+  },
+  {
+    "digest": "sha256:51b7eabb104f46c1c50b486520555715457ae833d5aee9ff6ae853d1130506ff",
+    "name": "tokenizers",
+    "size": 3115426,
+    "version": "0.21.4"
+  },
+  {
+    "digest": "sha256:369cc9fc8cc10cb24143873a0d95438bb8ee257bb80c71989e3ee290e8d72c67",
+    "name": "tokenizers",
+    "size": 3274982,
+    "version": "0.22.2"
+  },
+  {
+    "digest": "sha256:ae4bb28409f5370852bd71af221066236c38d647f780d9b0a7240c330a9c12df",
+    "name": "torch",
+    "size": 192268841,
+    "version": "2.12.1+cpu"
+  },
+  {
+    "digest": "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf",
+    "name": "tqdm",
+    "size": 78374,
+    "version": "4.67.3"
+  },
+  {
+    "digest": "sha256:fd3279633ceb2b777013234bbf0b4f5c2d23c4626b05497691f00cfda55e8a83",
+    "name": "transformers",
+    "size": 10383940,
+    "version": "4.51.3"
+  },
+  {
+    "digest": "sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550",
+    "name": "transformers",
+    "size": 11993498,
+    "version": "4.57.6"
+  },
+  {
+    "digest": "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+    "name": "typing-extensions",
+    "size": 44614,
+    "version": "4.15.0"
+  },
+  {
+    "digest": "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7",
+    "name": "typing-inspection",
+    "size": 14611,
+    "version": "0.4.2"
+  },
+  {
+    "digest": "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+    "name": "urllib3",
+    "size": 131087,
+    "version": "2.7.0"
+  },
+  {
+    "digest": "sha256:2f4b2f5b10f61ce498736b75c4f9fdb16b564ee92649f2ec41505e2584d86ff3",
+    "name": "uuid-utils",
+    "size": 324658,
+    "version": "0.15.0"
+  },
+  {
+    "digest": "sha256:023dc038422502fa28a09c7a30bf2b6991512da7dcdb8fd35fe57cfc154126f4",
+    "name": "uvicorn",
+    "size": 62315,
+    "version": "0.34.0"
+  },
+  {
+    "digest": "sha256:2c5715bc12d1892d84752049f400cd1c3cb018514967fdfeb97640443a6a9432",
+    "name": "uvicorn",
+    "size": 71301,
+    "version": "0.47.0"
+  },
+  {
+    "digest": "sha256:7b5b1ac819a3f946d3b2ee07f09149578ae76066d70b44df3fa990add49a82e4",
+    "name": "uvloop",
+    "size": 4426307,
+    "version": "0.22.1"
+  },
+  {
+    "digest": "sha256:7d5987d8369e098e41406efb780a3d4ca79280097293899e351a6407ee153ab3",
+    "name": "virtualenv",
+    "size": 7594554,
+    "version": "21.3.3"
+  },
+  {
+    "digest": "sha256:1db5d7ae38ff20153d542460752ff397fcf5c96090c1230803713cf3147a6803",
+    "name": "watchfiles",
+    "size": 456812,
+    "version": "1.1.1"
+  },
+  {
+    "digest": "sha256:9b5aca38b67492ef518a8ab76851862488a478602229112c4b0d58d63a7a4d5c",
+    "name": "websockets",
+    "size": 184915,
+    "version": "16.0"
+  },
+  {
+    "digest": "sha256:042ec3bb8f319c147b1301f2393bc19dba6e176b7da446853406d041c36c7828",
+    "name": "wrapt",
+    "size": 88036,
+    "version": "1.17.3"
+  },
+  {
+    "digest": "sha256:13805f0461cba0a857924e70ff91ae6d52d2598f79a884e788db80532614a4a1",
+    "name": "xxhash",
+    "size": 193932,
+    "version": "3.7.0"
+  },
+  {
+    "digest": "sha256:a3d2bff8f37f8d0f96c7ec554d16945050d54462d6e95414babaa18bfafc7f51",
+    "name": "yarl",
+    "size": 100132,
+    "version": "1.23.0"
+  },
+  {
+    "digest": "sha256:0b3596c50a5c700c9cb40ba8d86d9f2cc4807e9bedb06bcdf7fac85633e444dc",
+    "name": "zipp",
+    "size": 10378,
+    "version": "3.23.1"
+  },
+  {
+    "digest": "sha256:5a56ba0db2d244117ed744dfa8f6f5b366e14148e00de44723413b2f3938a902",
+    "name": "zstandard",
+    "size": 5546993,
+    "version": "0.25.0"
+  }
+]

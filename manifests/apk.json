@@ -1,0 +1,122 @@
+[
+  {
+    "digest": "sha256:f0823de7c6d45859aeb6a7facfc5cfbf2dadb83ad4f27c794cb6ecc74e578cee",
+    "name": "brotli-libs",
+    "size": 429608,
+    "version": "1.2.0-r1"
+  },
+  {
+    "digest": "sha256:d2fd350e28b908fdac249180b265ad50bd3d9d572281611c9db16adaf08ef8af",
+    "name": "c-ares",
+    "size": 109146,
+    "version": "1.34.6-r0"
+  },
+  {
+    "digest": "sha256:169f76054fd602e0875ae000259dbbcd2fb62dca13c70acf6709fd9ea0ff3b98",
+    "name": "curl",
+    "size": 175055,
+    "version": "8.20.0-r1"
+  },
+  {
+    "digest": "sha256:4345072fe93cec9ba28178e62f50e47832d3683c26aac4e29012fd6b9f36d592",
+    "name": "gettext",
+    "size": 1994874,
+    "version": "1.0-r0"
+  },
+  {
+    "digest": "sha256:0ced53382a73a55d60daec6d6f4b09cde3726cce34f0eb79278b79f8c669ce82",
+    "name": "gettext-envsubst",
+    "size": 21701,
+    "version": "1.0-r0"
+  },
+  {
+    "digest": "sha256:2b68314ad47dee2f6082732fe2903f137a765ebee15abe0560867190aedd9fb6",
+    "name": "gettext-libs",
+    "size": 380795,
+    "version": "1.0-r0"
+  },
+  {
+    "digest": "sha256:f410026b53c67994f18bc4081443259d71c6f59ce4f4de67f873fe897ca7ca07",
+    "name": "libcurl",
+    "size": 339410,
+    "version": "8.20.0-r1"
+  },
+  {
+    "digest": "sha256:e7204aad00e31d544e0a34eac5a7eb7d3586d2b7b22afd6e5907189c4e0337cc",
+    "name": "libgomp",
+    "size": 153729,
+    "version": "15.2.0-r5"
+  },
+  {
+    "digest": "sha256:7d038ac558dde464964b033ce5126dd2eaf84cc414dc15e77c5424a321d0ebee",
+    "name": "libidn2",
+    "size": 104623,
+    "version": "2.3.8-r0"
+  },
+  {
+    "digest": "sha256:cb03919cba5624b5e8759d04f3b31913b02585355988b914bc31de4746ff5ef6",
+    "name": "libintl",
+    "size": 39537,
+    "version": "1.0-r0"
+  },
+  {
+    "digest": "sha256:cf8caa8a88bc4ce9d9e395567fefaf9ef7fbd55c50ae6155b35c1b58f3755023",
+    "name": "libncursesw",
+    "size": 159438,
+    "version": "6.6_p20260516-r0"
+  },
+  {
+    "digest": "sha256:ec665a344b6e887f00f0a47015cc732c3a281b69e84641dc8662ea234fde6cdb",
+    "name": "libpsl",
+    "size": 54692,
+    "version": "0.21.5-r3"
+  },
+  {
+    "digest": "sha256:3aa6030e603e34d96192742f327c0509f409c6769ce2e7b1463685dede38d714",
+    "name": "libunistring",
+    "size": 743597,
+    "version": "1.4.2-r0"
+  },
+  {
+    "digest": "sha256:4b2f986159c659f014b942fe8a5d70c67af475153ca826c3dd53389eea46a300",
+    "name": "libxml2",
+    "size": 495342,
+    "version": "2.13.9-r2"
+  },
+  {
+    "digest": "sha256:ce83be6d0bd10584a53c3a5868cc1595ce5f0f8e0b621f8f7f70b6144e521fc9",
+    "name": "ncurses-terminfo-base",
+    "size": 22172,
+    "version": "6.6_p20260516-r0"
+  },
+  {
+    "digest": "sha256:7d7705cea464389989d3ca6b9505dbfce3cf25cfca1eeb06709a9909f93f4f11",
+    "name": "nghttp2-libs",
+    "size": 63231,
+    "version": "1.69.0-r0"
+  },
+  {
+    "digest": "sha256:925033d7e56c5a46703ce7327a50c6fe92f5223f00cb3038f4f2ec62325e6154",
+    "name": "nginx",
+    "size": 534004,
+    "version": "1.30.2-r1"
+  },
+  {
+    "digest": "sha256:e2be27046bc933ff6716e5c6e08e301fc0cc3ddb28db1db5510057846238f276",
+    "name": "pcre2",
+    "size": 319843,
+    "version": "10.47-r1"
+  },
+  {
+    "digest": "sha256:95162110d7b67e3e2fd243fa4a43f75170a9c4839c47f86bb5e34340a6dfe930",
+    "name": "xz-libs",
+    "size": 117800,
+    "version": "5.8.3-r0"
+  },
+  {
+    "digest": "sha256:23c6065b0049b2406441564bcf0032515a43f78e80d76fcb85535a3803ef5d4e",
+    "name": "zstd-libs",
+    "size": 376646,
+    "version": "1.5.7-r2"
+  }
+]
