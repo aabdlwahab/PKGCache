@@ -4,7 +4,7 @@
 Reads a seed file (see pkgcache/seed.example.yaml) and drives the *canonical client
 fetch* for each entry THROUGH the local online proxies — so the cache and the
 SQLite ledger populate exactly as a real install would, reusing the real protocol
-code. Run this on the online side before scripts/checkpoint.sh.
+code. Run this on the online side before `pkgops.py checkpoint`.
 
     CACHE_HOST=cache.local ./scripts/prefetch.py seed.yaml
 
@@ -85,7 +85,7 @@ def main(argv: list[str]) -> int:
     do_npm(seed.get("npm", []) or [])
     do_apt(seed.get("apt", []) or [])
     do_apk(seed.get("apk", []) or [])
-    print("==> prefetch complete; run scripts/checkpoint.sh to version the delta.")
+    print("==> prefetch complete; run `pkgops.py checkpoint` to version the delta.")
     return 0
 
 

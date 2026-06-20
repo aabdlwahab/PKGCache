@@ -1,28 +1,28 @@
 import { Segmented } from "./ui";
 import type { Theme, Mode } from "../lib/uiState";
+import type { Commit } from "../lib/types";
+import type { View } from "../hooks/useRoute";
 
 export function TopBar({
   theme,
   onToggleTheme,
+  view,
+  onView,
   mode,
   onMode,
   proxyLabel,
   proxyColor,
   headShort,
-  totalPkgs,
-  totalSize,
-  diskSize,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
+  view: View;
+  onView: (v: View) => void;
   mode: Mode;
   onMode: (m: Mode) => void;
   proxyLabel: string;
   proxyColor: string;
   headShort: string;
-  totalPkgs: number;
-  totalSize: string;
-  diskSize: string | null;
 }) {
   return (
     <header className="topbar">
@@ -36,18 +36,25 @@ export function TopBar({
         <span className="sub">air-gap registry</span>
       </div>
 
-      <div style={{ marginLeft: 4 }}>
-        <Segmented<Mode>
-          variant="mode"
-          modeKind={(v) => (v === "online" ? "on" : "off")}
-          value={mode}
-          onChange={onMode}
-          options={[
-            { value: "online", label: "● online" },
-            { value: "offline", label: "⦸ offline" },
-          ]}
-        />
-      </div>
+      <Segmented<View>
+        value={view}
+        onChange={onView}
+        options={[
+          { value: "overview", label: "overview" },
+          { value: "packages", label: "packages" },
+        ]}
+      />
+
+      <Segmented<Mode>
+        variant="mode"
+        modeKind={(v) => (v === "online" ? "on" : "off")}
+        value={mode}
+        onChange={onMode}
+        options={[
+          { value: "online", label: "● online" },
+          { value: "offline", label: "⦸ offline" },
+        ]}
+      />
 
       <span className="pill" style={{ color: proxyColor }}>
         <span
@@ -63,11 +70,6 @@ export function TopBar({
 
       <span className="spacer" />
 
-      <span className="total" title="cached package payload (docker deduplicated) · total bytes on disk">
-        {totalPkgs} pkgs · {totalSize}
-        {diskSize && <> · {diskSize} on disk</>}
-      </span>
-
       <button className="theme-btn" title="toggle theme" onClick={onToggleTheme}>
         {theme === "dark" ? "☀ light" : "☾ dark"}
       </button>
@@ -75,13 +77,26 @@ export function TopBar({
   );
 }
 
-export function OfflineBanner({ totalPkgs }: { totalPkgs: number }) {
+export function OfflineBanner({
+  totalPkgs,
+  head,
+}: {
+  totalPkgs: number;
+  head: Commit | null;
+}) {
   return (
     <div className="offline-banner">
       <b>OFFLINE / AIR-GAPPED</b>
       <span>
         upstream fetch disabled — cache misses will fail. Serving {totalPkgs} cached
         artifacts only.
+      </span>
+      <span className="spacer" />
+      <span className="offline-ckpt" title={head ? head.subject : undefined}>
+        <span className="offline-ckpt-label">serving checkpoint</span>
+        <span className="offline-ckpt-sha">{head ? head.short : "—"}</span>
+        {head && <span className="offline-ckpt-subj">{head.subject}</span>}
+        {head?.date && <span className="offline-ckpt-date">{head.date}</span>}
       </span>
     </div>
   );

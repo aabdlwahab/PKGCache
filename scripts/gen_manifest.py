@@ -3,9 +3,9 @@
 
 The proxies (pkgcache) record every cached artifact into caches/<eco>/ledger.db at
 commit time, so there's no filesystem walking here anymore — this just reads each
-ledger and emits a deterministic, git-diffable subset into manifests/<eco>.json.
+ledger and emits a deterministic, git-diffable subset into caches/manifests/<eco>.json.
 
-Stdlib-only (sqlite3), so it runs even while checkpoint.sh has the proxies stopped.
+Stdlib-only (sqlite3), so it runs even while a checkpoint has the proxies stopped.
 
     gen_manifest.py            # export manifests/*.json from the ledgers
     gen_manifest.py --rebuild  # first repopulate each ledger from disk (repair),
@@ -20,7 +20,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CACHES = ROOT / "caches"
-MANIFESTS = ROOT / "manifests"
+# Manifests live inside the cache repo (caches/manifests/), not the code repo, so
+# the committed inventory ships and rolls back atomically with the .dvc pointers.
+MANIFESTS = CACHES / "manifests"
 
 # eco -> (cache subdir holding ledger.db, ecosystem value to filter on)
 ECOS = {

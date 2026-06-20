@@ -10,11 +10,26 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MANIFESTS = ROOT / "manifests"
+# The cache state (DVC pointers + manifests + its own git history) lives in its
+# own repo under caches/, separate from this code repo. The History panel reads
+# that repo's log; manifests live inside it.
+CACHE_REPO = ROOT / "caches"
+MANIFESTS = CACHE_REPO / "manifests"
 WEBROOT = pathlib.Path(__file__).resolve().parent
 
 HOST = os.environ.get("UI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("UI_PORT", "8088"))
+
+# git refuses a repo owned by another uid ("dubious ownership"); this UI usually
+# runs as root in a container against a host-owned checkout. We only ever read
+# our own repo, so trust it for every git call via env-based config (no global
+# `git config` needed). Merge onto os.environ when invoking git. The mutating
+# side keeps its own copy of this in ops.py so that module stays self-contained.
+GIT_ENV = {
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "safe.directory",
+    "GIT_CONFIG_VALUE_0": "*",
+}
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import gen_manifest  # noqa: E402  -- defines CACHES + ECOS

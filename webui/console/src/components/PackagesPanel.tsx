@@ -29,11 +29,15 @@ export function PackagesPanel({
   checkpointed,
   endpoints,
   theme,
+  fullHeight = false,
 }: {
   ecosystems: Partial<Record<Eco, Artifact[]>>;
   checkpointed: Partial<Record<Eco, number>>;
   endpoints: Endpoints;
   theme: Theme;
+  // On its own page the panel scrolls as one tall body with sticky group headers
+  // (`full`), instead of each ecosystem scrolling within its own 190px box.
+  fullHeight?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date");
@@ -66,7 +70,7 @@ export function PackagesPanel({
 
   return (
     <Panel
-      className="packages"
+      className={`packages${fullHeight ? " full" : ""}`}
       title="Packages in cache"
       headRight={
         <>

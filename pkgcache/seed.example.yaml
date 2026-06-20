@@ -1,5 +1,5 @@
 # Declarative pre-seed list for scripts/prefetch.py — pull a complete set through
-# the online proxies before crossing the air gap (so checkpoint.sh captures it).
+# the online proxies before crossing the air gap (so a checkpoint captures it).
 # Each entry is fetched via the canonical client path through the local proxy, so
 # the cache + SQLite ledger populate exactly as a real install would.
 

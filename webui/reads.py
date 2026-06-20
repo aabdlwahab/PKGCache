@@ -1,12 +1,13 @@
 """Read-only data for the API: cache contents (live, from the SQLite ledgers),
 the committed manifest, git history, and proxy container status."""
 import json
+import os
 import sqlite3
 import subprocess
 
 import gen_manifest
 
-from config import ECOS, MANIFESTS, ROOT
+from config import CACHE_REPO, ECOS, GIT_ENV, MANIFESTS, ROOT
 from usage import disk_usage
 
 
@@ -101,14 +102,16 @@ def read_packages(params):
 
 def git_history():
     """Recent commits; checkpoints are the ones whose subject starts 'checkpoint:'."""
+    # History = the cache repo's checkpoint log (caches/), NOT the code repo.
+    git_env = {**os.environ, **GIT_ENV}
     try:
         head = subprocess.run(
-            ["git", "rev-parse", "--verify", "HEAD"], cwd=str(ROOT), text=True,
-            capture_output=True, timeout=10,
+            ["git", "rev-parse", "--verify", "HEAD"], cwd=str(CACHE_REPO), text=True,
+            capture_output=True, timeout=10, env=git_env,
         ).stdout.strip()
         raw = subprocess.run(
             ["git", "log", "-50", "--pretty=format:%H%x1f%h%x1f%ad%x1f%s", "--date=short"],
-            cwd=str(ROOT), text=True, capture_output=True, timeout=10,
+            cwd=str(CACHE_REPO), text=True, capture_output=True, timeout=10, env=git_env,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return {"head": "", "commits": []}

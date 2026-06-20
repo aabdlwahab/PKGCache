@@ -164,7 +164,10 @@ class Ledger:
             self._conn.execute("DELETE FROM artifacts")
 
     def checkpoint(self) -> None:
-        """Fold the WAL into the main db so a quiesced snapshot is self-contained."""
+        """Fold the WAL into the main db so the on-disk ledger.db is self-contained.
+
+        Not required for checkpoints (those run live and DVC captures ledger.db
+        together with its -wal, which SQLite recovers on open); used on close()."""
         with self._lock:
             self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 

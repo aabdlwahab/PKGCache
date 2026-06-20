@@ -137,7 +137,7 @@ Cache-on-use fills the cache as real builds run. To deliberately warm a complete
 ```bash
 cp pkgcache/seed.example.yaml seed.yaml      # edit: images / wheels / npm / apt / apk
 CACHE_HOST=HOST CA_CERT=certs/ca.crt ./scripts/prefetch.py seed.yaml
-./scripts/checkpoint.sh "seeded base images + torch"
+python3 scripts/pkgops.py checkpoint "seeded base images + torch"
 ```
 `prefetch.py` drives the canonical client fetch for each entry through the proxies,
 so the cache **and** the ledger populate exactly as a real install would. (Needs
@@ -173,12 +173,12 @@ Each role also exposes its own live progress JSON directly:
 
 ```bash
 # online host
-./scripts/prefetch.py seed.yaml            # (optional) warm a set
-./scripts/checkpoint.sh "added X"          # quiesce → snapshot → manifest → git commit
-./scripts/export-shuttle.sh /media/shuttle # dvc push + git bundle + certs → drive
+./scripts/prefetch.py seed.yaml                       # (optional) warm a set
+python3 scripts/pkgops.py checkpoint "added X"        # live snapshot: manifest → dvc add → git commit
+python3 scripts/pkgops.py export /media/shuttle       # dvc push + git bundle + certs → drive
 
 # air-gapped host
-./scripts/import-airgap.sh /media/shuttle  # git pull + dvc pull + checkout + certs
+python3 scripts/pkgops.py import /media/shuttle       # git pull + dvc pull + checkout + certs
 OFFLINE=1 docker compose --profile offline up -d
 ```
 

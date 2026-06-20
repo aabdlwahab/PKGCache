@@ -1,15 +1,8 @@
-# Cache contents are versioned by DVC, never committed directly to git.
-# Only the .dvc pointers (and the manifests) belong in git.
-/caches/docker/
-/caches/npm/
-/caches/pip/
-/caches/apt/
-
-# ...but keep the empty dirs around so the proxies have somewhere to mount.
-!/caches/docker/.gitkeep
-!/caches/npm/.gitkeep
-!/caches/pip/.gitkeep
-!/caches/apt/.gitkeep
+# The cache state lives in its OWN git + DVC repo under caches/ (separate from
+# this code repo): the DVC pointers, manifests, .dvc store and the cached bytes
+# all belong to that repo, never to the code history. Ignore the whole tree —
+# including its nested .git/.dvc — so checkpoints can never touch code history.
+/caches/
 
 # Shuttle/transfer artifacts should never live in the repo.
 *.bundle

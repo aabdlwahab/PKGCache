@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-/** Persisted string state (theme/skin/mode). Falls back gracefully if
+/** Persisted string state (theme/mode/view). Falls back gracefully if
  *  localStorage is unavailable (private mode, sandboxed iframe). */
 export function useLocalStorage<T extends string>(
   key: string,

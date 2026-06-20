@@ -13,6 +13,11 @@
 .col.history { flex: 1 1 380px; }
 .spacer { flex: 1; }
 
+/* Activity row (Downloads + Recent): mirror the bottom row's split so the
+   vertical gutter between the two columns lines up across both rows. */
+.panel.activity-main { flex: 1.2 1 460px; min-width: 0; }
+.panel.activity-side { flex: 1 1 380px; min-width: 0; }
+
 /* ---- panels ------------------------------------------------------------ */
 .panel {
   background: var(--panel); border: 1px solid var(--line);
@@ -71,7 +76,6 @@
 .wordmark .a { color: var(--accent); }
 .wordmark .f { color: var(--fg); }
 .sub { color: var(--muted); font-size: 12px; }
-.total { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .theme-btn {
   display: flex; align-items: center; gap: 6px; padding: 5px 11px;
   background: var(--inset); color: var(--fg2); border: 1px solid var(--line);
@@ -85,7 +89,40 @@
   font-size: 12.5px; font-family: var(--mono);
 }
 .offline-banner b { font-weight: 600; }
-.offline-banner span { opacity: 0.85; }
+.offline-banner > span { opacity: 0.85; }
+/* Loud "current checkpoint" readout — what the air-gapped host is actually serving. */
+.offline-banner > .offline-ckpt {
+  display: inline-flex; align-items: baseline; gap: 8px; opacity: 1;
+  padding: 3px 11px; border: 1px solid var(--bad); border-radius: var(--radius-sm);
+  background: var(--bad-bg);
+}
+.offline-ckpt-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.8; }
+.offline-ckpt-sha { font-size: 14px; font-weight: 700; color: var(--bad); }
+.offline-ckpt-subj {
+  font-size: 12px; font-weight: 600; max-width: 320px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.offline-ckpt-date { font-size: 11px; opacity: 0.7; }
+
+/* ---- health strip (glance layer) --------------------------------------- */
+.health-wrap { padding: 14px 18px 0; }
+.health-grid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px;
+  background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.health-cell { background: var(--panel); padding: 12px 18px; }
+.health-label {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.health-value-row { display: flex; align-items: baseline; gap: 7px; margin-top: 6px; }
+.health-value { font-family: var(--title); font-size: 24px; font-weight: 600; line-height: 1; }
+.health-sub { font-size: 11.5px; color: var(--muted); }
+/* On narrow widths the six cells get cramped; fall back to two rows of three. */
+@media (max-width: 880px) {
+  .health-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 /* ---- search ------------------------------------------------------------ */
 .search {
@@ -131,6 +168,15 @@
 .pkg-table .c-ver { padding: 5px 10px; white-space: nowrap; width: 120px; }
 .pkg-table .c-size { padding: 5px 10px; color: var(--fg2); text-align: right; width: 84px; white-space: nowrap; }
 .pkg-table .c-dig { padding: 5px 14px 5px 10px; color: var(--muted); font-size: 11px; white-space: nowrap; width: 150px; }
+
+/* ---- packages, dedicated full-viewport page --------------------------- */
+.page-packages { padding: 14px 18px; }
+/* One tall scroll body that fills the viewport below the chrome; group headers
+   stick to its top instead of each ecosystem scrolling in its own 190px box.
+   Offset = top bar (~50) + page padding (28) + panel header (~38) + slack. */
+.panel.packages.full .pkg-list { overflow: auto; max-height: calc(100vh - 124px); }
+.panel.packages.full .eco-rows { max-height: none; overflow: visible; }
+.panel.packages.full .eco-header { position: sticky; top: 0; z-index: 2; }
 
 /* ---- downloads --------------------------------------------------------- */
 .dl-item { padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -191,6 +237,52 @@
 .btn-primary { font-weight: 600; padding: 7px 14px; background: var(--accent); color: var(--accent-ink); border: 0; }
 .btn-ghost { font-weight: 500; padding: 7px 13px; background: transparent; color: var(--fg2); border: 1px solid var(--line2); }
 .actions-body { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
+
+/* ---- export range + checkpoint tree ------------------------------------ */
+.export-block { display: flex; flex-direction: column; gap: 8px; }
+.export-block .field-label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
+.export-range { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.export-range b { color: var(--accent); font-weight: 600; }
+
+.ckpt-tree {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--inset); max-height: 188px; overflow: auto;
+}
+.ckpt-node {
+  display: flex; align-items: center; gap: 9px; padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ckpt-node:last-child { border-bottom: 0; }
+/* The graph rail: a vertical line through the dot column, lit when in range. */
+.ckpt-rail { position: relative; width: 22px; align-self: stretch; flex: none; }
+.ckpt-rail::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0;
+  width: 2px; transform: translateX(-50%); background: var(--line2);
+}
+.ckpt-node:first-child .ckpt-rail::before { top: 50%; }
+.ckpt-node:last-child .ckpt-rail::before { bottom: 50%; }
+.ckpt-node.in-range .ckpt-rail::before { background: var(--accent); }
+.ckpt-dot {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 9px; height: 9px; border-radius: 50%; z-index: 1;
+  box-shadow: 0 0 0 3px var(--inset);
+}
+.ckpt-sha { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 52px; flex: none; }
+.ckpt-subj {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--fg2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ckpt-node.in-range .ckpt-subj { color: var(--fg); }
+.ckpt-date { font-family: var(--mono); font-size: 10.5px; color: var(--muted); flex: none; }
+.ckpt-picks { display: inline-flex; gap: 4px; flex: none; }
+.ckpt-pick {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 7px; border: 1px solid var(--line2); border-radius: var(--radius-sm);
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.ckpt-pick:disabled { cursor: not-allowed; opacity: 0.5; }
+.ckpt-pick.active.base { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.ckpt-pick.active.target { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
 /* ---- job console ------------------------------------------------------- */
 .console-card { background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }

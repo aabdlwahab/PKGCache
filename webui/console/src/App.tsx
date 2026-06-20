@@ -7,7 +7,9 @@ import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useClock } from "./hooks/useClock";
 import { usePolling } from "./hooks/usePolling";
 import { useJob } from "./hooks/useJob";
+import { useRoute } from "./hooks/useRoute";
 import { TopBar, OfflineBanner, Footer } from "./components/Chrome";
+import { HealthStrip, type Kpi } from "./components/HealthStrip";
 import { PackagesPanel } from "./components/PackagesPanel";
 import { StoragePanel } from "./components/StoragePanel";
 import { DownloadsPanel } from "./components/DownloadsPanel";
@@ -19,6 +21,7 @@ import { EndpointsPanel } from "./components/EndpointsPanel";
 export default function App() {
   const [theme, setTheme] = useLocalStorage<Theme>("pcc_theme", "dark");
   const [mode, setMode] = useLocalStorage<Mode>("pcc_mode", "online");
+  const [view, setView] = useRoute();
   const now = useClock(1000);
 
   // Reflect theme on <html> so the token stylesheet applies app-wide.
@@ -87,52 +90,140 @@ export default function App() {
   };
 
   const commits: Commit[] = history.data?.commits ?? [];
-  const headShort = commits.find((c) => c.is_head)?.short ?? (history.data?.head ?? "").slice(0, 7);
+  const headCommit = commits.find((c) => c.is_head) ?? null;
+  const headShort = headCommit?.short ?? (history.data?.head ?? "").slice(0, 7);
 
   const rollback = (c: Commit) => {
     if (!busy) start("rollback", { commit: c.hash });
   };
+
+  // ---- health-strip KPIs (the operator's instant glance read) ------------
+  const kpis = useMemo<Kpi[]>(() => {
+    // Hit rate over the recent-pulls window.
+    const pulls = recent.data?.pulls ?? [];
+    const hits = pulls.filter((p) => p.hit).length;
+    const miss = pulls.filter((p) => !p.hit).length;
+    const denom = hits + miss;
+    const hitRate = denom ? Math.round((hits / denom) * 100) : 0;
+    const hitColor =
+      hitRate >= 70 ? "var(--ok)" : hitRate >= 40 ? "var(--warn)" : "var(--bad)";
+
+    // Active downloads across all reachable proxies.
+    const sources = downloads.data?.sources ?? {};
+    let active = 0;
+    for (const eco of ECOS) {
+      for (const it of sources[eco] ?? []) if (it.status === "active") active++;
+    }
+
+    // Artifacts cached since the last checkpoint (uncommitted).
+    let pendingNew = 0;
+    for (const eco of ECOS) {
+      pendingNew += Math.max(0, (ecosystems[eco]?.length ?? 0) - (checkpointed[eco] ?? 0));
+    }
+
+    const proxiesTotal = proxies.data?.roles?.length ?? 4;
+
+    return [
+      { label: "Packages", value: totalPkgs, sub: "5 ecosystems" },
+      { label: "Cache size", value: diskSize ?? totalSize, sub: "on disk" },
+      {
+        label: "Hit rate",
+        value: denom ? `${hitRate}%` : "—",
+        sub: denom ? `last ${denom} pulls` : "no pulls yet",
+        color: denom ? hitColor : "var(--fg)",
+      },
+      {
+        label: "Downloads",
+        value: active,
+        sub: active ? "in progress" : "idle",
+        color: active ? "var(--accent)" : "var(--fg)",
+      },
+      {
+        label: "Uncommitted",
+        value: pendingNew ? `+${pendingNew}` : "clean",
+        sub: pendingNew ? "since checkpoint" : "all committed",
+        color: pendingNew ? "var(--warn)" : "var(--ok)",
+      },
+      {
+        label: "Proxies",
+        value: `${proxiesUp}/${proxiesTotal}`,
+        sub: online ? "up · online" : "up · offline",
+        color: proxyColor,
+      },
+    ];
+  }, [
+    recent.data,
+    downloads.data,
+    ecosystems,
+    checkpointed,
+    proxies.data,
+    totalPkgs,
+    totalSize,
+    diskSize,
+    proxiesUp,
+    online,
+    proxyColor,
+  ]);
 
   return (
     <div className="app">
       <TopBar
         theme={theme}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        view={view}
+        onView={setView}
         mode={effectiveMode}
         onMode={switchMode}
         proxyLabel={proxyLabel}
         proxyColor={proxyColor}
         headShort={headShort}
-        totalPkgs={totalPkgs}
-        totalSize={totalSize}
-        diskSize={diskSize}
       />
 
-      {!online && <OfflineBanner totalPkgs={totalPkgs} />}
+      {view === "overview" ? (
+        <>
+          {!online && <OfflineBanner totalPkgs={totalPkgs} head={headCommit} />}
 
-      <div className="region">
-        <PackagesPanel
-          ecosystems={ecosystems}
-          checkpointed={checkpointed}
-          endpoints={endpoints.data ?? {}}
-          theme={theme}
-        />
-        <div className="col">
-          <StoragePanel fs={usage?.fs} cacheBytes={usage?.disk_total ?? 0} />
-          <DownloadsPanel sources={downloads.data?.sources ?? {}} theme={theme} online={online} />
-          <RecentPanel pulls={recent.data?.pulls ?? []} theme={theme} now={now} />
+          <HealthStrip kpis={kpis} />
+
+          {/* Activity row — Downloads + Recent. Same flex split as the bottom row
+              (1.2 1 460px / 1 1 380px) so the vertical gutters line up exactly. */}
+          <div className="region">
+            <DownloadsPanel
+              className="activity-main"
+              sources={downloads.data?.sources ?? {}}
+              theme={theme}
+              online={online}
+            />
+            <RecentPanel
+              className="activity-side"
+              pulls={recent.data?.pulls ?? []}
+              theme={theme}
+              now={now}
+            />
+          </div>
+
+          <div className="region bottom">
+            <ActionsPanel busy={busy} job={job} commits={commits} onStart={start} onCloseJob={close} />
+            <div className="col history">
+              <HistoryPanel commits={commits} busy={busy} onRollback={rollback} />
+              <StoragePanel fs={usage?.fs} cacheBytes={usage?.disk_total ?? 0} />
+              <EndpointsPanel endpoints={endpoints.data ?? {}} theme={theme} />
+            </div>
+          </div>
+
+          <Footer clock={new Date(now).toLocaleTimeString("en-GB")} />
+        </>
+      ) : (
+        <div className="page-packages">
+          <PackagesPanel
+            fullHeight
+            ecosystems={ecosystems}
+            checkpointed={checkpointed}
+            endpoints={endpoints.data ?? {}}
+            theme={theme}
+          />
         </div>
-      </div>
-
-      <div className="region bottom">
-        <ActionsPanel busy={busy} job={job} onStart={start} onCloseJob={close} />
-        <div className="col history">
-          <HistoryPanel commits={commits} busy={busy} onRollback={rollback} />
-          <EndpointsPanel endpoints={endpoints.data ?? {}} theme={theme} />
-        </div>
-      </div>
-
-      <Footer clock={new Date(now).toLocaleTimeString("en-GB")} />
+      )}
     </div>
   );
 }

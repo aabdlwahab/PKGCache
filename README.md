@@ -132,9 +132,9 @@ package-registry/
 │   ├── index.html             # legacy single-file UI (fallback; superseded by console)
 │   └── console/               # the React + TypeScript SPA (Vite) + nginx Dockerfile
 ├── scripts/                   # the glue we own
-│   ├── checkpoint.sh          # quiesce → snapshot (DVC) → manifest export → git commit
-│   ├── export-shuttle.sh      # dvc push + git bundle + certs → removable drive (online side)
-│   ├── import-airgap.sh       # git pull + dvc pull + checkout + certs (air-gapped side)
+│   ├── pkgops.py              # checkpoint / export / import / rollback / mode — one Python
+│   │                          #   module (generators of log lines); the control UI imports it,
+│   │                          #   operators run it by hand (replaces the old *.sh transfer trio)
 │   ├── gen-certs.sh           # mint the private CA + server cert for in-process HTTPS
 │   ├── gen_manifest.py        # export manifests/<eco>.json from the ledgers (+ --rebuild repair)
 │   └── prefetch.py            # warm the cache from a declarative seed file
@@ -183,8 +183,9 @@ Built once, reused by every handler:
 
 - **`storage.py`** — a **content-addressed blob store** (`blobs/sha256/<aa>/<hex>`)
   plus a **path-safe** layout for index files. Every write is an *atomic
-  temp-in-same-dir → fsync → rename*, so DVC and the checkpoint quiesce never see a
-  partial file. Files are world-readable (`0644`/`0755`). Serving goes through
+  temp-in-same-dir → fsync → rename*, so a checkpoint can hash the cache **live**
+  (no proxy quiesce) and DVC never sees a partial file. In-flight `.part` files are
+  skipped via `.dvcignore`. Files are world-readable (`0644`/`0755`). Serving goes through
   Starlette `FileResponse`, so **HTTP Range (206 / resume / parallel download) is
   handled for free** on every cached file. Orphan `.part` files are GC'd on startup.
 - **`inflight.py`** — a **single-flight** registry keyed per content item. The first
@@ -312,20 +313,21 @@ manifest, and the ledger are versioned in git.
 flowchart LR
   subgraph online["online host"]
     o1["builds fill caches/ on first request\n(or scripts/prefetch.py warms a seed)"]
-    o2["checkpoint.sh\nquiesce -> dvc add -> manifest -> git commit"]
-    o3["export-shuttle.sh\ndvc push + git bundle + certs"]
+    o2["pkgops checkpoint (live)\nmanifest -> dvc add -> git commit"]
+    o3["pkgops export\ndvc push + git bundle + certs"]
   end
   drive[("removable shuttle drive\n(delta only)")]
   subgraph air["air-gapped host"]
-    a1["import-airgap.sh\ngit pull + dvc pull + checkout"]
+    a1["pkgops import\ngit pull + dvc pull + checkout"]
     a2["OFFLINE=1 compose --profile offline up\nserve from cache; misses fail"]
   end
   o1 --> o2 --> o3 --> drive --> a1 --> a2
 ```
 
-- **Checkpoint** = a `git checkout`-able snapshot: quiesce the roles so a blob is
-  never captured without its ledger row, `dvc add` the caches, export the manifest,
-  `git commit`.
+- **Checkpoint** = a `git checkout`-able snapshot, taken **live** (the proxies keep
+  serving): export the manifest, `dvc add` the caches, `git commit`. Atomic
+  temp→rename writes mean DVC never captures a partial blob, so no quiesce/downtime;
+  in-flight `.part` downloads are skipped and land in the next checkpoint.
 - **Transfer** moves only objects the destination lacks (`dvc push`/`pull`); the CA
   cert/key ride the shuttle, not git.
 - **Rollback** = `git checkout <commit> && dvc checkout`.
@@ -380,7 +382,9 @@ flowchart LR
 
 ### 8. Scripts (the glue we own)
 
-`checkpoint.sh` · `export-shuttle.sh` · `import-airgap.sh` · `gen-certs.sh` ·
+`pkgops.py` (the air-gap operations — `checkpoint` · `export` · `import` ·
+`rollback` · `mode` — as one Python module the control UI imports in-process and
+operators run by hand; it orchestrates git/dvc/docker, no bash) · `gen-certs.sh` ·
 `gen_manifest.py` (ledger → manifest export, `--rebuild` repair) · `prefetch.py`
 (warm the cache from a declarative seed file by driving real client pulls through
 the local proxies, so the ledger populates exactly as a real client would).
@@ -392,7 +396,7 @@ the local proxies, so the ledger populates exactly as a real client would).
 **Online host:**
 
 ```bash
-git init && dvc init
+git init                                               # (DVC self-initializes on the first checkpoint)
 ./scripts/gen-certs.sh                                 # mint the CA + in-process TLS cert
 docker compose --profile online up -d                  # bring up the cache (4 roles)
 docker compose --profile online --profile ui up -d     # + the operator console on :8088
@@ -403,14 +407,16 @@ Point build tools at the roles, then version and ship:
 
 ```bash
 # ... builds run; the cache fills on first request ...
-./scripts/checkpoint.sh "added numpy 2.1 + torch 2.3"  # version it
-./scripts/export-shuttle.sh /media/shuttle             # stage the delta
+python3 scripts/pkgops.py checkpoint "added numpy 2.1 + torch 2.3"  # version it
+python3 scripts/pkgops.py export /media/shuttle                     # stage the delta
+# or just the diff between two checkpoints:
+python3 scripts/pkgops.py export /media/shuttle --base <sha> --target <sha>
 ```
 
 **Air-gapped host** (carry the drive across):
 
 ```bash
-./scripts/import-airgap.sh /media/shuttle              # apply the delta
+python3 scripts/pkgops.py import /media/shuttle        # apply the delta
 OFFLINE=1 docker compose --profile offline --profile ui up -d
 ```
 

@@ -1,12 +1,12 @@
 """On-disk cache: path-safe layout, content-addressed blob store, atomic commits,
-and Range-capable serving. World-readable so checkpoint.sh needs no chmod dance.
+and Range-capable serving. World-readable so a checkpoint needs no chmod dance.
 
 Two addressing modes:
   * by relative path  — npm tarballs, pip wheels, apt files (the URL path is the key)
   * content-addressed — OCI blobs/manifests under blobs/sha256/<aa>/<hex>
 
-Every write lands via an atomic temp-in-same-dir → fsync → rename, so DVC and the
-checkpoint quiesce never observe a partial file.
+Every write lands via an atomic temp-in-same-dir → fsync → rename, so a checkpoint
+can hash the cache live (no proxy quiesce) and DVC never observes a partial file.
 """
 from __future__ import annotations
 

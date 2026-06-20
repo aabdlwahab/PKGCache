@@ -1,6 +1,7 @@
-/* Design tokens — ported verbatim from the hi-fi handoff (OKLCH, IBM Plex,
-   two skins × dark/light). Theme is on [data-theme], skin on [data-skin]; both
-   are set on <html> by App from localStorage. */
+/* Design tokens — ported from the hi-fi handoff (OKLCH, IBM Plex). One fixed
+   look: the console typography (IBM Plex Mono, sharp corners, uppercase titles)
+   with the dashboard's blue accent. Theme (dark/light) is on [data-theme], set
+   on <html> by App from localStorage. */
 
 /* ---- self-hosted fonts (air-gap: no CDN) -------------------------------
    Drop the woff2 files in public/fonts/ at build time. If they are absent the
@@ -13,7 +14,6 @@
   font-display: swap;
   src: local("IBM Plex Mono"), url("/fonts/IBMPlexMono.woff2") format("woff2");
 }
-
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100vh; }
 
@@ -50,9 +50,9 @@ html, body, #root { margin: 0; min-height: 100vh; }
   --ok-bg: oklch(0.52 0.15 152 / 0.12); --bad-bg: oklch(0.55 0.20 28 / 0.12); --warn-bg: oklch(0.58 0.13 70 / 0.14);
   --shadow: 0 1px 2px rgba(20, 30, 45, 0.08), 0 8px 22px rgba(20, 30, 45, 0.06);
 }
-/* Single fixed skin: the console typography (IBM Plex Mono, sharp corners,
-   uppercase titles) with the dashboard's blue accent. These are theme-independent,
-   so they live at :root (the [data-theme] blocks above own the color palette). */
+/* The fixed look: console typography (IBM Plex Mono everywhere, sharp corners,
+   UPPERCASE titles) with the dashboard's blue accent. Theme-independent, so it
+   lives at :root — the [data-theme] blocks above own the color palette. */
 :root {
   --ui: "IBM Plex Mono", ui-monospace, monospace;
   --title: "IBM Plex Mono", ui-monospace, monospace;

@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pkgcache console</title>
+    <!-- Apply the persisted theme before first paint so there's no flash of
+         token-less content; App re-applies it after hydration. -->
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("pcc_theme") || "dark";
+      } catch (e) {
+        /* private mode / no storage: keep the markup default */
+      }
+    </script>
     <!-- Inline SVG favicon: dark tile + accent [ ] brackets and a cursor block. -->
     <link
       rel="icon"

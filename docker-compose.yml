@@ -36,7 +36,7 @@ services:
     profiles: ["online", "offline"]
 
   # ---- control UI --------------------------------------------------------
-  # Own profile ("ui"), deliberately NOT in online/offline so checkpoint.sh's
+  # Own profile ("ui"), deliberately NOT in online/offline so a checkpoint's
   # `docker compose stop` never takes it down with the cache. Bring it up
   # alongside a cache profile, e.g.:
   #   docker compose --profile online --profile ui up -d

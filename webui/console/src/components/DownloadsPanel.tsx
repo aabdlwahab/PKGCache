@@ -14,10 +14,12 @@ export function DownloadsPanel({
   sources,
   theme,
   online,
+  className = "",
 }: {
   sources: DownloadsResp["sources"];
   theme: Theme;
   online: boolean;
+  className?: string;
 }) {
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
@@ -34,6 +36,7 @@ export function DownloadsPanel({
 
   return (
     <Panel
+      className={className}
       title="Downloads in progress"
       headRight={
         <>

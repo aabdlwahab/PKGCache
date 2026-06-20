@@ -13,16 +13,19 @@ export function RecentPanel({
   pulls,
   theme,
   now,
+  className = "",
 }: {
   pulls: RecentPull[];
   theme: Theme;
   now: number;
+  className?: string;
 }) {
   const hits = pulls.filter((p) => p.hit).length;
   const miss = pulls.filter((p) => !p.hit).length;
 
   return (
     <Panel
+      className={className}
       title="Recent pulls"
       headRight={
         <>
