@@ -30,6 +30,7 @@ class _Download:
     total: int | None
     downloaded: int = 0
     status: str = "active"  # active | complete | error
+    started: float = field(default_factory=time.time)  # set once — the stable sort key
     updated: float = field(default_factory=time.time)
 
     def as_json(self) -> dict:
@@ -99,6 +100,10 @@ class Progress:
         for dl_id, d in list(self._active.items()):
             if d.status != "active" and now - d.updated > _FINISHED_TTL:
                 del self._active[dl_id]
-        downloads = [d.as_json() for d in self._active.values()]
-        downloads.sort(key=lambda x: x["updated"], reverse=True)
+        # Stable order: oldest-first by start time, so each row holds its slot as it
+        # progresses. (Sorting by last-updated made active rows jump around the panel
+        # as each one received bytes — a download that just got a chunk leapt to the
+        # top.) A finished row simply drops out when it's reaped or filtered.
+        ordered = sorted(self._active.values(), key=lambda d: d.started)
+        downloads = [d.as_json() for d in ordered]
         return {"downloads": downloads, "recent": list(self._recent)}
