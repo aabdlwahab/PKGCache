@@ -14,12 +14,16 @@ Stdlib-only (sqlite3), so it runs even while a checkpoint has the proxies stoppe
 The five logical ecosystems map onto four DB files (apt + apk share one):
 """
 import json
+import os
 import pathlib
 import sqlite3
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CACHES = ROOT / "caches"
+# The cache repo whose ledgers we export. Defaults to the global cache repo
+# (caches/); a per-project checkpoint sets PKGCACHE_MANIFEST_ROOT to that project's
+# repo (caches/projects/<name>/) so its manifest is generated from ITS ledgers.
+CACHES = pathlib.Path(os.environ.get("PKGCACHE_MANIFEST_ROOT") or (ROOT / "caches"))
 # Manifests live inside the cache repo (caches/manifests/), not the code repo, so
 # the committed inventory ships and rolls back atomically with the .dvc pointers.
 MANIFESTS = CACHES / "manifests"
@@ -61,15 +65,16 @@ def rebuild() -> None:
     except ImportError:
         sys.exit("--rebuild needs the pkgcache package importable (pip install ./pkgcache)")
 
-    for role, repo in REPOSITORIES.items():
+    for role, repo_cls in REPOSITORIES.items():
         subdir = {"oci": "docker", "npm": "npm", "pypi": "pip", "apt": "apt"}[role]
         cache_dir = CACHES / subdir
         if not cache_dir.exists():
             continue
-        cfg = Config(role=role, offline=True, cache_root=cache_dir,
+        cfg = Config(role=role, offline=True, project="global", cache_root=cache_dir,
                      host="127.0.0.1", port=0, request_timeout=1)
         core = build_core(cfg)
         core.ledger.clear()
+        repo = repo_cls()
         n = 0
         for rec in repo.rebuild_ledger(cache_dir):
             core.ledger.record(rec)
