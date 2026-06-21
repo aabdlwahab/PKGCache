@@ -33,16 +33,18 @@ Air-gapped host: `OFFLINE=1 docker compose --profile offline --profile ui up -d`
 
 ```bash
 # docker  (dockerhub | ghcr | quay; official images are under library/)
+sudo openssl s_client -showcerts -connect 172.17.21.107:5000 </dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /etc/docker/certs.d/172.17.21.107:5000/ca.crt > /dev/null
+
 docker pull HOST:5000/dockerhub/library/python:3.12-slim
 
 # pip     (root/pypi, or root/pytorch-cu124 etc. for PyTorch wheels)
-pip install --index-url https://HOST:3141/root/pypi/+simple/ --cert ca.crt numpy
+pip install --index-url https://HOST:3141/root/pypi/+simple/ --trusted-host HOST numpy
 
 # uv
-UV_INDEX_URL=https://HOST:3141/root/pypi/+simple/ SSL_CERT_FILE=ca.crt uv pip install numpy
+UV_INDEX_URL=https://HOST:3141/root/pypi/+simple/ uv pip install  --trusted-host Host numpy
 
 # npm
-npm install --registry https://HOST:4873/ --cafile ca.crt left-pad
+npm install --registry https://HOST:4873/ --strict-ssl=false left-pad
 
 # apt     (forward proxy — keep http mirror lines)
 echo 'Acquire::http::Proxy "http://HOST:3142";' | sudo tee /etc/apt/apt.conf.d/01proxy
