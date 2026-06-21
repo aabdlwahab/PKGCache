@@ -76,7 +76,7 @@ class AptRepo:
                 if m.get("last_modified"):
                     headers["If-Modified-Since"] = m["last_modified"]
             except (ValueError, OSError):
-                pass
+                pass  # unreadable/corrupt .meta — revalidate unconditionally below
         try:
             async with self._core.upstream.client.stream("GET", target, headers=headers) as r:
                 if r.status_code == 304 and final.exists():

@@ -29,9 +29,14 @@ from ..core import Core
 from ..core.ledger import ArtifactRecord
 from .common import external_base, normalize_pypi_name, parse_dist_filename
 
-_ATTR_RE = lambda a, name: (m.group(1) if (m := re.search(rf'{name}="([^"]*)"', a)) else None)  # noqa: E731
 _ANCHOR_RE = re.compile(r'<a\s+([^>]*?)href="([^"]+)"([^>]*)>([^<]*)</a>', re.I)
 _JSON_ACCEPT = "application/vnd.pypi.simple.v1+json"
+
+
+def _attr(a: str, name: str) -> str | None:
+    """The value of HTML attribute `name` within the attribute string `a`, or None."""
+    m = re.search(rf'{name}="([^"]*)"', a)
+    return m.group(1) if m else None
 
 
 def _norm_core_metadata(val: object) -> bool | dict:
@@ -199,10 +204,10 @@ def _parse_simple(content: bytes, content_type: str, page_url: str) -> list[dict
         hashes = {}
         if frag.startswith("sha256="):
             hashes["sha256"] = frag[len("sha256="):]
-        rp = _ATTR_RE(attrs, "data-requires-python")
-        cm = _ATTR_RE(attrs, "data-core-metadata")
+        rp = _attr(attrs, "data-requires-python")
+        cm = _attr(attrs, "data-core-metadata")
         if cm is None:
-            cm = _ATTR_RE(attrs, "data-dist-info-metadata")
+            cm = _attr(attrs, "data-dist-info-metadata")
         if cm == "":  # attribute present but no hash → available, hash unknown
             cm = True
         files.append({

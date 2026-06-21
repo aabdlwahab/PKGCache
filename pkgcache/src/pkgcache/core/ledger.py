@@ -19,6 +19,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SCHEMA_VERSION = 1
+# Wait this long for a competing writer before raising SQLITE_BUSY. Generous: the
+# single writer only contends with its own thread-hopped writes and the WAL readers.
+_BUSY_TIMEOUT_MS = 5000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -75,7 +78,7 @@ class Ledger:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.execute(
@@ -129,6 +132,9 @@ class Ledger:
 
     def query(self, ecosystem: str | None = None, q: str | None = None,
               sort: str = "name", page: int = 1, page_size: int = 200) -> list[dict]:
+        # NOTE: the control UI is stdlib-only and can't import this module, so it
+        # reimplements this same artifacts query/sort over the ledger.db files in
+        # webui/reads.py:_ledger_rows. Keep the sort whitelist + column set in sync.
         sort_col = {"name": "name", "size": "size", "date": "cached_at",
                     "version": "version"}.get(sort, "name")
         clauses, args = [], []

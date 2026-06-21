@@ -318,7 +318,7 @@ def _guess_media_type(body: bytes) -> str:
         if mt:
             return mt
     except (ValueError, AttributeError):
-        pass
+        pass  # not JSON / no mediaType — fall back to the default manifest type below
     return "application/vnd.oci.image.manifest.v1+json"
 
 

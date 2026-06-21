@@ -70,7 +70,7 @@ class NpmRepo:
                     tmp.replace(cache_file)
                     return json.loads(r.content)
             except httpx.HTTPError:
-                pass
+                pass  # upstream unreachable/errored — fall back to the cached doc below
         if cache_file.exists():
             return json.loads(cache_file.read_text())
         return None
