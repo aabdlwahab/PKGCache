@@ -4,7 +4,16 @@
 # including its nested .git/.dvc — so checkpoints can never touch code history.
 /caches/
 
-# Shuttle/transfer artifacts should never live in the repo.
+# Host-specific container uid/gid mapping (see .env.example). Never committed.
+/.env
+
+# Project registry: each extra project's allocated ports are host-specific state
+# (managed by the control UI), not source. pkgcache + webui share this file; it is
+# (re)created as projects are created.
+/config/projects.json
+
+# Shuttle staging area (fixed export/import dirs) — local transfer artifacts.
+/shuttle/
 *.bundle
 /dvcstore/
 
