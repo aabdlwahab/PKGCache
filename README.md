@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="package-registry logo" width="92" height="92" />
+</p>
+
 # package-registry — a versioned, air-gap-portable package cache
 
 A single host runs **one Python service** that pull-through-caches four package
