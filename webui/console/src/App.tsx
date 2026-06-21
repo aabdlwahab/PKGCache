@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./lib/api";
-import { ECOS, type Artifact, type Commit, type Eco } from "./lib/types";
+import {
+  ECOS,
+  GLOBAL_PROJECT,
+  type Artifact,
+  type Commit,
+  type Eco,
+  type JobAction,
+} from "./lib/types";
 import { fmtBytes } from "./lib/format";
 import type { Mode, Theme } from "./lib/uiState";
 import { useLocalStorage } from "./hooks/useLocalStorage";
@@ -21,6 +28,7 @@ import { EndpointsPanel } from "./components/EndpointsPanel";
 export default function App() {
   const [theme, setTheme] = useLocalStorage<Theme>("pcc_theme", "dark");
   const [mode, setMode] = useLocalStorage<Mode>("pcc_mode", "online");
+  const [project, setProject] = useLocalStorage<string>("pcc_project", GLOBAL_PROJECT);
   const [view, setView] = useRoute();
   const now = useClock(1000);
 
@@ -31,17 +39,70 @@ export default function App() {
 
   // A bump to force the slower polls to refetch right after a job settles.
   const [refreshKey, setRefreshKey] = useState(0);
-  const { job, busy, start, close } = useJob(() => setRefreshKey((k) => k + 1));
+  const { job, busy, start: rawStart, close } = useJob(() => setRefreshKey((k) => k + 1));
 
-  const manifests = usePolling(api.manifests, 5000, [refreshKey]);
-  const downloads = usePolling(api.downloads, 1500, []);
-  const recent = usePolling(api.recent, 3000, []);
-  const proxies = usePolling(api.proxies, 4000, [refreshKey]);
-  const history = usePolling(api.history, 8000, [refreshKey]);
-  const endpoints = usePolling(api.endpoints, 30000, []);
+  // Every cache op runs against the selected project (mode is instance-wide; the
+  // server ignores `project` there). Scoping it here means panels need no changes.
+  const start = useCallback(
+    (action: JobAction, params: Record<string, string> = {}) =>
+      rawStart(action, { project, ...params }),
+    [rawStart, project],
+  );
+
+  // The project list drives the switcher; refetch after a create/delete (refreshKey).
+  const projects = usePolling(api.projects, 10000, [refreshKey]);
+  const projectList = projects.data?.projects ?? [];
+
+  // All cache views are per-project; re-poll whenever the selection changes.
+  const manifests = usePolling((s) => api.manifests(project, s), 5000, [refreshKey, project]);
+  const downloads = usePolling((s) => api.downloads(project, s), 1500, [project]);
+  const recent = usePolling((s) => api.recent(project, s), 3000, [project]);
+  const proxies = usePolling((s) => api.proxies(project, s), 4000, [refreshKey, project]);
+  const history = usePolling((s) => api.history(project, s), 8000, [refreshKey, project]);
+  const endpoints = usePolling((s) => api.endpoints(project, s), 30000, [project]);
+  const shuttle = usePolling((s) => api.shuttle(project, s), 6000, [refreshKey, project]);
+
+  // Create/select/delete a project from the switcher. Create selects the new one;
+  // deleting the current one falls back to global. The central process binds/drops
+  // the project's ports on its next poll — no container restart.
+  const selectProject = useCallback((p: string) => setProject(p), [setProject]);
+  const createProject = useCallback(
+    async (name: string) => {
+      try {
+        await api.createProject(name);
+        setProject(name);
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        window.alert((e as Error).message);
+      }
+    },
+    [setProject],
+  );
+  const deleteProject = useCallback(
+    async (name: string) => {
+      try {
+        await api.deleteProject(name);
+        if (project === name) setProject(GLOBAL_PROJECT);
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        window.alert((e as Error).message);
+      }
+    },
+    [project, setProject],
+  );
 
   const ecosystems: Partial<Record<Eco, Artifact[]>> = manifests.data?.ecosystems ?? {};
   const checkpointed: Partial<Record<Eco, number>> = manifests.data?.checkpointed ?? {};
+
+  // Artifacts cached since the last checkpoint (uncommitted) — drives the
+  // Checkpoint card's state pill and the "Uncommitted" health KPI.
+  const pendingNew = useMemo(() => {
+    let n = 0;
+    for (const eco of ECOS) {
+      n += Math.max(0, (ecosystems[eco]?.length ?? 0) - (checkpointed[eco] ?? 0));
+    }
+    return n;
+  }, [ecosystems, checkpointed]);
 
   const usage = manifests.data?.usage;
   const { totalPkgs, totalSize, diskSize } = useMemo(() => {
@@ -115,12 +176,6 @@ export default function App() {
       for (const it of sources[eco] ?? []) if (it.status === "active") active++;
     }
 
-    // Artifacts cached since the last checkpoint (uncommitted).
-    let pendingNew = 0;
-    for (const eco of ECOS) {
-      pendingNew += Math.max(0, (ecosystems[eco]?.length ?? 0) - (checkpointed[eco] ?? 0));
-    }
-
     const proxiesTotal = proxies.data?.roles?.length ?? 4;
 
     return [
@@ -154,8 +209,7 @@ export default function App() {
   }, [
     recent.data,
     downloads.data,
-    ecosystems,
-    checkpointed,
+    pendingNew,
     proxies.data,
     totalPkgs,
     totalSize,
@@ -177,6 +231,11 @@ export default function App() {
         proxyLabel={proxyLabel}
         proxyColor={proxyColor}
         headShort={headShort}
+        projects={projectList}
+        project={project}
+        onSelectProject={selectProject}
+        onCreateProject={createProject}
+        onDeleteProject={deleteProject}
       />
 
       {view === "overview" ? (
@@ -203,7 +262,17 @@ export default function App() {
           </div>
 
           <div className="region bottom">
-            <ActionsPanel busy={busy} job={job} commits={commits} onStart={start} onCloseJob={close} />
+            <ActionsPanel
+              busy={busy}
+              job={job}
+              commits={commits}
+              shuttle={shuttle.data}
+              pendingNew={pendingNew}
+              headShort={headShort}
+              headDate={headCommit?.date ?? ""}
+              onStart={start}
+              onCloseJob={close}
+            />
             <div className="col history">
               <HistoryPanel commits={commits} busy={busy} onRollback={rollback} />
               <StoragePanel fs={usage?.fs} cacheBytes={usage?.disk_total ?? 0} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Panel } from "./ui";
-import type { Commit, JobAction, JobStatus } from "../lib/types";
+import { Panel, Segmented } from "./ui";
+import type { Commit, JobAction, JobStatus, ShuttleResp } from "../lib/types";
 
 export interface ActiveJob {
   action: string;
@@ -116,18 +116,25 @@ export function ActionsPanel({
   busy,
   job,
   commits,
+  shuttle,
+  pendingNew,
+  headShort,
+  headDate,
   onStart,
   onCloseJob,
 }: {
   busy: boolean;
   job: ActiveJob | null;
   commits: Commit[];
+  shuttle?: ShuttleResp | null;
+  pendingNew: number;
+  headShort: string;
+  headDate: string;
   onStart: (action: JobAction, params: Record<string, string>) => void;
   onCloseJob: () => void;
 }) {
   const [ckmsg, setCkmsg] = useState("");
-  const [exdrive, setExdrive] = useState("/media/shuttle");
-  const [imdrive, setImdrive] = useState("/media/shuttle");
+  const [exportMode, setExportMode] = useState<"full" | "delta">("full");
   const [baseHash, setBaseHash] = useState("");
   const [targetHash, setTargetHash] = useState("");
 
@@ -137,8 +144,8 @@ export function ActionsPanel({
     [commits],
   );
 
-  // Default the range to "previous checkpoint → HEAD" once history loads, and
-  // drop any selection that no longer exists (e.g. after a rollback).
+  // Default the delta range to "previous checkpoint → HEAD" once history loads,
+  // and drop any selection that no longer exists (e.g. after a rollback).
   useEffect(() => {
     if (checkpoints.length === 0) return;
     const has = (h: string) => checkpoints.some((c) => c.hash === h);
@@ -163,22 +170,35 @@ export function ActionsPanel({
   };
 
   const doExport = () => {
-    if (busy || !exdrive.trim()) return;
-    const params: Record<string, string> = { drive: exdrive.trim() };
-    if (rangeValid) {
-      params.base = baseHash;
-      params.target = targetHash;
-    }
-    onStart("export", params);
+    if (busy) return;
+    // Full = no base (everything, for a fresh machine). Delta = base→target diff.
+    if (exportMode === "delta" && rangeValid) onStart("export", { base: baseHash, target: targetHash });
+    else onStart("export", {});
   };
+
+  // Checkpoint state pill: warn while artifacts are uncommitted, ok once clean.
+  const committed = pendingNew <= 0;
+  const pillLabel = committed ? "all committed" : `+${pendingNew} uncommitted`;
+  const pillStyle = committed
+    ? { color: "var(--ok)", background: "var(--ok-bg)" }
+    : { color: "var(--warn)", background: "var(--warn-bg)" };
+
+  // Air-gap diagram arrow reflects the live transfer direction.
+  const xfering = busy && (job?.action === "export" || job?.action === "import");
+  const xferArrow = xfering ? (job?.action === "export" ? "↦" : "↤") : "⇄";
+  const xferArrowColor = xfering ? "var(--accent)" : "var(--muted)";
 
   const baseShort = checkpoints[baseIdx]?.short ?? "?";
   const targetShort = checkpoints[targetIdx]?.short ?? "?";
+  const exportDir = shuttle?.export_dir ?? "shuttle/out";
+  const importDir = shuttle?.import_dir ?? "shuttle/in";
+  const importReady = !!shuttle?.import_ready;
+  const importCkpts = shuttle?.import_checkpoints ?? [];
 
   return (
     <Panel
       className="actions"
-      title="Checkpoint & Transfer"
+      title="Checkpoint & transfer"
       headRight={
         <>
           <span className="spacer" />
@@ -187,8 +207,16 @@ export function ActionsPanel({
       }
     >
       <div className="actions-body">
-        <div>
-          <label className="field-label">Checkpoint — hash, version &amp; commit the cache (live, no downtime)</label>
+        {/* ---- Checkpoint card ---- */}
+        <div className="xfer-card">
+          <div className="xfer-card-head">
+            <span className="xfer-card-title accent">⎘ Checkpoint</span>
+            <span className="xfer-card-cap">quiesce · hash · commit the cache tree</span>
+            <span className="spacer" />
+            <span className="state-pill" style={pillStyle}>
+              {pillLabel}
+            </span>
+          </div>
           <div className="row-inline">
             <input
               className="input"
@@ -200,58 +228,122 @@ export function ActionsPanel({
               ⎘ Checkpoint
             </button>
           </div>
-        </div>
-
-        <div className="export-block">
-          <label className="field-label">
-            Export delta → shuttle
-            <span className="export-range">
-              {rangeValid ? (
-                <>
-                  diff <b>{baseShort}</b> → <b>{targetShort}</b>
-                </>
-              ) : (
-                "pick a base + target below, or export the full delta"
-              )}
-            </span>
-          </label>
-          <div className="row-inline">
-            <input
-              className="input"
-              value={exdrive}
-              onChange={(e) => setExdrive(e.target.value)}
-              placeholder="/media/shuttle"
-            />
-            <button className="btn btn-ghost" disabled={busy} onClick={doExport}>
-              ↥ Export {rangeValid ? "range" : "all"}
-            </button>
+          <div className="xfer-foot">
+            <span className="dot" style={{ background: "var(--ok)" }} />
+            last: <span className="head-sha">HEAD {headShort || "—"}</span>
+            {headDate && <> · {headDate}</>}
           </div>
-          <CheckpointTree
-            checkpoints={checkpoints}
-            baseHash={baseHash}
-            targetHash={targetHash}
-            onPick={pick}
-            disabled={busy}
-          />
         </div>
 
-        <div>
-          <label className="field-label">Import ← shuttle</label>
+        {/* ---- Shuttle transfer card ---- */}
+        <div className="xfer-card">
+          <div className="xfer-card-head">
+            <span className="xfer-card-title">⇄ Shuttle transfer</span>
+            <span className="xfer-card-cap">move artifacts across the air gap</span>
+          </div>
+
+          {/* Air-gap diagram — arrow shows the live transfer direction. */}
+          <div className="airgap">
+            <div className="airgap-node">
+              <div className="airgap-node-t">▣ pkgcache</div>
+              <div className="airgap-node-s">this cache</div>
+            </div>
+            <div className="airgap-conn">
+              <span className="airgap-label">air gap</span>
+              <div className="airgap-rule" />
+              <span className="airgap-arrow" style={{ color: xferArrowColor }}>
+                {xferArrow}
+              </span>
+            </div>
+            <div className="airgap-node">
+              <div className="airgap-node-t">▤ shuttle</div>
+              <div className="airgap-node-s">removable drive</div>
+            </div>
+          </div>
+
+        {/* ---- Export: writes to the fixed shuttle/out dir ---- */}
+        <div className="export-block">
+          <label className="field-label">Export → shuttle</label>
+          <p className="xfer-note">
+            Writes to <code>{exportDir}</code> — then <b>copy everything in that folder onto your
+            shuttle media</b> and carry it to the other machine.
+          </p>
           <div className="row-inline">
-            <input
-              className="input"
-              value={imdrive}
-              onChange={(e) => setImdrive(e.target.value)}
-              placeholder="/media/shuttle"
+            <Segmented<"full" | "delta">
+              value={exportMode}
+              onChange={setExportMode}
+              options={[
+                { value: "full", label: "full" },
+                { value: "delta", label: "delta" },
+              ]}
             />
+            <span className="spacer" />
             <button
               className="btn btn-ghost"
-              disabled={busy}
-              onClick={() => imdrive.trim() && !busy && onStart("import", { drive: imdrive.trim() })}
+              disabled={busy || (exportMode === "delta" && !rangeValid)}
+              onClick={doExport}
             >
-              ↧ Import
+              {exportMode === "full" ? "↥ Export everything" : `↥ Export ${baseShort} → ${targetShort}`}
             </button>
           </div>
+          {exportMode === "full" ? (
+            <p className="xfer-hint">
+              Full — sends every checkpoint, for a machine that has nothing yet (import there
+              initialises everything).
+            </p>
+          ) : (
+            <>
+              <p className="xfer-hint">
+                Incremental — only the diff between two checkpoints; the other machine must already
+                have the base.
+              </p>
+              <CheckpointTree
+                checkpoints={checkpoints}
+                baseHash={baseHash}
+                targetHash={targetHash}
+                onPick={pick}
+                disabled={busy}
+              />
+            </>
+          )}
+        </div>
+
+        {/* ---- Import: reads the fixed shuttle/in dir ---- */}
+        <div className="export-block">
+          <label className="field-label">Import ← shuttle</label>
+          <p className="xfer-note">
+            <b>Copy your shuttle media's contents into <code>{importDir}</code></b>, then import.
+          </p>
+          {importReady ? (
+            <>
+              <div className="ckpt-tree">
+                {importCkpts.map((c) => (
+                  <div className="ckpt-node" key={c.hash}>
+                    <span className="ckpt-rail">
+                      <span className="ckpt-dot" style={{ background: "var(--accent)" }} />
+                    </span>
+                    <span className="ckpt-sha">{c.short}</span>
+                    <span className="ckpt-subj" title={c.subject}>
+                      {c.subject}
+                    </span>
+                    <span className="ckpt-date">{c.date}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="row-inline">
+                <span className="note">
+                  {importCkpts.length} checkpoint{importCkpts.length === 1 ? "" : "s"} staged
+                </span>
+                <span className="spacer" />
+                <button className="btn btn-primary" disabled={busy} onClick={() => !busy && onStart("import", {})}>
+                  ↧ Import
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="empty">nothing staged in {importDir} — copy your media there first.</div>
+          )}
+        </div>
         </div>
 
         {job && <JobConsole job={job} onClose={onCloseJob} />}

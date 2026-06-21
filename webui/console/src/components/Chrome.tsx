@@ -1,7 +1,59 @@
 import { Segmented } from "./ui";
 import type { Theme, Mode } from "../lib/uiState";
-import type { Commit } from "../lib/types";
+import { GLOBAL_PROJECT, type Commit, type ProjectInfo } from "../lib/types";
 import type { View } from "../hooks/useRoute";
+
+// Pick + manage which project the console is viewing. The global project is always
+// present and can't be deleted; named projects can be created/removed here.
+function ProjectSwitcher({
+  projects,
+  project,
+  onSelect,
+  onCreate,
+  onDelete,
+}: {
+  projects: ProjectInfo[];
+  project: string;
+  onSelect: (p: string) => void;
+  onCreate: (name: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const names = projects.length ? projects : [{ name: GLOBAL_PROJECT } as ProjectInfo];
+  return (
+    <span className="project-switcher" title="project (its own URLs, cache & version control)">
+      <span className="ps-label">proj</span>
+      <select value={project} onChange={(e) => onSelect(e.target.value)}>
+        {names.map((p) => (
+          <option key={p.name} value={p.name}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button
+        className="ps-btn"
+        title="new project"
+        onClick={() => {
+          const n = window.prompt("New project name (lowercase letters, digits, dashes):");
+          if (n && n.trim()) onCreate(n.trim());
+        }}
+      >
+        + new
+      </button>
+      {project !== GLOBAL_PROJECT && (
+        <button
+          className="ps-btn ps-del"
+          title="delete this project (cached files stay on disk)"
+          onClick={() => {
+            if (window.confirm(`Remove project '${project}'? Its cached files stay on disk.`))
+              onDelete(project);
+          }}
+        >
+          ✕
+        </button>
+      )}
+    </span>
+  );
+}
 
 export function TopBar({
   theme,
@@ -13,6 +65,11 @@ export function TopBar({
   proxyLabel,
   proxyColor,
   headShort,
+  projects,
+  project,
+  onSelectProject,
+  onCreateProject,
+  onDeleteProject,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
@@ -23,6 +80,11 @@ export function TopBar({
   proxyLabel: string;
   proxyColor: string;
   headShort: string;
+  projects: ProjectInfo[];
+  project: string;
+  onSelectProject: (p: string) => void;
+  onCreateProject: (name: string) => void;
+  onDeleteProject: (name: string) => void;
 }) {
   return (
     <header className="topbar">
@@ -35,6 +97,14 @@ export function TopBar({
         </span>
         <span className="sub">air-gap registry</span>
       </div>
+
+      <ProjectSwitcher
+        projects={projects}
+        project={project}
+        onSelect={onSelectProject}
+        onCreate={onCreateProject}
+        onDelete={onDeleteProject}
+      />
 
       <Segmented<View>
         value={view}

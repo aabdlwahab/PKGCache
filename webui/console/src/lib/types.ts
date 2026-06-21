@@ -3,6 +3,22 @@
 export type Eco = "docker" | "npm" | "pip" | "apt" | "apk";
 export const ECOS: Eco[] = ["docker", "npm", "pip", "apt", "apk"];
 
+// The implicit default project: today's default URLs, the caches/ repo.
+export const GLOBAL_PROJECT = "global";
+
+// One project served by the central instance. `default: true` marks the global
+// project (default ports); named projects carry their allocated ports.
+export interface ProjectInfo {
+  name: string;
+  ports: Record<string, number>; // role (oci/npm/pypi/apt) → port
+  repo: string;
+  default: boolean;
+}
+
+export interface ProjectsResp {
+  projects: ProjectInfo[];
+}
+
 export interface Artifact {
   name: string;
   version: string;
@@ -123,3 +139,18 @@ export interface JobsResp {
 }
 
 export type JobAction = "checkpoint" | "export" | "import" | "rollback" | "mode";
+
+export interface ShuttleCheckpoint {
+  hash: string;
+  short: string;
+  date: string;
+  subject: string;
+}
+
+// /api/shuttle — the fixed staging dirs + what's currently staged for import.
+export interface ShuttleResp {
+  export_dir: string;
+  import_dir: string;
+  import_ready: boolean;
+  import_checkpoints: ShuttleCheckpoint[];
+}

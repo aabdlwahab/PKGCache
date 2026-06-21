@@ -83,6 +83,28 @@
 }
 .head-sha { color: var(--fg2); }
 
+/* ---- project switcher -------------------------------------------------- */
+.project-switcher {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--inset);
+}
+.project-switcher .ps-label {
+  font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase;
+}
+.project-switcher select {
+  font-family: var(--mono); font-size: 12px; color: var(--fg); cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: calc(var(--radius-sm) - 2px);
+  padding: 3px 6px; max-width: 160px;
+}
+.project-switcher .ps-btn {
+  font-family: var(--ui); font-size: 11.5px; padding: 3px 8px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: calc(var(--radius-sm) - 2px);
+}
+.project-switcher .ps-btn:hover { color: var(--fg); border-color: var(--accent); }
+.project-switcher .ps-del:hover { color: var(--bad); border-color: var(--bad); }
+
 .offline-banner {
   display: flex; align-items: center; gap: 10px; padding: 7px 18px;
   background: var(--bad-bg); border-bottom: 1px solid var(--bad); color: var(--bad);
@@ -236,10 +258,61 @@
 .btn:disabled { cursor: not-allowed; opacity: 0.5; }
 .btn-primary { font-weight: 600; padding: 7px 14px; background: var(--accent); color: var(--accent-ink); border: 0; }
 .btn-ghost { font-weight: 500; padding: 7px 13px; background: transparent; color: var(--fg2); border: 1px solid var(--line2); }
-.actions-body { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
+.actions-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+/* ---- checkpoint / shuttle cards (handoff: two inset cards) -------------- */
+.xfer-card {
+  background: var(--inset); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 13px 14px;
+  display: flex; flex-direction: column; gap: 11px;
+}
+.xfer-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.xfer-card-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--fg2);
+}
+.xfer-card-title.accent { color: var(--accent); }
+.xfer-card-cap { font-size: 11px; color: var(--muted); }
+.state-pill {
+  font-family: var(--mono); font-size: 11px; font-weight: 600; white-space: nowrap;
+  padding: 2px 9px; border-radius: 999px;
+}
+.xfer-foot {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+.xfer-foot .head-sha { color: var(--fg2); }
+/* Inside an inset card, fields/tree step up to the panel tone so they read. */
+.xfer-card .input,
+.xfer-card .ckpt-tree { background: var(--panel); }
+.xfer-card .xfer-note code { background: var(--panel); }
+
+/* ---- air-gap diagram (handoff: pkgcache ⇄ shuttle across the gap) ------- */
+.airgap { display: flex; align-items: center; gap: 8px; }
+.airgap-node {
+  flex: 1; text-align: center; padding: 10px 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.airgap-node-t { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.airgap-node-s { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.airgap-conn { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; }
+.airgap-label {
+  font-family: var(--mono); font-size: 9.5px; color: var(--muted);
+  letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; margin-bottom: 4px;
+}
+.airgap-rule { width: 100%; border-top: 2px dashed var(--line2); }
+.airgap-arrow { font-size: 15px; line-height: 1; margin-top: 4px; }
 
 /* ---- export range + checkpoint tree ------------------------------------ */
 .export-block { display: flex; flex-direction: column; gap: 8px; }
+/* Shuttle copy instructions ("copy out/ onto media", "copy media into in/"). */
+.xfer-note { margin: 0; font-size: 11.5px; color: var(--fg2); line-height: 1.5; }
+.xfer-note code {
+  font-family: var(--mono); font-size: 11px; color: var(--fg);
+  background: var(--inset); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 1px 5px;
+}
+.xfer-hint { margin: 0; font-size: 11px; color: var(--muted); font-style: italic; }
 .export-block .field-label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
 .export-range { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .export-range b { color: var(--accent); font-weight: 600; }
