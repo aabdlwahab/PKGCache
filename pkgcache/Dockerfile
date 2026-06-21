@@ -15,11 +15,13 @@ RUN pip install --no-cache-dir .
 COPY pkgcache.yaml /etc/pkgcache/pkgcache.yaml
 ENV PKGCACHE_CONFIG=/etc/pkgcache/pkgcache.yaml \
     PKGCACHE_CACHE_ROOT=/caches \
+    PKGCACHE_PROJECTS=/config/projects.json \
     PKGCACHE_TLS_CERT=/certs/server.crt \
     PKGCACHE_TLS_KEY=/certs/server.key \
     OFFLINE=0
 
 # One single-worker process (the progress registry and single-flight state are
-# in-process). Binds 5000/4873/3141 (TLS) + 3142 (HTTP).
-EXPOSE 5000 4873 3141 3142
+# in-process). Binds the global 5000/4873/3141 (TLS) + 3142 (HTTP), plus four
+# ports per registered project from the published pool range (20000-20099).
+EXPOSE 5000 4873 3141 3142 20000-20099
 ENTRYPOINT ["python", "-m", "pkgcache"]

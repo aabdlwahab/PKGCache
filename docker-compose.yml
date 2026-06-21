@@ -17,18 +17,37 @@ services:
     build: ./pkgcache
     image: package-registry/pkgcache:local
     restart: unless-stopped
+    # Run as the host user so everything written under ./caches is host-owned, not
+    # root — this is what lets the webui's `dvc add`/`dvc checkout` and the operator
+    # manage the cache without permission fights. All ports are >1024, so a non-root
+    # process can bind them. IDs come from .env (see .env.example).
+    user: "${PKGCACHE_UID:-1000}:${PKGCACHE_GID:-1000}"
     environment:
       OFFLINE: "${OFFLINE:-0}"
       PKGCACHE_CACHE_ROOT: /caches
+      # The project registry the control UI manages. Extra projects each get their
+      # own four ports (from the pool below) + their own cache tree under
+      # /caches/projects/<name>. Read-only here; the webui is the only writer.
+      PKGCACHE_PROJECTS: /config/projects.json
       PKGCACHE_TLS_CERT: /certs/server.crt
       PKGCACHE_TLS_KEY: /certs/server.key
+      HOME: /tmp           # an arbitrary uid has no passwd home; keep libs that expand ~ happy
+      # The host uid has no /etc/passwd entry in the image, so getpass.getuser()
+      # (used by dvc, and some libs) would crash with KeyError. Name it explicitly.
+      USER: pkgcache
+      LOGNAME: pkgcache
     ports:
-      - "5000:5000"   # OCI  (HTTPS)  pull <host>:5000/{dockerhub,ghcr,quay}/<image>
-      - "4873:4873"   # npm  (HTTPS)
-      - "3141:3141"   # pip  (HTTPS)
-      - "3142:3142"   # apt + apk (HTTP forward proxy)
+      - "5000:5000"   # OCI  (HTTPS)  pull <host>:5000/{dockerhub,ghcr,quay}/<image>  [global]
+      - "4873:4873"   # npm  (HTTPS)                                                  [global]
+      - "3141:3141"   # pip  (HTTPS)                                                  [global]
+      - "3142:3142"   # apt + apk (HTTP forward proxy)                                [global]
+      # Per-project ports. Published as a range up front so the central process can
+      # bind a newly-created project's ports live, with no container recreate. Keep
+      # this range in sync with the registry "pool" (config/projects.json).
+      - "20000-20099:20000-20099"
     volumes:
-      - ./caches:/caches        # each role uses /caches/<eco>
+      - ./caches:/caches        # global → /caches/<eco>; projects → /caches/projects/<name>/<eco>
+      - ./config:/config:ro     # the project registry (config/projects.json), webui-managed
       - ./certs:/certs:ro
     networks:
       default:
@@ -48,13 +67,26 @@ services:
     build: ./webui
     restart: unless-stopped
     expose: ["8088"]       # internal only — the console proxies /api to it
+    # Same host-user mapping as pkgcache, so the cache repo's git objects, the DVC
+    # store and manifests this service writes are owned by the operator, never root
+    # (root-owned git objects are exactly what blocked the host from committing).
+    # group_add gives the non-root container the host's docker-socket group, so it
+    # can still drive `docker compose`. IDs + docker gid come from .env.
+    user: "${PKGCACHE_UID:-1000}:${PKGCACHE_GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-999}"
     environment:
       UI_HOST: 0.0.0.0
+      HOME: /tmp           # writable home for git/dvc config under an arbitrary uid
+      USER: pkgcache       # uid has no /etc/passwd entry; dvc's getpass.getuser() needs this
+      LOGNAME: pkgcache
     working_dir: ${PWD}
     volumes:
-      - .:${PWD}                              # repo at its own path
+      - .:${PWD}                              # repo at its own path (includes ./shuttle)
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${SHUTTLE_MOUNT:-/media}:${SHUTTLE_MOUNT:-/media}
+      # The shuttle staging dir defaults to ./shuttle (inside the repo mount above).
+      # If you relocate it with PKGCACHE_SHUTTLE to a path OUTSIDE the repo, mount
+      # that path here too, e.g.:  - ${PKGCACHE_SHUTTLE}:${PKGCACHE_SHUTTLE}
     profiles: ["ui"]
 
   # The React + TS console (full frontend). Built by a multi-stage image (Node →
