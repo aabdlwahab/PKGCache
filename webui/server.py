@@ -20,20 +20,33 @@ import re
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from config import ENDPOINTS, HOST, PORT, WEBROOT
-from jobs import get_job, jobs_snapshot, start_job
-from live import live_downloads, recent_pulls, roles_health, start_refresher
-from reads import git_history, live_manifests, proxy_status, read_packages
+import projects
+from config import HOST, PORT, WEBROOT, endpoints
+from jobs import Jobs
+from live import LiveFeed
+from ops import Operations, shuttle_info
+from reads import Reads
+from usage import Usage
+
+# The control-plane collaborators, wired once and shared by the request handler:
+# Jobs runs cache workflows through the Operations service; LiveFeed polls the
+# proxies; Reads serves the read side (its disk-usage cache injected).
+_operations = Operations()
+_jobs = Jobs(_operations)
+_live = LiveFeed()
+_reads = Reads(Usage())
 
 
-def proxies():
-    """Compose container status (best-effort) plus live per-role health: the real
-    'N roles up' count and online/offline state the console's top bar shows."""
-    out = proxy_status()
-    out.update(roles_health())
+def proxies(project=projects.GLOBAL):
+    """Compose container status (best-effort) plus live per-role health for a
+    project: the real 'N roles up' count and online/offline state the console's top
+    bar shows. The container status is instance-wide; health is per-project."""
+    out = _reads.status()
+    out.update(_live.health(project))
     return out
 
 _JOB_RE = re.compile(r"/api/jobs/(\d+)")
+_PROJECT_RE = re.compile(r"/api/projects/([a-z0-9-]+)")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -60,51 +73,94 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _project(self):
+        """The ?project=<name> query param, defaulting to the global project."""
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        return (qs.get("project", [projects.GLOBAL])[0] or projects.GLOBAL)
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
 
-        # Static API routes (no params) → handler returning a JSON-able object.
+        # Global / aggregate routes (not per-project) → JSON-able object.
         routes = {
-            "/api/manifests": live_manifests,
-            "/api/history": git_history,
-            "/api/proxies": proxies,
-            "/api/endpoints": lambda: ENDPOINTS,
-            "/api/downloads": live_downloads,
-            "/api/recent": recent_pulls,
-            "/api/jobs": jobs_snapshot,
+            "/api/jobs": _jobs.snapshot,
+            "/api/projects": lambda: {"projects": projects.list_projects()},
             "/healthz": lambda: {"status": "ok"},
         }
         if path in routes:
             return self._send_json(routes[path]())
+
+        # Project-scoped routes → take ?project=<name> (default: global). Live feeds
+        # (proxies/downloads/recent) and cache views are all per-project.
+        scoped = {
+            "/api/proxies": proxies,
+            "/api/downloads": _live.downloads,
+            "/api/recent": _live.recent,
+            "/api/manifests": _reads.manifests,
+            "/api/history": _reads.history,
+            "/api/endpoints": endpoints,
+            "/api/shuttle": shuttle_info,
+        }
+        if path in scoped:
+            try:
+                return self._send_json(scoped[path](self._project()))
+            except (ValueError, RuntimeError) as exc:
+                return self._send_json({"error": str(exc)}, 400)
         if path == "/api/packages":
             params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            return self._send_json(read_packages(params))
+            return self._send_json(_reads.packages(params))
         m = _JOB_RE.fullmatch(path)
         if m:
-            job = get_job(int(m.group(1)))
+            job = _jobs.get(int(m.group(1)))
             return self._send_json(job or {"error": "no such job"}, 200 if job else 404)
         if path in ("/", "/index.html"):
             return self._send_file(WEBROOT / "index.html", "text/html; charset=utf-8")
         self.send_error(404)
 
-    def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != "/api/jobs":
-            return self.send_error(404)
+    def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(length) or b"{}")
+
+    def do_POST(self):
+        path = urllib.parse.urlparse(self.path).path
+        # Create a project: allocate its ports + cache tree. The always-on cache
+        # process binds the new ports on its next poll (no container recreate).
+        if path == "/api/projects":
+            try:
+                rec = projects.create((self._read_body() or {}).get("name", ""))
+            except (ValueError, RuntimeError) as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            return self._send_json(rec, 201)
+        # Run a cache op as a background job (checkpoint/export/import/rollback/mode);
+        # `project` may be in the body to scope it (default: global).
+        if path == "/api/jobs":
+            try:
+                params = self._read_body()
+                action = params.pop("action", "")
+                jid = _jobs.start(action, params)
+            except (ValueError, RuntimeError) as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            return self._send_json({"id": jid})
+        return self.send_error(404)
+
+    def do_DELETE(self):
+        # Drop a project from the registry (frees its ports; leaves cached bytes on
+        # disk). Path: /api/projects/<name>.
+        m = _PROJECT_RE.fullmatch(urllib.parse.urlparse(self.path).path)
+        if not m:
+            return self.send_error(404)
         try:
-            params = json.loads(self.rfile.read(length) or b"{}")
-            action = params.pop("action", "")
-            jid = start_job(action, params)
+            rec = projects.delete(m.group(1))
         except (ValueError, RuntimeError) as exc:
             return self._send_json({"error": str(exc)}, 400)
-        return self._send_json({"id": jid})
+        return self._send_json(rec)
 
 
 def main():
     print(f"package-cache UI on http://{HOST}:{PORT}  (Ctrl-C to stop)")
     if HOST not in ("127.0.0.1", "localhost"):
         print(f"WARNING: bound to {HOST} — these endpoints run real commands.")
-    start_refresher()  # poll proxy downloads in the background
+    _live.start()  # poll proxy downloads in the background
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

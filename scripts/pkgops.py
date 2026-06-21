@@ -26,19 +26,23 @@ import ops  # noqa: E402
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="pkgops", description=__doc__.splitlines()[0])
+    # Which project's cache to act on (default: the global cache with the original
+    # URLs). A named project has its own cache tree, git+DVC repo and shuttle:
+    #   python3 scripts/pkgops.py --project projA checkpoint "added torch"
+    parser.add_argument("--project", default="global",
+                        help="project to operate on (default: global)")
     sub = parser.add_subparsers(dest="action", required=True)
 
     p = sub.add_parser("checkpoint", help="hash → commit the cache (live, no downtime)")
     p.add_argument("message")
 
-    p = sub.add_parser("export", help="stage the shuttle drive (online side)")
-    p.add_argument("drive")
-    p.add_argument("--base", help="base checkpoint of the range to export")
-    p.add_argument("--target", help="target checkpoint of the range to export")
+    # Export/import use FIXED dirs (shuttle/out, shuttle/in) — the operator copies
+    # them to/from the removable media by hand. No drive argument.
+    p = sub.add_parser("export", help="stage the cache into shuttle/out (online side)")
+    p.add_argument("--base", help="base checkpoint (omit for a FULL export — a fresh machine)")
+    p.add_argument("--target", help="target checkpoint (with --base, exports that delta)")
 
-    p = sub.add_parser("import", help="apply a shuttle drive (air-gapped side)")
-    p.add_argument("drive")
-    p.add_argument("--repo-dir", dest="repo_dir", help="target repo (default ~/package-cache)")
+    sub.add_parser("import", help="apply the shuttle in shuttle/in (air-gapped side)")
 
     p = sub.add_parser("rollback", help="restore the cache to a checkpoint")
     p.add_argument("commit")
@@ -49,7 +53,7 @@ def main(argv=None):
     args = vars(parser.parse_args(argv))
     action = args.pop("action")
     try:
-        for line in ops.build(action, args):
+        for line in ops.Operations().build(action, args):
             sys.stdout.write(line)
             sys.stdout.flush()
     except ops.OpError as exc:

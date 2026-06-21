@@ -29,10 +29,15 @@ GIT_ENV = {
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "safe.directory",
     "GIT_CONFIG_VALUE_0": "*",
+    # Never let a git command started inside caches/ walk UP into this code repo
+    # (e.g. when the cache repo doesn't exist yet) and report the wrong history.
+    "GIT_CEILING_DIRECTORIES": str(ROOT),
 }
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import gen_manifest  # noqa: E402  -- defines CACHES + ECOS
+
+import projects  # noqa: E402  -- the project registry (ports per project)
 
 ECOS = ("docker", "npm", "pip", "apt", "apk")
 
@@ -65,3 +70,61 @@ HEALTH_SOURCES = {
     "pip": "https://pkgcache:3141/healthz",
     "apt": "http://pkgcache:3142/healthz",
 }
+
+# ---- per-project derivation ----------------------------------------------
+# The dicts above describe the GLOBAL project (the default ports). A named project
+# serves the SAME paths on its own allocated ports, so we derive its progress /
+# health / endpoint URLs from the registry instead of hard-coding them. role→eco
+# label (oci↔docker, pypi↔pip) comes from the registry's ROLE_SUBDIR.
+# Keyed by eco label (the role→eco map turns oci→docker, pypi→pip).
+_PROGRESS_PATH = {"docker": "/v2/_progress", "npm": "/-/progress",
+                  "pip": "/+progress", "apt": "/acng-progress"}
+
+
+def _eco_ports(project):
+    """{eco_label: (scheme, port)} for a project (apt is plain HTTP, rest HTTPS)."""
+    role_ports = projects.ports(project)
+    out = {}
+    for role, eco in projects.ROLE_SUBDIR.items():
+        scheme = "http" if role == "apt" else "https"
+        out[eco] = (scheme, role_ports[role])
+    return out
+
+
+def progress_sources(project=projects.GLOBAL):
+    """{eco: progress URL} on the `pkgcache` container, for THIS project's ports."""
+    if project == projects.GLOBAL:
+        return dict(PROGRESS_SOURCES)
+    return {
+        eco: f"{scheme}://pkgcache:{port}{_PROGRESS_PATH[eco]}"
+        for eco, (scheme, port) in _eco_ports(project).items()
+    }
+
+
+def health_sources(project=projects.GLOBAL):
+    """{eco: /healthz URL} on the `pkgcache` container, for THIS project's ports."""
+    if project == projects.GLOBAL:
+        return dict(HEALTH_SOURCES)
+    return {
+        eco: f"{scheme}://pkgcache:{port}/healthz"
+        for eco, (scheme, port) in _eco_ports(project).items()
+    }
+
+
+def endpoints(project=projects.GLOBAL):
+    """Client-facing pull URLs per ecosystem, shown in the UI. Global keeps its
+    hand-written hints; a named project gets the same shapes on its own ports."""
+    if project == projects.GLOBAL:
+        return dict(ENDPOINTS)
+    ep = _eco_ports(project)
+    _, oci = ep["docker"]
+    _, npm = ep["npm"]
+    _, pip = ep["pip"]
+    _, apt = ep["apt"]
+    return {
+        "docker": f"<host>:{oci}        (pull <host>:{oci}/{{dockerhub,ghcr,quay}}/<image>)",
+        "npm": f"https://<host>:{npm}/",
+        "pip": f"https://<host>:{pip}/root/pypi/+simple/",
+        "apt": f"http://<host>:{apt}/",
+        "apk": f"http://<host>:{apt}/        (apk: set http_proxy to this, HTTP repos)",
+    }

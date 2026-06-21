@@ -22,8 +22,6 @@ import gen_manifest
 # by subdir (four), not by ecosystem (five).
 _SUBDIRS = ("docker", "npm", "pip", "apt")
 _TTL = 20.0
-_cache = {"data": None, "ts": 0.0}
-_lock = threading.Lock()
 
 
 def _tree_bytes(path) -> int:
@@ -71,13 +69,23 @@ def _fs_stats() -> dict | None:
         return None
 
 
-def disk_usage() -> dict:
-    now = time.time()
-    with _lock:
-        cached = _cache["data"] if (_cache["data"] is not None and now - _cache["ts"] < _TTL) else None
-    if cached is None:
-        cached = _compute()  # walk outside the lock
-        with _lock:
-            _cache["data"] = cached
-            _cache["ts"] = time.time()
-    return {**cached, "fs": _fs_stats()}
+class Usage:
+    """Owns the briefly-cached cache-disk scan. `read()` returns the package/on-disk
+    byte totals, recomputing the tree walk only once per TTL window."""
+
+    def __init__(self, ttl: float = _TTL) -> None:
+        self._ttl = ttl
+        self._data = None
+        self._ts = 0.0
+        self._lock = threading.Lock()
+
+    def read(self) -> dict:
+        now = time.time()
+        with self._lock:
+            cached = self._data if (self._data is not None and now - self._ts < self._ttl) else None
+        if cached is None:
+            cached = _compute()  # walk outside the lock
+            with self._lock:
+                self._data = cached
+                self._ts = time.time()
+        return {**cached, "fs": _fs_stats()}
