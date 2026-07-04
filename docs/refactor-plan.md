@@ -112,16 +112,22 @@ unit tests (mocked gateway + stats-combine), and a real-HTTP round-trip (webui g
 
 ## Phase 5 — frontend restructure
 
-STATUS: blocked on a console build environment (no node/npm in the dev sandbox where
-this refactor ran, so nothing here can be typechecked/built/run). Done so far: the
-safe, no-layout-risk bits — job-log tailing in useJob (Phase 2.5) and the hardcoded
-"7 ecosystems" KPI now uses ECOS.length. Deferred until a build is available: 5.1
-(TanStack Query — also adds a dependency not in package.json), 5.2 (the 15-file
-feature-folder + context migration), 5.3 (global JobConsole — moves where the console
-renders, a layout change that needs visual verification). Phase 3.1 (structured
-/api/endpoints) is deferred for the same reason — it reshapes 4 console components
-(EndpointsPanel, ArtifactsPanel, PackagesPanel, types) to render data instead of the
-backend's preformatted strings, and can't be verified without a build.
+The console is now built + typechecked in a node:20 container (`docker run --rm -v
+"$PWD":/app -w /app node:20-alpine npm run build`), so frontend changes ARE verified
+(compilation + bundle; not runtime/visual).
+
+Done: job-log tailing in useJob (2.5), the "7 ecosystems" KPI → ECOS.length (5.4),
+inline project create/delete errors instead of window.alert (5.4). Phase 3.1
+(structured `/api/endpoints` → {url, note}) is also done — backend + the 4 console
+consumers, container-verified.
+
+Deliberately deferred (now a merit call, not a blocker): 5.1 (TanStack Query — a
+polling-behavior migration a build typechecks but can't runtime-verify, plus a new
+dependency, for a UI that already polls fine); 5.2 (the ~15-file feature-folder +
+context reorg — pure code organization, large churn, no user-facing or architectural
+change); 5.3 (global JobConsole — moves a prominent element, a visual/UX change a
+build can't validate, for a single-job system). Each is straightforward to do on
+request now that the build loop works.
 
 Original plan below.
 
