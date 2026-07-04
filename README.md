@@ -357,7 +357,6 @@ package-registry/
 │   │   ├── services/          # domain model: projects, operations, jobs, livefeed, reads, usage, lockwarm
 │   │   └── gateways/          # side-effect boundaries: proc (git/dvc/docker), ledgers (sqlite), pkgcache (HTTP)
 │   ├── tests/                 # unit + integration tests (registry, scoped reads/ops, lockwarm)
-│   ├── index.html             # legacy single-file UI (fallback; superseded by console)
 │   └── console/               # the React + TypeScript SPA (Vite) + nginx Dockerfile
 ├── scripts/                   # the glue we own
 │   ├── pkgops.py              # thin CLI over app.services.operations (the UI imports the SAME code in-process)

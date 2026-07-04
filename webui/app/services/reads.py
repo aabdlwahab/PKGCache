@@ -47,23 +47,11 @@ class Reads:
             "age": 0.0,  # read live on every request
         }
 
-    def packages(self, params):
+    def packages(self, project=projects.GLOBAL, *, eco=None, q=None, sort="name", page=1):
         """Server-side filter / sort / paginate for /api/packages — richer than the
-        manifest view (origin, arch). params is a parse_qs dict (incl. optional `project`)."""
-
-        def one(key, default=None):
-            v = params.get(key)
-            return v[0] if v else default
-
-        project = one("project", projects.GLOBAL) or projects.GLOBAL
+        manifest view (origin, arch). The controller parses the HTTP query into these
+        typed args, so this service never touches a request dict."""
         root = _repo(project)
-        eco = one("eco")
-        q = one("q")
-        sort = one("sort", "name")
-        try:
-            page = int(one("page", "1"))
-        except ValueError:
-            page = 1
         ecos = [eco] if eco in settings.ECOS else settings.ECOS
         return {
             "project": project,

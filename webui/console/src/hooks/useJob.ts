@@ -13,6 +13,9 @@ export function useJob(onSettled?: () => void) {
   const [job, setJob] = useState<ActiveJob | null>(null);
   const idRef = useRef<number | null>(null);
   const runningRef = useRef(false);
+  // How much of the log we've already appended, so each poll fetches only the tail.
+  const offsetRef = useRef(0);
+  const logRef = useRef("");
   const settledRef = useRef(onSettled);
   settledRef.current = onSettled;
   const busy = job?.status === "running";
@@ -21,6 +24,8 @@ export function useJob(onSettled?: () => void) {
     if (runningRef.current) return;
     runningRef.current = true;
     idRef.current = null;
+    offsetRef.current = 0;
+    logRef.current = "";
     setJob({ action, status: "running", log: "" });
     try {
       idRef.current = await api.startJob(action, params);
@@ -40,9 +45,12 @@ export function useJob(onSettled?: () => void) {
         return;
       }
       try {
-        const r = await api.job(idRef.current);
+        const r = await api.job(idRef.current, offsetRef.current);
         if (stop) return;
-        setJob({ action: r.action, status: r.status, log: r.log });
+        // Append only the newly-written tail; the server slices from our offset.
+        logRef.current += r.log;
+        offsetRef.current = r.offset;
+        setJob({ action: r.action, status: r.status, log: logRef.current });
         if (r.status === "running") {
           timer = setTimeout(poll, 600);
         } else {

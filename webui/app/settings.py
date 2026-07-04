@@ -15,9 +15,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 # repo's log; manifests live inside it.
 CACHE_REPO = ROOT / "caches"
 MANIFESTS = CACHE_REPO / "manifests"
-# The legacy single-file UI (index.html) was served from here; kept for the static
-# asset root until the controller layer drops the direct-access page (Phase 2).
-WEBROOT = ROOT / "webui"
 
 HOST = os.environ.get("UI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("UI_PORT", "8088"))

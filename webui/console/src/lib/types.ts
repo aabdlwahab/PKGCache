@@ -1,4 +1,4 @@
-// API response shapes — mirror webui's JSON endpoints (see webui/server.py).
+// API response shapes — mirror webui's JSON endpoints (see webui/app/api/routes.py).
 
 export type Eco = "docker" | "npm" | "pip" | "apt" | "apk" | "git" | "files";
 export const ECOS: Eco[] = ["docker", "npm", "pip", "apt", "apk", "git", "files"];
@@ -184,7 +184,10 @@ export interface JobResp {
   id: number;
   action: string;
   status: JobStatus;
+  // `log` is the slice FROM the requested offset; `offset` is the new total length,
+  // so the poller can request only what it hasn't seen yet (see useJob).
   log: string;
+  offset: number;
 }
 
 export interface JobsResp {

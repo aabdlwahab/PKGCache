@@ -10,6 +10,7 @@ dispatcher's project validation.
 Env is pointed at a throwaway registry + cache root before importing the modules,
 so nothing touches the real config/ or caches/.
 """
+import io
 import os
 import sqlite3
 import subprocess
@@ -29,6 +30,7 @@ from app.services import projects  # noqa: E402
 projects.CACHE_REPO = Path(_TMP) / "caches"  # keep created trees in the sandbox
 
 from app import urls as config  # noqa: E402  -- URL/endpoint derivation (was config.py)
+from app.api import routes  # noqa: E402  -- the declarative route table + dispatch
 from app.services import operations as ops  # noqa: E402  -- keeps the `ops.` references
 from app.services import reads  # noqa: E402
 from app.services import usage  # noqa: E402
@@ -86,13 +88,12 @@ class MultiProjectTests(unittest.TestCase):
     def test_packages_read_from_project_ledger(self):
         reader = reads.Reads(usage.Usage())
         _make_ledger(self.repo / "npm" / "ledger.db", "npm", [("left-pad", "1.3.0")])
-        out = reader.packages({"project": ["proja"], "eco": ["npm"]})
+        out = reader.packages("proja", eco="npm")
         names = [r["name"] for r in out["ecosystems"]["npm"]]
         self.assertEqual(names, ["left-pad"])
         self.assertEqual(out["project"], "proja")
         # The global project has its own (here: empty) ledger — isolation holds.
-        self.assertEqual(reader.packages({"project": ["global"], "eco": ["npm"]})
-                         ["ecosystems"]["npm"], [])
+        self.assertEqual(reader.packages("global", eco="npm")["ecosystems"]["npm"], [])
 
     def test_history_is_per_project_repo(self):
         reader = reads.Reads(usage.Usage())
@@ -295,14 +296,77 @@ class PrefixRoutingFixTests(unittest.TestCase):
             ops._git_maintain_url("ghost")
 
     def test_project_delete_route_accepts_full_name_grammar(self):
-        from app.api import handler
+        import re
+        from app.api import routes
         # Names with '.' and '_' are creatable, so the DELETE route must match them
         # (validate_name is the gatekeeper, not the route pattern).
+        pat = re.compile(routes._PROJECT_PATH)
         for name in ("proja", "my_app", "team.web-2"):
-            m = handler._PROJECT_RE.fullmatch(f"/api/projects/{name}")
+            m = pat.fullmatch(f"/api/projects/{name}")
             self.assertIsNotNone(m, name)
-            self.assertEqual(m.group(1), name)
-        self.assertIsNone(handler._PROJECT_RE.fullmatch("/api/projects/a/b"))
+            self.assertEqual(m.group("name"), name)
+        self.assertIsNone(pat.fullmatch("/api/projects/a/b"))
+
+
+class _FakeHandler:
+    """Stand-in for the BaseHTTPRequestHandler so dispatch() can be driven without a
+    socket: captures the response, feeds a JSON body, and carries the wired services."""
+
+    def __init__(self, body=b"", jobs=None, live=None, reads=None):
+        self.jobs, self.live, self.reads = jobs, live, reads
+        self.headers = {"Content-Length": str(len(body))}
+        self.rfile = io.BytesIO(body)
+        self.sent = None       # (code, obj) from send_json
+        self.downloaded = None  # (path, filename) from send_download
+
+    def send_json(self, obj, code=200):
+        self.sent = (code, obj)
+
+    def send_download(self, path, filename):
+        self.downloaded = (str(path), filename)
+
+
+class DispatchContractTests(unittest.TestCase):
+    """The route table + single error contract (Phase 2): a matched route runs its
+    controller; a service ApiError becomes {"error": …} with its status; an unknown
+    path is a miss (→ 404 at the handler); a bad JSON body is a 400, not a 500."""
+
+    def setUp(self):
+        projects.save_registry({"projects": {}, "tokens": {}})
+
+    def test_exact_route_runs_and_serializes(self):
+        h = _FakeHandler()
+        self.assertTrue(routes.dispatch(h, "GET", "/healthz"))
+        self.assertEqual(h.sent, (200, {"status": "ok"}))
+
+    def test_unknown_path_is_a_miss(self):
+        h = _FakeHandler()
+        self.assertFalse(routes.dispatch(h, "GET", "/api/nope"))
+        self.assertIsNone(h.sent)
+
+    def test_method_is_part_of_the_key(self):
+        # /api/projects is GET (list) and POST (create); a DELETE to it must miss.
+        self.assertFalse(routes.dispatch(_FakeHandler(), "DELETE", "/api/projects"))
+
+    def test_service_error_maps_to_its_status(self):
+        # Deleting an unregistered project raises ProjectError (ApiError, 400).
+        h = _FakeHandler()
+        self.assertTrue(routes.dispatch(h, "DELETE", "/api/projects/ghost"))
+        code, obj = h.sent
+        self.assertEqual(code, 400)
+        self.assertIn("error", obj)
+
+    def test_bad_json_body_is_a_400_not_a_500(self):
+        h = _FakeHandler(body=b"{not json")
+        self.assertTrue(routes.dispatch(h, "POST", "/api/projects"))
+        self.assertEqual(h.sent[0], 400)
+
+    def test_capture_group_reaches_the_controller(self):
+        projects.create("keeper")
+        h = _FakeHandler()
+        self.assertTrue(routes.dispatch(h, "DELETE", "/api/projects/keeper"))
+        self.assertEqual(h.sent[0], 200)
+        self.assertFalse(projects.exists("keeper"))
 
 
 if __name__ == "__main__":

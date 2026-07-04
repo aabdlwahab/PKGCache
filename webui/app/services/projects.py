@@ -31,6 +31,7 @@ import secrets
 import threading
 
 from app import settings
+from app.errors import ApiError
 
 ROOT = settings.ROOT
 
@@ -74,9 +75,9 @@ RESERVED_NAMES = frozenset({
 })
 
 
-class ProjectError(ValueError):
-    """A bad project request (invalid name, duplicate, reserved name). The HTTP
-    layer turns this into a 400."""
+class ProjectError(ApiError):
+    """A bad project request (invalid name, duplicate, reserved name). Maps to a
+    400 via the ApiError contract."""
 
 
 def validate_name(name):

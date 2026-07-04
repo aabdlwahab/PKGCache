@@ -33,12 +33,17 @@ class Jobs:
         threading.Thread(target=self._run, args=(job, gen), daemon=True).start()
         return jid
 
-    def get(self, jid):
+    def get(self, jid, offset=0):
+        """The job's state and its log FROM `offset` onward, plus the new total length
+        as `offset` — so the console can poll the tail instead of re-fetching the whole
+        (ever-growing) log each tick. offset=0 returns the full log, unchanged."""
         with self._lock:
             job = self._jobs.get(jid)
             if not job:
                 return None
-            return {"id": job["id"], "action": job["action"], "status": job["status"], "log": job["log"]}
+            log = job["log"]
+            return {"id": job["id"], "action": job["action"], "status": job["status"],
+                    "log": log[offset:] if offset else log, "offset": len(log)}
 
     def snapshot(self):
         with self._lock:

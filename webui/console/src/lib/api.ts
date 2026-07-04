@@ -47,7 +47,11 @@ export const api = {
     getJSON<HistoryResp>(withProject("/api/history", project), s),
   shuttle: (project?: string, s?: AbortSignal) =>
     getJSON<ShuttleResp>(withProject("/api/shuttle", project), s),
-  job: (id: number, s?: AbortSignal) => getJSON<JobResp>(`/api/jobs/${id}`, s),
+  // Poll a job, fetching only the log written since `offset` (the response's `log`
+  // is that slice; its `offset` is the new total). Kills the O(n²) re-fetch of the
+  // whole log every tick on a long checkpoint.
+  job: (id: number, offset = 0, s?: AbortSignal) =>
+    getJSON<JobResp>(`/api/jobs/${id}?offset=${offset}`, s),
 
   // The rewritten uv.lock a lockwarm job produced for a project (a download URL,
   // not JSON — the browser fetches it directly).
