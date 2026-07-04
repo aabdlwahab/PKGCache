@@ -63,6 +63,12 @@ _SHARED_DVC_STORE = CACHE_REPO / ".dvc-shared"
 _SHARED_DVC_CACHE = os.environ.get(
     "PKGCACHE_SHARED_DVC_CACHE", "1").strip().lower() not in {"0", "false", "no", "off"}
 
+# The pkgcache proxy's cross-project sha256 content store (see pkgcache config
+# _CAS_SUBDIR). It sits under caches/ — i.e. inside the GLOBAL repo — so the
+# checkpoint must git-ignore it, exactly like the shared DVC store, or `git add -A`
+# would commit the raw object bytes. Keep the name in sync with pkgcache.
+_CAS_DIR = CACHE_REPO / ".cas"
+
 _HASH = re.compile(r"[0-9a-f]{7,40}")
 # A bare hostname/IP for the rewritten lock's URLs — no scheme, port or path.
 _HOST = re.compile(r"[a-zA-Z0-9.\-]+")
@@ -278,22 +284,56 @@ def _normalize_dvcstore(import_dir, md5_tree):
     return import_dir / "dvcstore"
 
 
-def _use_shared_dvc_cache(repo):
-    """Point one cache repo at the shared DVC object store with link-based checkout,
-    so imported artifacts are deduplicated across projects on the offline host.
+def _use_shared_dvc_cache(repo, cache_type="reflink,hardlink,copy"):
+    """Point one cache repo at the shared DVC object store, so an artifact is stored
+    ONCE across every project's repo instead of once per project.
 
-    Written to .dvc/config.local (which DVC git-ignores) rather than the tracked
-    .dvc/config, so it never collides with the config that arrives in the shuttle
-    bundle and the offline repo stays a pure fast-forward mirror. The cache.type
-    order reflink,hardlink,copy means: dedup by CoW clone where the filesystem
-    supports it, else by hardlink, else fall back to a plain copy — so a store on a
-    filesystem without link support still imports correctly, just without dedup."""
+    Used on BOTH sides: the offline import (apply) and the online checkpoint. Written
+    to .dvc/config.local (which DVC git-ignores) rather than the tracked .dvc/config,
+    so it never collides with the config that travels in the shuttle bundle and the
+    offline repo stays a pure fast-forward mirror.
+
+    cache_type picks how a materialized file relates to its store object:
+      * offline import → "reflink,hardlink,copy": CoW clone where the fs supports it,
+        else a hardlink, else a plain copy (import stays correct on any fs, and
+        _unshare_ledgers repairs the one file the hardlink case would endanger).
+      * online checkpoint → "reflink,copy" (NO hardlink): the live proxy rewrites
+        ledger.db in place, and a hardlink into the store would corrupt the shared
+        object — reflink is copy-on-write (safe) and copy is trivially safe, so
+        neither needs an unshare pass here."""
     _SHARED_DVC_STORE.mkdir(parents=True, exist_ok=True)
     yield _echo(f"using the shared DVC object store {_SHARED_DVC_STORE} (cross-project dedup)")
     yield from run(["dvc", "cache", "dir", "--local", str(_SHARED_DVC_STORE)], cwd=repo)
-    yield from run(["dvc", "config", "--local", "cache.type", "reflink,hardlink,copy"], cwd=repo)
+    yield from run(["dvc", "config", "--local", "cache.type", cache_type], cwd=repo)
     # A large shared store makes DVC's "you may want to enable links" hint pure noise.
     yield from run(["dvc", "config", "--local", "cache.slow_link_warning", "false"], cwd=repo)
+    _ignore_shared_store(pathlib.Path(repo))
+
+
+def _ignore_shared_store(repo):
+    """Git-ignore the shared DVC store when it sits inside this repo (the global-repo
+    case). Thin wrapper kept for its focused call sites/tests."""
+    _ignore_path_in_repo(repo, _SHARED_DVC_STORE)
+
+
+def _ignore_path_in_repo(repo, target):
+    """Ensure `target` is git-ignored when it sits INSIDE this repo's tree.
+
+    Both the shared DVC store and the proxy's CAS live under caches/, which IS the
+    global project's repo, so the global checkpoint's `git add -A` would otherwise
+    stage their raw object bytes into git. Named-project repos live under
+    caches/projects/<name>/, so these stores are outside them and this is a no-op.
+    Idempotent."""
+    try:
+        rel = target.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return  # target is outside this repo → git never sees it
+    entry = f"/{rel}/"
+    gitignore = repo / ".gitignore"
+    existing = gitignore.read_text() if gitignore.exists() else ""
+    if entry not in existing.splitlines():
+        with open(gitignore, "a") as fh:
+            fh.write(f"# cross-project object store (dedup; not git-tracked)\n{entry}\n")
 
 
 def _unshare_ledgers(repo):
@@ -431,6 +471,19 @@ class Operations:
         # The ONE deliberate git-mirror file rewrite per checkpoint: geometric repack
         # so the DVC delta stays proportional to recent churn (mirrors run gc.auto=0).
         yield from self._maintain_git(project, repo)
+
+        # Store objects in the shared, cross-project DVC cache with reflink (CoW)
+        # materialization, so an artifact several projects hold is one set of blocks on
+        # disk, not one copy per project — and re-checkpointing an artifact another
+        # project already hashed is near-free. reflink,copy only (never hardlink): the
+        # live proxy rewrites ledger.db in place, which CoW/copy tolerate but a
+        # hardlink into the shared store would not. Set before `dvc add` so this
+        # checkpoint's objects land in the shared store.
+        if _SHARED_DVC_CACHE:
+            yield from _use_shared_dvc_cache(repo, cache_type="reflink,copy")
+        # Keep the proxy's CAS out of git (it lives under the global repo). Harmless
+        # if the CAS is disabled/absent — it's just an ignore line.
+        _ignore_path_in_repo(repo, _CAS_DIR)
 
         yield _echo("hashing caches into DVC (per-file dedup; only new files become objects)")
         # Which cache subdirs exist to hash (git added dynamically; skip absent ones).

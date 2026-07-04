@@ -102,9 +102,10 @@ caches/                          # GLOBAL project — unchanged
 caches/projects/<name>/          # one git + DVC repo PER project
   .git/ .dvc/
   docker/ npm/ pip/ apt/ git/ files/
-caches/.dvc-shared/              # OFFLINE only: one DVC object store shared by all
-                                 #   repos so an artifact imported for one project
-                                 #   is not re-copied for the next (see below)
+caches/.dvc-shared/              # one DVC object store shared by ALL repos so an
+                                 #   artifact several projects hold is stored once,
+                                 #   not once per project — used on both the online
+                                 #   checkpoint and the offline import (see below)
 ```
 
 ## Lifecycle
@@ -185,36 +186,93 @@ Backend implemented and unit/integration-tested
 - **Live project drop:** removing a project closes its cores immediately; an in-flight
   request to a just-deleted project may tear (deletion is a deliberate operator step).
 
-## Offline import dedup — the shared DVC object store
+## Cross-project dedup — the shared DVC object store
 
-On the air-gapped host every project's cache repo shares **one** DVC object store,
-`caches/.dvc-shared`, so a package imported for one project is not copied again for
-the next: one physical copy per unique file, however many projects reference it.
+Every project's cache repo shares **one** DVC object store, `caches/.dvc-shared`, so
+an artifact several projects hold is stored once, not once per project — one physical
+copy per unique file however many projects reference it. It is used on **both** sides:
 
-- **Where it is wired:** the import path only (`webui/ops.py` `apply()` →
-  `_use_shared_dvc_cache`). It writes `cache.dir` + `cache.type = reflink,hardlink,copy`
-  to each repo's `.dvc/config.local` (which DVC git-ignores), so it never collides
-  with the `.dvc/config` that arrives in the shuttle bundle and the offline repo
-  stays a pure fast-forward mirror. `reflink→hardlink→copy` means dedup where the
-  filesystem supports it, correct import (just no dedup) where it does not.
+- **Online (`checkpoint`):** before `dvc add`, each repo is pointed at the shared
+  store with `cache.type = reflink,copy`. `dvc add` stores the object once (a second
+  project checkpointing the same file finds it already present and just materializes
+  it) and reflinks it into the workspace. On a reflink (CoW) filesystem this is
+  block-level dedup across all projects' live trees *and* their DVC caches.
+- **Offline (`apply`):** the same store is configured before `dvc pull`, with
+  `cache.type = reflink,hardlink,copy`. Importing project B skips every object project
+  A already brought in, and B's workspace files link to the same objects.
+
+Both write to `.dvc/config.local` (which DVC git-ignores) rather than the tracked
+`.dvc/config`, so the setting never collides with the config that travels in the
+shuttle bundle and the offline repo stays a pure fast-forward mirror. All in
+`webui/ops.py` → `_use_shared_dvc_cache`.
+
+- **`reflink,copy` online, never hardlink:** the live proxy rewrites `ledger.db` in
+  place. reflink is copy-on-write (a proxy write forks new blocks, leaving the shared
+  object intact) and copy is trivially private; a *hardlink* would corrupt the shared
+  object, so it is excluded online. Offline allows hardlink because the proxy there is
+  near-idle and `_unshare_ledgers` gives each `ledger.db` a private inode right after
+  checkout as a safety net.
 - **Same-filesystem requirement:** the store lives under `caches/` (the one mounted
-  volume) so links to every repo resolve on one filesystem.
-- **`ledger.db` is detached after checkout** (`_unshare_ledgers`): it lives inside a
-  DVC-tracked role dir, so a hardlink checkout would link it into the shared store,
-  and the always-on proxy (its single writer) folds the WAL into it in place. We copy
-  it to a private inode so a proxy write can never corrupt the shared object.
+  volume) so links to every repo resolve on one filesystem. Off a link-capable fs the
+  `copy` fallback keeps both paths correct, just without dedup.
+- **Git-ignored inside the global repo:** the store sits under `caches/`, which *is*
+  the global repo, so `_ignore_shared_store` adds `/.dvc-shared/` to its `.gitignore`
+  and the checkpoint's `git add -A` never stages the raw object bytes. (Named-project
+  repos live under `caches/projects/<name>/`, so the store is outside them.)
 - **Never run bare `dvc gc`** against a repo using the shared store — it would prune
-  objects other projects reference. Don't gc offline (consistent with "deleting bytes
-  is an explicit step"), or gc with `--projects <every repo>`.
-- **Opt out** with `PKGCACHE_SHARED_DVC_CACHE=0` to fall back to per-repo import.
-- The online side is unchanged: it keeps its default per-repo cache, so
-  checkpoints/exports remain byte-for-byte identical. This deliberately does not
-  dedup the shuttle *media* — project B's transfer still carries bytes the offline
-  host may already hold; dedup happens on arrival.
+  objects other projects reference. Don't gc (consistent with "deleting bytes is an
+  explicit step"), or gc with `--projects <every repo>`.
+- **Opt out** with `PKGCACHE_SHARED_DVC_CACHE=0` to fall back to per-repo behaviour on
+  both sides.
+
+**Scope of this dedup:** it covers *checkpointed* state — the durable bytes, which is
+where the cost lives. The live window (between a fetch and the next checkpoint) and the
+duplicate *download* are handled by the CAS below; the shuttle *media* is not (project
+B's transfer still carries bytes the offline host may already hold — dedup happens on
+arrival, which is fine when projects are shuttled one at a time).
+
+## Live/download dedup — the sha256 content store (CAS)
+
+The proxy keeps **one** sha256 content-addressed store for the whole instance,
+`caches/.cas/sha256/<aa>/<hex>`, shared by every project *and* ecosystem. It closes
+the window the checkpoint dedup leaves open: an artifact one project fetched is
+neither re-downloaded nor re-stored for the next, live, without waiting for a
+checkpoint. All in `pkgcache` (`core/storage.py` + `core/cache.py`); the hot path is
+otherwise unchanged.
+
+- **Populate on commit:** every committed download (`inflight.py`) and files-role
+  upload (`handlers/files.py`) is hardlinked into the CAS by its sha256
+  (`Storage.cas_link_from`). Best-effort — a CAS hiccup never fails the download.
+- **Serve on miss (download avoidance):** when the sha256 is known *before* the
+  download — pypi index hashes and OCI blob digests — `Cache.fetch` checks the CAS
+  first (`cas_materialize`); a hit is hardlinked into this project's tree and served
+  as a saved-bytes hit, with no upstream request. npm/apt don't advertise a sha256
+  up front, so they still download on a first cross-project fetch, but their commits
+  populate the CAS.
+- **Hardlinks are safe here** because cached artifacts are immutable: nothing rewrites
+  a committed file in place (an `?overwrite=1` files PUT renames a fresh inode over the
+  path, leaving the shared inode untouched). So — unlike the DVC store's `ledger.db` —
+  no unshare step is needed.
+- **Same-filesystem requirement:** the CAS lives under `caches/`, so its hardlinks to
+  every project tree resolve on one filesystem. If it somehow lands on a different
+  device it is disabled at startup (a copy fallback would defeat the dedup).
+- **Git-ignored inside the global repo** (`_ignore_path_in_repo` in `checkpoint`), same
+  reasoning as the DVC store.
+- **GC:** a CAS entry is unreferenced when its link count drops to 1 (no project tree
+  points at it). Reclaiming those is a future explicit maintenance op, consistent with
+  "deleting bytes is an operator step"; nothing prunes automatically today.
+- **Opt out** with `PKGCACHE_CAS=0`.
+
+**Known gap:** two projects fetching the *same brand-new* artifact at the *same time*
+still download twice — each project's `Core` has its own single-flight registry, and
+neither has populated the CAS yet. The window is small and the only cost is one
+redundant download; a shared digest-keyed single-flight would close it later.
 
 ## Out of scope
 
 - Hostname/vhost URL models (we chose path/name prefixes on shared ports).
-- **Online** cross-project dedup at the live-cache / checkpoint layer (planned as a
-  shared content-addressed store; the offline import dedup above is shipped).
+- Concurrent first-fetch dedup across projects (a shared digest-keyed single-flight);
+  see the CAS "known gap" above.
+- Automatic CAS garbage collection (unreferenced entries are reclaimed by an explicit
+  maintenance op, not on their own).
 - Per-project auth (the console remains trusted-network only, as today).

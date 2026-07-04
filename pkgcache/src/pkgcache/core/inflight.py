@@ -123,6 +123,9 @@ class Download:
 
             self._storage.commit_part(tmp, self.final_path)
             self.sha256 = hexd
+            # Publish into the shared content store so another project fetching the
+            # same bytes links them instead of downloading again (best-effort).
+            self._storage.cas_link_from(self.final_path, hexd)
             if self._on_commit is not None:
                 rec = self._on_commit(self.written, hexd)
                 if rec is not None:

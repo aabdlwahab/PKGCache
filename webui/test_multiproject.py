@@ -184,6 +184,13 @@ class SharedDvcCacheTests(unittest.TestCase):
         projects.save_registry({"projects": {}, "tokens": {}})
         projects.create("proja")
         self.repo = projects.repo_dir("proja")
+        # Keep the shared store inside the sandbox, not the real caches/ tree
+        # (ops._SHARED_DVC_STORE derives from the real repo root at import time).
+        self._orig_store = ops._SHARED_DVC_STORE
+        ops._SHARED_DVC_STORE = Path(tempfile.mkdtemp()) / ".dvc-shared"
+
+    def tearDown(self):
+        ops._SHARED_DVC_STORE = self._orig_store
 
     def test_use_shared_dvc_cache_writes_local_config(self):
         # Stub run() so no real dvc is needed; capture the argv of each call.
@@ -235,6 +242,23 @@ class SharedDvcCacheTests(unittest.TestCase):
         # No ledger.db in any role dir → clean no-op, no exception, no stray files.
         list(ops._unshare_ledgers(self.repo))
         self.assertFalse((self.repo / "docker" / "ledger.db.unshare").exists())
+
+    def test_ignore_shared_store_when_inside_repo(self):
+        # Store inside the repo (the global-repo case): must be git-ignored so the
+        # checkpoint's `git add -A` never stages the raw object bytes. Idempotent.
+        repo = Path(tempfile.mkdtemp())
+        ops._SHARED_DVC_STORE = repo / ".dvc-shared"
+        ops._ignore_shared_store(repo)
+        ops._ignore_shared_store(repo)  # second call must not duplicate the entry
+        body = (repo / ".gitignore").read_text()
+        self.assertEqual(body.count("/.dvc-shared/"), 1)
+
+    def test_ignore_shared_store_noop_when_outside_repo(self):
+        # Store outside the repo (the named-project case): nothing to ignore.
+        repo = Path(tempfile.mkdtemp())
+        ops._SHARED_DVC_STORE = Path(tempfile.mkdtemp()) / ".dvc-shared"
+        ops._ignore_shared_store(repo)
+        self.assertFalse((repo / ".gitignore").exists())
 
 
 class PrefixRoutingFixTests(unittest.TestCase):

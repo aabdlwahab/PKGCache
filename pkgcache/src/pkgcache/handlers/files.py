@@ -211,6 +211,7 @@ class FilesRepo:
             return PlainTextResponse("checksum mismatch", status_code=400)
 
         self._core.storage.commit_part(tmp, final)
+        self._core.storage.cas_link_from(final, hexd)  # share bytes across projects
         self._core.progress.complete(dl_id)
         await self._core.ledger.adelete_artifact("files", rel)
         await self._core.ledger.arecord(ArtifactRecord(

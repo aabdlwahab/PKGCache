@@ -39,6 +39,10 @@ _ALL_ROLES = ("oci", "npm", "pypi", "apt", "git", "files")
 GLOBAL = "global"
 # Per-project cache trees live under <root>/projects/<name>/<subdir>.
 _PROJECTS_SUBDIR = "projects"
+# One sha256 content-addressed store shared by every project+role, a sibling of the
+# per-project trees under the cache root, so an artifact one project fetched is not
+# re-downloaded or re-stored for the next. Disable with PKGCACHE_CAS=0.
+_CAS_SUBDIR = ".cas"
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class Config:
     offline: bool                  # serve from cache only; never reach upstream
     project: str                   # "global" or a registry project name
     cache_root: Path               # this role's cache tree (…/<subdir>)
+    cas_root: Path | None          # shared sha256 content store (cross-project dedup); None = off
     host: str
     port: int
     request_timeout: float         # generous so multi-GB wheels finish
@@ -73,7 +78,7 @@ def _read() -> dict:
 
 def _build(role: str, data: dict, *, cache_root: Path, offline: bool,
            cert: str | None, key: str | None, project: str = GLOBAL,
-           port: int | None = None) -> Config:
+           port: int | None = None, cas_root: Path | None = None) -> Config:
     defaults = data.get("defaults", {}) or {}
     role_cfg = (data.get("roles", {}) or {}).get(role, {}) or {}
     # A project gets its assigned registry port; global falls back to env / YAML /
@@ -90,6 +95,7 @@ def _build(role: str, data: dict, *, cache_root: Path, offline: bool,
         offline=offline,
         project=project,
         cache_root=cache_root,
+        cas_root=cas_root,
         host=os.environ.get("PKGCACHE_HOST", "0.0.0.0"),
         port=port,
         request_timeout=timeout,
@@ -104,14 +110,21 @@ def _build(role: str, data: dict, *, cache_root: Path, offline: bool,
     )
 
 
+def _cas_enabled() -> bool:
+    """The CAS is on by default; PKGCACHE_CAS=0/false/no/off turns it off."""
+    return os.environ.get("PKGCACHE_CAS", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def load() -> Config:
     """Single-role config (PKGCACHE_ROLE required). cache_root is used as-is."""
     role = os.environ.get("PKGCACHE_ROLE", "").strip().lower()
     if role not in _DEFAULT_PORTS:
         raise SystemExit(f"PKGCACHE_ROLE must be one of {sorted(_DEFAULT_PORTS)}; got {role!r}")
+    cache_root = Path(os.environ.get("PKGCACHE_CACHE_ROOT", "/data"))
     return _build(
         role, _read(),
-        cache_root=Path(os.environ.get("PKGCACHE_CACHE_ROOT", "/data")),
+        cache_root=cache_root,
+        cas_root=(cache_root / _CAS_SUBDIR) if _cas_enabled() else None,
         offline=_as_bool(os.environ.get("OFFLINE", "0")),
         cert=os.environ.get("PKGCACHE_TLS_CERT") or None,
         key=os.environ.get("PKGCACHE_TLS_KEY") or None,
@@ -178,18 +191,21 @@ def load_roles() -> dict[str, dict[str, Config]]:
     cert = os.environ.get("PKGCACHE_TLS_CERT") or None
     key = os.environ.get("PKGCACHE_TLS_KEY") or None
     names = sorted(_registry())
+    # ONE content store for the whole instance (all projects + roles), so identical
+    # bytes are held once regardless of which project or ecosystem fetched them.
+    cas_root = (base / _CAS_SUBDIR) if _cas_enabled() else None
 
     out: dict[str, dict[str, Config]] = {}
     for role in _ALL_ROLES:
         port = _DEFAULT_PORTS[role]
         projects = {
             GLOBAL: _build(role, data, cache_root=base / _ROLE_SUBDIR[role],
-                           offline=offline, cert=cert, key=key, port=port),
+                           offline=offline, cert=cert, key=key, port=port, cas_root=cas_root),
         }
         for name in names:
             projects[name] = _build(
                 role, data, cache_root=base / _PROJECTS_SUBDIR / name / _ROLE_SUBDIR[role],
-                offline=offline, cert=cert, key=key, project=name, port=port,
+                offline=offline, cert=cert, key=key, project=name, port=port, cas_root=cas_root,
             )
         out[role] = projects
     return out

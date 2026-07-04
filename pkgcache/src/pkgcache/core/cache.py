@@ -55,6 +55,25 @@ class Cache:
                 final_path, media_type=media_type, headers=response_headers, method=method
             )
 
+        # ---- cross-project dedup: content another project already fetched -----
+        # When the sha256 is known before the download (pypi index hashes, OCI blob
+        # digests) and that exact content is already in the shared store, hardlink it
+        # into this project's tree and serve — no upstream request. Counts as a hit
+        # (bytes saved). This never applies to npm/apt (no pre-known sha256); those
+        # still populate the store on their own misses.
+        if expected_sha256 and self.storage.cas_materialize(expected_sha256, final_path):
+            size = final_path.stat().st_size
+            self.progress.record_recent(key, name, size, hit=True)
+            if eco:
+                self.stats.traffic(eco, hit=True, nbytes=size)
+            if on_commit is not None:
+                rec = on_commit(size, expected_sha256.lower())
+                if rec is not None:
+                    await self.ledger.arecord(rec)
+            return Storage.file_response(
+                final_path, media_type=media_type, headers=response_headers, method=method
+            )
+
         # ---- miss: single-flight --------------------------------------------
         dl = self.inflight.start(
             key,
