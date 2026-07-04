@@ -1,9 +1,15 @@
 """Behavior tests for the lock-warm engine — parsing, index mapping, rewriting,
 and the warm workflow (with an injected fake proxy, the one external system)."""
+import sys
 import threading
 import unittest
+from pathlib import Path
 
-from lockwarm import IndexMap, LockError, LockParser, LockRewriter, WarmError, Warmer
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # webui/ → `app` importable
+
+from app.services.lockwarm import (  # noqa: E402
+    IndexMap, LockError, LockParser, LockRewriter, WarmError, Warmer,
+)
 
 # A minimal but representative uv.lock: two registry packages (one with an sdist +
 # wheel, one wheel-only) plus a virtual root that must be left untouched.

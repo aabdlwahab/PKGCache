@@ -173,7 +173,7 @@ Layered on top of that rewrite, the more recent changes are:
   checkpoint, rollback or shuttle only ever touches cache state — never the
   application code — and the two histories never entangle.
 - **Air-gap operations are Python, not bash.** `checkpoint / export / import /
-  rollback / mode` live in one backend module (`webui/ops.py`) as a service that
+  rollback / mode` live in one backend module (`webui/app/services/operations.py`) as a service that
   yields log lines; the control UI calls it in-process and the operator CLI
   (`scripts/pkgops.py`) is a thin wrapper over the *same* code, so the two can
   never drift.
@@ -346,20 +346,21 @@ package-registry/
 │           ├── files.py       # generic artifact store: wget download + token-gated PUT (write path)
 │           └── common.py      # shared name/filename normalization
 ├── webui/                     # operator control plane (standard-library only)
-│   ├── server.py              # thin stdlib HTTP router; wires the collaborators below (DI)
-│   ├── config.py              # shared constants + per-project URL / progress / health derivation
-│   ├── reads.py               # Reads  — ledger reads, manifest, git history, proxy status
-│   ├── live.py                # LiveFeed — background poller; downloads + recent + health snapshots
-│   ├── jobs.py                # Jobs   — one-at-a-time background job runner over Operations
-│   ├── ops.py                 # Operations — checkpoint/export/import/rollback/mode (yields log lines)
-│   ├── usage.py               # Usage  — TTL-cached cache-disk scan + dedup totals
-│   ├── projects.py            # the project registry (single source of truth for project names)
-│   ├── test_projects.py       # unit tests: registry CRUD, name rules + reserved names, tokens
-│   ├── test_multiproject.py   # integration tests: scoped reads / ops / endpoints / shuttle paths
+│   ├── server.py              # entry shim → app.main (keeps `python3 webui/server.py`)
+│   ├── app/                   # the layered backend package
+│   │   ├── main.py            # composition root: build services, inject into the handler, serve
+│   │   ├── settings.py        # constants + paths (the one leaf module every layer imports)
+│   │   ├── manifest.py        # eco→(subdir,ecosystem) map + ledger→manifest export (shared w/ scripts)
+│   │   ├── urls.py            # per-project URL / progress / health / endpoint derivation
+│   │   ├── errors.py          # OpError (shared error type)
+│   │   ├── api/               # controllers: handler.py (routing/JSON) + files_proxy.py (upload stream)
+│   │   ├── services/          # domain model: projects, operations, jobs, livefeed, reads, usage, lockwarm
+│   │   └── gateways/          # side-effect boundaries: proc (git/dvc/docker), ledgers (sqlite), pkgcache (HTTP)
+│   ├── tests/                 # unit + integration tests (registry, scoped reads/ops, lockwarm)
 │   ├── index.html             # legacy single-file UI (fallback; superseded by console)
 │   └── console/               # the React + TypeScript SPA (Vite) + nginx Dockerfile
 ├── scripts/                   # the glue we own
-│   ├── pkgops.py              # thin CLI over webui/ops.py (the UI imports the SAME code in-process)
+│   ├── pkgops.py              # thin CLI over app.services.operations (the UI imports the SAME code in-process)
 │   ├── gen-certs.sh           # mint the private CA + server cert for in-process HTTPS
 │   ├── gen_manifest.py        # export manifests/<eco>.json from the ledgers (+ --rebuild repair)
 │   └── prefetch.py            # warm the cache from a declarative seed file
@@ -570,7 +571,7 @@ and supports real queries for the UI. Rich, volatile fields (`cached_at`, `origi
 `--rebuild` repair path can repopulate a ledger from disk if it ever drifts.
 
 > Because the webui is deliberately stdlib-only it can't import `pkgcache`, so it
-> re-reads the ledger files directly ([webui/reads.py](webui/reads.py)) instead of
+> re-reads the ledger files directly ([webui/app/services/reads.py](webui/app/services/reads.py)) instead of
 > calling `Ledger.query`. The two query implementations carry cross-reference notes
 > to keep the sort whitelist + column set in sync.
 
@@ -651,20 +652,20 @@ flowchart LR
   no `pip install`; the whole point is to run on a fully air-gapped host). Each
   responsibility is a small **owner class**, wired once by the router via constructor
   injection:
-  - **`Reads`** ([reads.py](webui/reads.py)) — live cache contents from the ledgers, the committed
+  - **`Reads`** ([reads.py](webui/app/services/reads.py)) — live cache contents from the ledgers, the committed
     manifest, the cache-repo git history, and proxy container status.
-  - **`LiveFeed`** ([live.py](webui/live.py)) — a background poller (bounded thread pool, project
+  - **`LiveFeed`** ([live.py](webui/app/services/livefeed.py)) — a background poller (bounded thread pool, project
     list refreshed each cycle) that hits every project's `/_progress` + `/healthz`
     and owns the merged downloads / recent / health snapshots, plus the real **N
     proxies up** / online-offline signal.
-  - **`Jobs`** ([jobs.py](webui/jobs.py)) — a one-at-a-time background runner that drains an
+  - **`Jobs`** ([jobs.py](webui/app/services/jobs.py)) — a one-at-a-time background runner that drains an
     `Operations` generator into a streamed log the UI polls.
-  - **`Operations`** ([ops.py](webui/ops.py)) — the air-gap **service**:
+  - **`Operations`** ([ops.py](webui/app/services/operations.py)) — the air-gap **service**:
     checkpoint/export/import/rollback and the online↔offline **mode switch**, each a
     generator of log lines, scoped by `project`.
-  - **`Usage`** ([usage.py](webui/usage.py)) — a TTL-cached `du`-style scan with deduplicated-docker
+  - **`Usage`** ([usage.py](webui/app/services/usage.py)) — a TTL-cached `du`-style scan with deduplicated-docker
     totals.
-  - **`projects`** ([projects.py](webui/projects.py)) — the registry: the single source of truth for
+  - **`projects`** ([projects.py](webui/app/services/projects.py)) — the registry: the single source of truth for
     what projects exist (names + files write tokens) and where their trees live.
 
   webui is **internal only** — reached as `webui:8088` on the compose network.
@@ -699,7 +700,7 @@ flowchart LR
 ### 8. Scripts (the glue we own)
 
 - **`pkgops.py`** — a thin CLI over the backend `Operations` service: `checkpoint ·
-  export · import · rollback · mode`, plus `--project`. It imports `webui/ops.py` and
+  export · import · rollback · mode`, plus `--project`. It imports `webui/app/services/operations.py` and
   runs the **exact same code** the control UI runs in-process, so the CLI and the UI
   can never drift. Use it by hand on either side of the gap.
 - **`gen-certs.sh`** — mint the private CA + server cert for in-process HTTPS.

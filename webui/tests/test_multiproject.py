@@ -18,20 +18,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # webui/ → `app` importable
 
 # Throwaway registry must be set BEFORE importing the modules (they read it on import).
 _TMP = tempfile.mkdtemp()
 os.environ["PKGCACHE_PROJECTS"] = str(Path(_TMP) / "projects.json")
 
-import projects  # noqa: E402
+from app.services import projects  # noqa: E402
 
 projects.CACHE_REPO = Path(_TMP) / "caches"  # keep created trees in the sandbox
 
-import config  # noqa: E402
-import ops  # noqa: E402
-import reads  # noqa: E402
-import usage  # noqa: E402
+from app import urls as config  # noqa: E402  -- URL/endpoint derivation (was config.py)
+from app.services import operations as ops  # noqa: E402  -- keeps the `ops.` references
+from app.services import reads  # noqa: E402
+from app.services import usage  # noqa: E402
 
 
 def _make_ledger(db_path, ecosystem, rows):
@@ -272,19 +272,19 @@ class PrefixRoutingFixTests(unittest.TestCase):
         projects.create("proja")
 
     def test_files_proxy_target_carries_project_prefix(self):
-        import server
+        from app.gateways import pkgcache
         # Global keeps the bare root path; a named project is prefixed — without
         # this, a console upload for proja lands in the GLOBAL files tree.
-        self.assertEqual(server.files_target("global", "a/b.txt"), "/a/b.txt")
-        self.assertEqual(server.files_target("proja", "a/b.txt"), "/proja/files/a/b.txt")
+        self.assertEqual(pkgcache.files_target("global", "a/b.txt"), "/a/b.txt")
+        self.assertEqual(pkgcache.files_target("proja", "a/b.txt"), "/proja/files/a/b.txt")
         self.assertEqual(
-            server.files_target("proja", "a/b.txt", overwrite=True),
+            pkgcache.files_target("proja", "a/b.txt", overwrite=True),
             "/proja/files/a/b.txt?overwrite=1",
         )
         # Path segments are quoted; the separator survives.
-        self.assertEqual(server.files_target("global", "dir/a b.txt"), "/dir/a%20b.txt")
+        self.assertEqual(pkgcache.files_target("global", "dir/a b.txt"), "/dir/a%20b.txt")
         with self.assertRaises(projects.ProjectError):
-            server.files_target("ghost", "a.txt")
+            pkgcache.files_target("ghost", "a.txt")
 
     def test_git_maintain_url_carries_project_prefix(self):
         # Checkpoint's mirror repack must hit THIS project's git sub-app, not global's.
@@ -295,14 +295,14 @@ class PrefixRoutingFixTests(unittest.TestCase):
             ops._git_maintain_url("ghost")
 
     def test_project_delete_route_accepts_full_name_grammar(self):
-        import server
+        from app.api import handler
         # Names with '.' and '_' are creatable, so the DELETE route must match them
         # (validate_name is the gatekeeper, not the route pattern).
         for name in ("proja", "my_app", "team.web-2"):
-            m = server._PROJECT_RE.fullmatch(f"/api/projects/{name}")
+            m = handler._PROJECT_RE.fullmatch(f"/api/projects/{name}")
             self.assertIsNotNone(m, name)
             self.assertEqual(m.group(1), name)
-        self.assertIsNone(server._PROJECT_RE.fullmatch("/api/projects/a/b"))
+        self.assertIsNone(handler._PROJECT_RE.fullmatch("/api/projects/a/b"))
 
 
 if __name__ == "__main__":

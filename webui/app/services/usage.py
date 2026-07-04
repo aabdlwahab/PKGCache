@@ -15,8 +15,7 @@ import shutil
 import threading
 import time
 
-import config  # noqa: F401 -- ensures scripts/ is on sys.path for gen_manifest
-import gen_manifest
+from app import manifest
 
 # eco cache subdirs to measure. apt + apk share the "apt" subdir, so we measure
 # by subdir (four), not by ecosystem (five).
@@ -46,7 +45,7 @@ def _tree_bytes(path) -> int:
 
 
 def _compute() -> dict:
-    caches = gen_manifest.CACHES
+    caches = manifest.CACHES
     disk = {sub: (_tree_bytes(caches / sub) if (caches / sub).is_dir() else 0) for sub in _SUBDIRS}
     blobs = caches / "docker" / "blobs"
     return {
@@ -63,7 +62,7 @@ def _fs_stats() -> dict | None:
     Cheap (one statvfs), so it's read fresh on every call — free space is the whole
     point of the storage monitor and changes independently of our walk."""
     try:
-        total, used, free = shutil.disk_usage(str(gen_manifest.CACHES))
+        total, used, free = shutil.disk_usage(str(manifest.CACHES))
         return {"total": total, "used": used, "free": free}
     except OSError:
         return None

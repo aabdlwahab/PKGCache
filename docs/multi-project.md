@@ -132,7 +132,7 @@ no rebind, no container recreate.
 Backend implemented and unit/integration-tested
 (`webui/test_projects.py`, `webui/test_multiproject.py`, `pkgcache/tests/test_router.py`):
 
-- **Registry** — `webui/projects.py`: name-only CRUD, name grammar + reserved names,
+- **Registry** — `webui/app/services/projects.py`: name-only CRUD, name grammar + reserved names,
   `role_prefix(project, role)`, files write tokens; legacy port-carrying registries
   read without error.
 - **Routing** — `pkgcache/router.py`: a `RoleServer` per role port with the
@@ -144,7 +144,7 @@ Backend implemented and unit/integration-tested
 - **Live add/drop** — `pkgcache/__main__.py` supervisor polls the registry and
   reconciles each role's project sub-apps without a process restart; six long-lived
   role servers own their projects' core lifecycles.
-- **Per-project VC + shuttle** — `webui/ops.py` (checkpoint/export/import/rollback)
+- **Per-project VC + shuttle** — `webui/app/services/operations.py` (checkpoint/export/import/rollback)
   threaded by `project`; per-project export/import dirs; a name-only `project.json`
   travels in a named project's shuttle so import re-registers it;
   `gen_manifest.py` honors `PKGCACHE_MANIFEST_ROOT`; `scripts/pkgops.py --project`.
@@ -152,7 +152,7 @@ Backend implemented and unit/integration-tested
   `?project=` on `/api/manifests`, `/api/history`, `/api/endpoints`, `/api/shuttle`,
   `/api/packages`; `config.endpoints/progress_sources/health_sources(project)` build
   the prefixed URLs.
-- **Live progress aggregation** — `webui/live.py` polls every project's
+- **Live progress aggregation** — `webui/app/services/livefeed.py` polls every project's
   prefixed progress endpoints (bounded thread pool, project list refreshed each
   cycle); health is per-server (projects share a process per role) so it's polled
   once. `/api/proxies`, `/api/downloads`, `/api/recent` are `?project=`-scoped.
@@ -204,7 +204,7 @@ copy per unique file however many projects reference it. It is used on **both** 
 Both write to `.dvc/config.local` (which DVC git-ignores) rather than the tracked
 `.dvc/config`, so the setting never collides with the config that travels in the
 shuttle bundle and the offline repo stays a pure fast-forward mirror. All in
-`webui/ops.py` → `_use_shared_dvc_cache`.
+`webui/app/services/operations.py` → `_use_shared_dvc_cache`.
 
 - **`reflink,copy` online, never hardlink:** the live proxy rewrites `ledger.db` in
   place. reflink is copy-on-write (a proxy write forks new blocks, leaving the shared

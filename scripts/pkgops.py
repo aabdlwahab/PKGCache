@@ -18,10 +18,10 @@ import argparse
 import pathlib
 import sys
 
-# The canonical implementation is the backend's ops module; import it from there
-# so there is a single source of truth.
+# The canonical implementation is the backend's operations service; import it from
+# there so there is a single source of truth. webui/ on the path makes `app` importable.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "webui"))
-import ops  # noqa: E402
+from app.services import operations as ops  # noqa: E402
 
 
 def main(argv=None):

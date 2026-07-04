@@ -26,19 +26,24 @@ import subprocess
 import urllib.error
 import urllib.request
 
-import projects
-from config import pypi_internal
-from lockwarm import IndexMap, LockParser, LockRewriter, Proxy, Warmer
-from projects import GLOBAL
+from app import settings
+from app.errors import OpError
+from app.gateways import proc
+from app.gateways.pkgcache import git_maintain_url as _git_maintain_url
+from app.gateways.proc import run
+from app.services import projects
+from app.services.lockwarm import IndexMap, LockParser, LockRewriter, Proxy, Warmer
+from app.services.projects import GLOBAL
+from app.urls import pypi_internal
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = settings.ROOT
 
 # The cache state is versioned in its OWN git + DVC repo. The GLOBAL project's repo
 # is caches/ (unchanged); each named project gets caches/projects/<name>/, its own
 # git+DVC repo, so a per-project checkpoint / rollback / shuttle only ever touches
 # that one project's state. All git/dvc calls below run with cwd=_repo(project);
 # only the manifest regen and `docker compose` run from ROOT.
-CACHE_REPO = ROOT / "caches"   # the global project's repo (default)
+CACHE_REPO = settings.CACHE_REPO   # the global project's repo (default)
 
 # Fixed shuttle staging dirs — the tool never takes a drive path. Export writes to
 # out/, import reads from in/; the OPERATOR copies out/ onto removable media,
@@ -74,11 +79,6 @@ _HASH = re.compile(r"[0-9a-f]{7,40}")
 _HOST = re.compile(r"[a-zA-Z0-9.\-]+")
 
 
-class OpError(RuntimeError):
-    """A bad request (failed validation) or a failed step. Subclasses
-    RuntimeError so the webui's POST handler turns it into a 400."""
-
-
 # ---- path / project helpers ---------------------------------------------
 
 def _repo(project):
@@ -103,116 +103,11 @@ def _echo(msg):
     return f"==> {msg}\n"
 
 
-# git refuses to touch a repo owned by a different uid ("dubious ownership"),
-# which bites whenever this tool runs as a different user than the checkout's
-# owner (e.g. root in a container, or root vs. the host user). We only ever
-# operate on our own repos, so trust them for every git call — including the
-# ones dvc spawns underneath — via git's env-based config. No global/sudo
-# `git config safe.directory` needed.
-_GIT_TRUST = {
-    "GIT_CONFIG_COUNT": "1",
-    "GIT_CONFIG_KEY_0": "safe.directory",
-    "GIT_CONFIG_VALUE_0": "*",
-    # Keep cache-repo git calls from climbing UP into the code repo at ROOT (the
-    # `git init` bootstrap aside, nothing here should ever touch the code repo).
-    "GIT_CEILING_DIRECTORIES": str(ROOT),
-}
-
-
-def _commit_identity_env(repo):
-    """A default 'pkgcache' committer identity, used ONLY when the environment
-    has none configured. A fresh container (root, no ~/.gitconfig) would
-    otherwise abort the checkpoint commit with 'Author identity unknown'; an
-    operator's own git config or GIT_* env still takes precedence."""
-    probe_env = dict(os.environ, **_GIT_TRUST)
-
-    def have(cfg_key, *env_keys):
-        if any(os.environ.get(k) for k in env_keys):
-            return True
-        res = subprocess.run(
-            ["git", "config", cfg_key], cwd=str(repo),
-            text=True, capture_output=True, env=probe_env,
-        )
-        return res.returncode == 0 and bool(res.stdout.strip())
-
-    env = {}
-    if not have("user.name", "GIT_COMMITTER_NAME", "GIT_AUTHOR_NAME"):
-        env["GIT_AUTHOR_NAME"] = env["GIT_COMMITTER_NAME"] = "pkgcache"
-    if not have("user.email", "GIT_COMMITTER_EMAIL", "GIT_AUTHOR_EMAIL", "EMAIL"):
-        env["GIT_AUTHOR_EMAIL"] = env["GIT_COMMITTER_EMAIL"] = "pkgcache@localhost"
-    return env
-
-
-def _has_staged_changes(repo):
-    """True if the cache repo has anything staged to commit (so we can skip a
-    no-op checkpoint instead of letting `git commit` fail with 'nothing to commit')."""
-    res = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"],
-        cwd=str(repo), env=dict(os.environ, **_GIT_TRUST),
-    )
-    return res.returncode == 1  # 0 = nothing staged, 1 = staged changes present
-
-
-def run(cmd, env=None, cwd=None):
-    """Run one command, yielding its banner then its combined output line by
-    line, and raising OpError on a non-zero exit. The yielded text is exactly
-    what the UI streams (and what stdout shows on the CLI)."""
-    cwd = str(cwd or ROOT)
-    yield "$ " + " ".join(cmd) + "\n"
-    full_env = dict(os.environ, **_GIT_TRUST)
-    if env:
-        full_env.update(env)
-    try:
-        proc = subprocess.Popen(
-            cmd, cwd=cwd, env=full_env, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
-    except OSError as exc:
-        raise OpError(f"could not start {cmd[0]}: {exc}") from exc
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        yield line
-    proc.wait()
-    if proc.returncode != 0:
-        raise OpError(f"{cmd[0]} exited {proc.returncode}")
-
-
-def _changed_dvc(repo, base, target):
-    """The DVC-tracked cache dirs whose pointer changed between two checkpoints
-    (pointers live at the cache repo root, e.g. docker.dvc)."""
-    res = subprocess.run(
-        ["git", "diff", "--name-only", base, target, "--", "*.dvc"],
-        cwd=str(repo), text=True, capture_output=True,
-        env=dict(os.environ, **_GIT_TRUST),
-    )
-    if res.returncode != 0:
-        raise OpError(res.stderr.strip() or f"git diff {base}..{target} failed")
-    return [line for line in res.stdout.splitlines() if line.strip()]
-
-
-def _cache_checkpoints(cwd):
-    """Cache-repo checkpoints [{hash,short,date,subject}] from cwd's git log, or
-    [] if cwd isn't a git repo (no checkpoints yet)."""
-    res = subprocess.run(
-        ["git", "log", "--pretty=format:%H%x1f%h%x1f%ad%x1f%s", "--date=short"],
-        cwd=str(cwd), text=True, capture_output=True, env=dict(os.environ, **_GIT_TRUST),
-    )
-    if res.returncode != 0:
-        return []
-    out = []
-    for line in res.stdout.splitlines():
-        parts = line.split("\x1f")
-        if len(parts) == 4:
-            out.append({"hash": parts[0], "short": parts[1], "date": parts[2], "subject": parts[3]})
-    return out
-
-
-def _git_maintain_url(project):
-    """The git role's /+maintain endpoint for THIS project: the shared git port
-    plus the project's URL prefix (all projects share the role ports; the project
-    rides the path — see projects.role_prefix). Raises ProjectError if unknown."""
-    port = projects.ports(project)["git"]
-    return f"https://pkgcache:{port}{projects.role_prefix(project, 'git')}/+maintain"
+# The git trust env and the subprocess/git-log helpers now live in the proc gateway
+# (app.gateways.proc); `run` is imported bare above so it stays monkeypatchable in
+# tests, and _GIT_TRUST is kept as an alias for the direct subprocess.run calls below
+# (git-mirror repack, apply's branch probe) that don't go through run().
+_GIT_TRUST = proc.GIT_ENV
 
 
 def lockwarm_path(project=GLOBAL):
@@ -498,12 +393,12 @@ class Operations:
         yield from run(["git", "add", "-A"], cwd=repo)
         # A checkpoint with no new artifacts since the last one is a clean no-op, not a
         # failure — `git commit` would otherwise exit 1 ("nothing to commit").
-        if not _has_staged_changes(repo):
+        if not proc.has_staged_changes(repo):
             yield _echo("cache unchanged since the last checkpoint — nothing to commit")
             return
         yield from run(
             ["git", "commit", "-m", f"checkpoint: {msg}"],
-            cwd=repo, env=_commit_identity_env(repo),
+            cwd=repo, env=proc.commit_identity_env(repo),
         )
 
         yield _echo(f"done. Run an export for '{project}' to stage the delta for transfer.")
@@ -534,7 +429,7 @@ class Operations:
 
         if base and target:
             yield _echo(f"incremental export — DVC delta for checkpoint range {base}..{target}")
-            changed = _changed_dvc(repo, base, target)
+            changed = proc.changed_dvc(repo, base, target)
             if not changed:
                 yield _echo(f"no DVC-tracked changes between {base} and {target} — nothing to push")
             else:
@@ -559,7 +454,7 @@ class Operations:
 
         # Sidecar list so the import side can show what's inside without unpacking.
         (export_dir / "checkpoints.json").write_text(
-            json.dumps(_cache_checkpoints(repo), indent=2) + "\n"
+            json.dumps(proc.cache_checkpoints(repo), indent=2) + "\n"
         )
 
         if project == GLOBAL:

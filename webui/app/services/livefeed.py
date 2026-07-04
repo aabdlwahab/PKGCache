@@ -7,34 +7,20 @@ One central process serves the global project (default ports) plus every registe
 project (its own ports); the poller fans out across all of them so the UI can show
 live activity for whichever project the operator is viewing. Cached snapshots are
 keyed by (project, eco)."""
-import json
 import os
-import ssl
 import threading
 import time
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-import projects
-from config import health_sources, progress_sources
+from app.gateways.pkgcache import fetch_json
+from app.services import projects
+from app.urls import health_sources, progress_sources
 
-_INTERNAL_TLS = ssl._create_unverified_context()  # internal progress polls only
 DL_INTERVAL = float(os.environ.get("UI_DL_INTERVAL", "1.5"))
 RECENT_MAX = 80
 # Bound concurrency so a host with many projects doesn't spawn hundreds of threads
 # per poll cycle (4 progress + 4 health endpoints per project).
 _POLL_WORKERS = int(os.environ.get("UI_POLL_WORKERS", "16"))
-
-
-def _fetch_one(url):
-    """The proxy's full progress JSON, or None if unreachable."""
-    try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        ctx = _INTERNAL_TLS if url.startswith("https") else None
-        with urllib.request.urlopen(req, timeout=2, context=ctx) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception:  # noqa: BLE001 - unreachable proxy / between requests
-        return None
 
 
 def _for_project(mapping, project):
@@ -134,12 +120,12 @@ class LiveFeed:
 
             prog = dict(zip(
                 (k for k, _ in prog_targets),
-                self._pool.map(_fetch_one, [u for _, u in prog_targets]),
+                self._pool.map(fetch_json, [u for _, u in prog_targets]),
             ))
             health = {}
             for key, data in zip(
                 (k for k, _ in health_targets),
-                self._pool.map(_fetch_one, [u for _, u in health_targets]),
+                self._pool.map(fetch_json, [u for _, u in health_targets]),
             ):
                 health[key] = ({"up": True, "offline": bool(data.get("offline"))}
                                if isinstance(data, dict) else {"up": False, "offline": None})

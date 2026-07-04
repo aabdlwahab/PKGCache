@@ -20,10 +20,9 @@ Project entries are now empty objects (no ports to allocate); the name is all th
 routing needs. Older registries that still carry per-project port maps and a "pool"
 block are read fine — the ports are simply ignored.
 
-This module is shared by ops.py (per-project VC + shuttle) and the HTTP layer
-(project CRUD + scoped reads); pkgcache reads the same file independently in
-pkgcache/core/config.py.
-"""
+This module is shared by the operations service (per-project VC + shuttle) and the
+HTTP layer (project CRUD + scoped reads); pkgcache reads the same file independently
+in pkgcache/core/config.py."""
 import json
 import os
 import pathlib
@@ -31,12 +30,15 @@ import re
 import secrets
 import threading
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+from app import settings
+
+ROOT = settings.ROOT
 
 # The global project's cache repo (unchanged). Per-project repos live beside it
 # under caches/projects/<name>/ — each its own git+DVC repo, so a per-project
-# checkpoint / rollback / shuttle only ever touches that project's state.
-CACHE_REPO = ROOT / "caches"
+# checkpoint / rollback / shuttle only ever touches that project's state. Kept as a
+# rebindable module attribute so tests can point it at a sandbox.
+CACHE_REPO = settings.CACHE_REPO
 PROJECTS_SUBDIR = "projects"
 
 # The registry file. Same env var pkgcache reads (PKGCACHE_PROJECTS), so the two

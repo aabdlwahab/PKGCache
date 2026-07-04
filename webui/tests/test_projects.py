@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # webui/ → `app` importable
 
 
 class RegistryTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class RegistryTests(unittest.TestCase):
         tmp = Path(self.tmp.name)
         os.environ["PKGCACHE_PROJECTS"] = str(tmp / "projects.json")
         import importlib
-        import projects
+        from app.services import projects
         importlib.reload(projects)  # re-read REGISTRY from the patched env
         self.projects = projects
         # Keep created cache dirs inside the tmp sandbox, not the real caches/.

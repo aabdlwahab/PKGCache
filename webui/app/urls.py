@@ -1,47 +1,16 @@
-"""Shared constants + paths for the control UI's API modules.
+"""Client-facing and internal URL derivation, per ecosystem and per project.
 
-Split out of the old monolithic server.py so the HTTP layer (server.py) stays
-thin and the data/jobs/live modules can be imported and tested independently.
-gen_manifest gives us the CACHES path + the eco→(subdir, ecosystem) map; importing
-it has no side effects.
-"""
-import os
-import pathlib
-import sys
+The proxies all listen on their fixed default ports; a named project is reached by a
+URL PREFIX on those same ports (see pkgcache/router.py + projects.role_prefix). This
+module turns (project, eco) into the three URL shapes the backend needs: the
+client-facing pull endpoints shown in the UI, the internal `pkgcache`-container
+progress feeds the live poller hits, and the /healthz probes. It reads the port map
+and prefix rules from the projects service, so there are no hard-coded ports here
+beyond the global project's hand-written hint strings."""
+from app.services import projects
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-# The cache state (DVC pointers + manifests + its own git history) lives in its
-# own repo under caches/, separate from this code repo. The History panel reads
-# that repo's log; manifests live inside it.
-CACHE_REPO = ROOT / "caches"
-MANIFESTS = CACHE_REPO / "manifests"
-WEBROOT = pathlib.Path(__file__).resolve().parent
-
-HOST = os.environ.get("UI_HOST", "0.0.0.0")
-PORT = int(os.environ.get("UI_PORT", "8088"))
-
-# git refuses a repo owned by another uid ("dubious ownership"); this UI usually
-# runs as root in a container against a host-owned checkout. We only ever read
-# our own repo, so trust it for every git call via env-based config (no global
-# `git config` needed). Merge onto os.environ when invoking git. The mutating
-# side keeps its own copy of this in ops.py so that module stays self-contained.
-GIT_ENV = {
-    "GIT_CONFIG_COUNT": "1",
-    "GIT_CONFIG_KEY_0": "safe.directory",
-    "GIT_CONFIG_VALUE_0": "*",
-    # Never let a git command started inside caches/ walk UP into this code repo
-    # (e.g. when the cache repo doesn't exist yet) and report the wrong history.
-    "GIT_CEILING_DIRECTORIES": str(ROOT),
-}
-
-sys.path.insert(0, str(ROOT / "scripts"))
-import gen_manifest  # noqa: E402  -- defines CACHES + ECOS
-
-import projects  # noqa: E402  -- the project registry (ports per project)
-
-ECOS = ("docker", "npm", "pip", "apt", "apk", "git", "files")
-
-# Where clients pull from, per ecosystem — shown verbatim in the UI's endpoints panel.
+# Where clients pull from, per ecosystem — shown verbatim in the UI's endpoints
+# panel for the GLOBAL project (named projects get the same shapes with a prefix).
 ENDPOINTS = {
     "docker": "<host>:5000        (pull <host>:5000/{dockerhub,ghcr,quay}/<image>)",
     "npm": "https://<host>:4873/",
@@ -52,10 +21,10 @@ ENDPOINTS = {
     "files": "https://<host>:3144/<path>   (wget --ca-certificate=ca.crt; PUT needs the write token)",
 }
 
-# Each role runs in the single `pkgcache` container on its own port; we poll their
-# /_progress endpoints and aggregate. HTTPS roles terminate TLS in-process with the
-# private CA, so internal polls hit https:// with verification skipped. The
-# `pkgcache` hostname only resolves inside the compose network.
+# Internal progress feeds for the GLOBAL project, on the `pkgcache` container. HTTPS
+# roles terminate TLS in-process with the private CA, so internal polls hit https://
+# with verification skipped. The `pkgcache` hostname only resolves inside the compose
+# network.
 PROGRESS_SOURCES = {
     "docker": "https://pkgcache:5000/v2/_progress",
     "npm": "https://pkgcache:4873/-/progress",
@@ -65,9 +34,9 @@ PROGRESS_SOURCES = {
     "files": "https://pkgcache:3144/+progress",
 }
 
-# Each role serves /healthz → {status, role, offline}. Probing these gives the
-# real "N roles up" count and the true online/offline state (vs guessing from
-# compose). Same hosts/ports as the progress feeds.
+# Each role serves /healthz → {status, role, offline}. Probing these gives the real
+# "N roles up" count and the true online/offline state. All projects share one server
+# per role, so health is per-SERVER: this global set answers for every project.
 HEALTH_SOURCES = {
     "docker": "https://pkgcache:5000/healthz",
     "npm": "https://pkgcache:4873/healthz",
@@ -77,15 +46,9 @@ HEALTH_SOURCES = {
     "files": "https://pkgcache:3144/healthz",
 }
 
-# ---- per-project derivation ----------------------------------------------
-# The dicts above describe the GLOBAL project (root URLs, no prefix). Every project
-# now shares those same ports; a named project is reached by a URL PREFIX on the
-# same port (see pkgcache/router.py + projects.role_prefix). We derive its progress
-# and endpoint URLs by inserting that prefix. Health is per-SERVER now (all projects
-# share one process per role), so it stays the global set for everyone.
-#
-# _PROGRESS_PATH is keyed by eco (docker/npm/pip/apt/git/files) and is the path the
-# role's sub-app serves; _ECO_ROLE maps eco → pkgcache role for prefix building.
+# _PROGRESS_PATH is keyed by eco and is the path the role's sub-app serves;
+# _ECO_ROLE maps eco → pkgcache role for prefix building; _ECO_SCHEME picks the
+# scheme (apt is plain HTTP, the rest HTTPS).
 _PROGRESS_PATH = {"docker": "/v2/_progress", "npm": "/-/progress",
                   "pip": "/+progress", "apt": "/acng-progress", "git": "/+progress",
                   "files": "/+progress"}

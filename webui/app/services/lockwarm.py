@@ -140,7 +140,7 @@ class Proxy:
     def __init__(self, base: str, context: ssl.SSLContext | None = None) -> None:
         self._base = base.rstrip("/")
         # Internal call to a role that terminates TLS with the private CA; the live
-        # poller skips verification the same way (see live.py).
+        # poller skips verification the same way (see services/livefeed.py).
         self._context = context or ssl._create_unverified_context()
 
     def offline(self) -> bool:
