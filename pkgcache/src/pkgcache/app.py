@@ -57,6 +57,11 @@ def build_app(config: Config | None = None, *, manage_lifecycle: bool = True) ->
     routes = [
         Route(repo.progress_path, _progress_endpoint(core), methods=["GET"]),
         Route("/healthz", _healthz(config), methods=["GET"]),
+        # Ledger admin surface for the control UI — registered BEFORE the handler
+        # routes so the apt catch-all / npm's /{pkg} can't shadow them. The webui
+        # reads these instead of opening ledger.db directly.
+        Route("/+ledger/artifacts", _ledger_artifacts(core), methods=["GET"]),
+        Route("/+ledger/stats", _ledger_stats(core), methods=["GET"]),
         *repo.mount(core),
     ]
 
@@ -129,6 +134,39 @@ def _healthz(config: Config):
         })
 
     return healthz
+
+
+def _ledger_artifacts(core: Core):
+    """GET /+ledger/artifacts?eco=&q=&sort=&page=&page_size= → artifact rows from this
+    (project, role) ledger. page_size<=0 (or omitted for the manifest view) returns
+    the full inventory. sqlite runs in a worker thread."""
+    def _int(v, default):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return default
+
+    async def endpoint(request: Request) -> JSONResponse:
+        p = request.query_params
+        rows = await core.ledger.aquery(
+            ecosystem=p.get("eco") or None,
+            q=p.get("q") or None,
+            sort=p.get("sort", "name"),
+            page=_int(p.get("page"), 1),
+            page_size=_int(p.get("page_size"), 0),
+        )
+        return JSONResponse({"artifacts": rows})
+
+    return endpoint
+
+
+def _ledger_stats(core: Core):
+    """GET /+ledger/stats → this ledger's per-ecosystem usage aggregates + bandwidth
+    samples, for the control UI to combine across roles. sqlite in a worker thread."""
+    async def endpoint(request: Request) -> JSONResponse:
+        return JSONResponse(await core.ledger.astats())
+
+    return endpoint
 
 
 def _progress_endpoint(core: Core):

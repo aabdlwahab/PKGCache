@@ -4,20 +4,33 @@ roles terminate TLS in-process with the private CA, so internal calls skip
 verification — and builds every project-prefixed URL through the projects service so
 the prefix rules live in one place.
 
-Read feeds (progress/health) go through fetch_json; the checkpoint's git maintenance
-and the console's artifact upload build their target URLs here and drive the request
-themselves, since those need bespoke error handling / body streaming."""
+Read feeds (progress/health/ledger) go through fetch_json; the checkpoint's git
+maintenance and the console's artifact upload build their target URLs here and drive
+the request themselves, since those need bespoke error handling / body streaming."""
 import http.client
 import json
 import ssl
+import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
+from app import manifest
 from app.services import projects
 
 # Internal polls/among roles that serve HTTPS with the private CA — skip verification
 # (same context the live poller and the lock warmer use).
 INTERNAL_TLS = ssl._create_unverified_context()
+
+# eco label → pkgcache role. The apt subdir/ledger carries BOTH apt and apk, so both
+# resolve to the apt role (distinguished by the `eco` filter on the ledger query).
+_ECO_ROLE = {"docker": "oci", "npm": "npm", "pip": "pypi", "apt": "apt",
+             "apk": "apt", "git": "git", "files": "files"}
+_ROLES = ("oci", "npm", "pypi", "apt", "git", "files")
+
+# Fan-out pool for the per-role /+ledger/stats calls (6 roles); bounded like the live
+# poller so a stats request can't spawn threads without limit.
+_POOL = ThreadPoolExecutor(max_workers=6)
 
 
 def fetch_json(url, timeout=2):
@@ -31,6 +44,59 @@ def fetch_json(url, timeout=2):
             return json.loads(resp.read().decode("utf-8"))
     except Exception:  # noqa: BLE001 - unreachable proxy / between requests
         return None
+
+
+# ---- ledger reads (the control UI's package / stats views) ----------------
+# The webui no longer opens ledger.db directly; it reads pkgcache's /+ledger/* admin
+# endpoints (one per role, prefixed per project) and combines them in the reads
+# service. A short last-good cache smooths a single role blipping between polls —
+# a momentary miss serves the previous value (up to _STALE_OK) instead of flashing
+# an empty panel, which the old direct-file read never did.
+_STALE_OK = 30.0
+_cache: dict = {}  # url -> (monotonic_ts, value)
+
+
+def _ledger_url(project, role, path, params=None):
+    scheme = "http" if role == "apt" else "https"
+    port = projects.ROLE_PORT[role]
+    url = f"{scheme}://pkgcache:{port}{projects.role_prefix(project, role)}{path}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    return url
+
+
+def _fetch_ledger(url, timeout):
+    """fetch_json with a last-good fallback: on a miss, serve the cached value if it
+    is still fresh enough, so one unreachable poll doesn't blank the view."""
+    now = time.monotonic()
+    data = fetch_json(url, timeout)
+    if data is not None:
+        _cache[url] = (now, data)
+        return data
+    hit = _cache.get(url)
+    if hit and now - hit[0] < _STALE_OK:
+        return hit[1]
+    return None
+
+
+def ledger_artifacts(project, eco, q=None, sort="name", page=1, page_size=0):
+    """Artifact rows for one ecosystem of a project, from its role's /+ledger/artifacts
+    (page_size=0 → the full inventory, for the manifest view). [] if unreachable."""
+    role = _ECO_ROLE[eco]
+    _, ecosystem = manifest.ECOS[eco]
+    params = {"eco": ecosystem, "sort": sort, "page": page, "page_size": page_size}
+    if q:
+        params["q"] = q
+    data = _fetch_ledger(_ledger_url(project, role, "/+ledger/artifacts", params), timeout=5)
+    return data.get("artifacts", []) if isinstance(data, dict) else []
+
+
+def ledger_stats(project):
+    """{role: stats-dict|None} — each role's /+ledger/stats, fetched concurrently. The
+    reads service combines these across roles into the /api/stats view."""
+    urls = {role: _ledger_url(project, role, "/+ledger/stats") for role in _ROLES}
+    values = _POOL.map(lambda u: _fetch_ledger(u, timeout=8), urls.values())
+    return dict(zip(urls.keys(), values))
 
 
 def git_maintain_url(project):

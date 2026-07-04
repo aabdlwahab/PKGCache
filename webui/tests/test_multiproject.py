@@ -12,7 +12,6 @@ so nothing touches the real config/ or caches/.
 """
 import io
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -34,22 +33,6 @@ from app.api import routes  # noqa: E402  -- the declarative route table + dispa
 from app.services import operations as ops  # noqa: E402  -- keeps the `ops.` references
 from app.services import reads  # noqa: E402
 from app.services import usage  # noqa: E402
-
-
-def _make_ledger(db_path, ecosystem, rows):
-    """A minimal artifacts ledger matching what the proxies write / reads.py queries."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "CREATE TABLE artifacts (name TEXT, version TEXT, digest TEXT, size INTEGER, "
-        "origin TEXT, arch TEXT, cached_at REAL, ecosystem TEXT)"
-    )
-    conn.executemany(
-        "INSERT INTO artifacts VALUES (?,?,?,?,?,?,?,?)",
-        [(n, v, "sha256:x", 10, "upstream", "amd64", 1.0, ecosystem) for n, v in rows],
-    )
-    conn.commit()
-    conn.close()
 
 
 class MultiProjectTests(unittest.TestCase):
@@ -85,15 +68,97 @@ class MultiProjectTests(unittest.TestCase):
         self.assertEqual(hs, config.health_sources("global"))
         self.assertEqual(hs["apt"], "http://pkgcache:3142/healthz")
 
-    def test_packages_read_from_project_ledger(self):
-        reader = reads.Reads(usage.Usage())
-        _make_ledger(self.repo / "npm" / "ledger.db", "npm", [("left-pad", "1.3.0")])
-        out = reader.packages("proja", eco="npm")
-        names = [r["name"] for r in out["ecosystems"]["npm"]]
-        self.assertEqual(names, ["left-pad"])
-        self.assertEqual(out["project"], "proja")
-        # The global project has its own (here: empty) ledger — isolation holds.
-        self.assertEqual(reader.packages("global", eco="npm")["ecosystems"]["npm"], [])
+    def test_packages_read_through_the_ledger_gateway_scoped(self):
+        # reads.packages now fetches pkgcache's /+ledger/artifacts (per project+eco)
+        # instead of opening ledger.db — stub the gateway and assert the project/eco
+        # are threaded through and the rows come back untouched.
+        from app.gateways import pkgcache
+        calls = []
+
+        def fake(project, eco, **kw):
+            calls.append((project, eco))
+            return [{"name": "left-pad", "version": "1.3.0"}] if (project, eco) == ("proja", "npm") else []
+
+        orig = pkgcache.ledger_artifacts
+        pkgcache.ledger_artifacts = fake
+        try:
+            reader = reads.Reads(usage.Usage())
+            out = reader.packages("proja", eco="npm")
+            self.assertEqual([r["name"] for r in out["ecosystems"]["npm"]], ["left-pad"])
+            self.assertEqual(out["project"], "proja")
+            self.assertEqual(reader.packages("global", eco="npm")["ecosystems"]["npm"], [])
+        finally:
+            pkgcache.ledger_artifacts = orig
+        self.assertIn(("proja", "npm"), calls)
+
+    def test_ledger_gateway_builds_prefixed_urls(self):
+        # The gateway must hit each role's port + the project's URL prefix, and pass
+        # the ecosystem filter (apk rides the apt role's ledger).
+        from app.gateways import pkgcache
+        seen = {}
+
+        def fake_fetch(url, timeout):
+            seen["url"] = url
+            return {"artifacts": []}
+
+        orig = pkgcache._fetch_ledger
+        pkgcache._fetch_ledger = fake_fetch
+        try:
+            pkgcache.ledger_artifacts("proja", "npm")
+            self.assertEqual(
+                seen["url"].split("?")[0], "https://pkgcache:4873/proja/npm/+ledger/artifacts")
+            pkgcache.ledger_artifacts("proja", "apk")
+            base, query = seen["url"].split("?")
+            self.assertEqual(base, "http://pkgcache:3142/proja/apt/+ledger/artifacts")
+            self.assertIn("eco=apk", query)
+            pkgcache.ledger_artifacts("global", "docker")
+            self.assertEqual(
+                seen["url"].split("?")[0], "https://pkgcache:5000/+ledger/artifacts")
+        finally:
+            pkgcache._fetch_ledger = orig
+
+    def test_stats_combines_per_role_slices(self):
+        # reads.stats fans out to each role's /+ledger/stats and combines. Stub the
+        # gateway's per-role fetch and check the cross-role aggregation.
+        from app.gateways import pkgcache
+        role_stats = {
+            "npm": {"by_eco": {"npm": {"count": 2, "size": 30, "requests": 9,
+                                       "hit_count": 4, "hit_bytes": 400,
+                                       "miss_count": 1, "miss_bytes": 50}},
+                    "leaderboard": {"npm": [{"name": "left-pad", "count": 9, "last_access": 1.0}]},
+                    "arch": [{"arch": "amd64", "count": 2, "size": 30}],
+                    "top_largest": [{"eco": "npm", "name": "left-pad", "version": "1", "size": 20}],
+                    "recent_added": [{"eco": "npm", "name": "left-pad", "version": "1",
+                                      "size": 20, "cached_at": "2026-01-01"}],
+                    "bandwidth": [1000.0, 3000.0], "bandwidth_points": [{"ts": 1, "bps": 1000.0, "source": "passive"}]},
+            "pypi": {"by_eco": {"pip": {"count": 1, "size": 5, "requests": 2,
+                                        "hit_count": 1, "hit_bytes": 100,
+                                        "miss_count": 0, "miss_bytes": 0}},
+                     "arch": [{"arch": "amd64", "count": 1, "size": 5}],
+                     "top_largest": [{"eco": "pip", "name": "numpy", "version": "2", "size": 999}],
+                     "recent_added": [], "bandwidth": [], "bandwidth_points": []},
+        }
+
+        def fake_ledger_stats(project):
+            return {role: role_stats.get(role) for role in
+                    ("oci", "npm", "pypi", "apt", "git", "files")}
+
+        orig = pkgcache.ledger_stats
+        pkgcache.ledger_stats = fake_ledger_stats
+        try:
+            s = reads.Reads(usage.Usage()).stats("proja")
+        finally:
+            pkgcache.ledger_stats = orig
+
+        self.assertEqual(s["totals"]["packages"], 3)          # 2 npm + 1 pip
+        self.assertEqual(s["totals"]["size"], 35)
+        self.assertEqual(s["totals"]["hits"], 5)              # 4 + 1
+        self.assertEqual(s["bytes_saved"], 500)               # 400 + 100
+        self.assertEqual(s["hit_rate"], round(5 / 6 * 100, 1))
+        self.assertEqual(s["top_largest"][0]["name"], "numpy")  # sorted across roles
+        self.assertEqual({a["arch"]: a["count"] for a in s["by_arch"]}["amd64"], 3)
+        self.assertEqual(s["leaderboard"]["npm"][0]["name"], "left-pad")
+        self.assertEqual(s["bandwidth"]["current_bps"], 2000.0)  # median of [1000,3000]
 
     def test_history_is_per_project_repo(self):
         reader = reads.Reads(usage.Usage())

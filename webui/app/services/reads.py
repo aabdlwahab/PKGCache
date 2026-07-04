@@ -1,18 +1,25 @@
-"""Read-only data for the API: cache contents (live, from the SQLite ledgers via the
-ledgers gateway), the committed manifest, git history (via the proc gateway), and
-proxy container status. Owns nothing mutable — it reads on each call — so the only
-injected collaborator is the disk-usage cache."""
+"""Read-only data for the API: cache contents (live, via pkgcache's /+ledger admin
+endpoints — see the pkgcache gateway), the committed manifest, git history (via the
+proc gateway), and proxy container status.
+
+The package/stats views used to open the per-project SQLite ledgers directly,
+duplicating pkgcache's own Ledger.query. They now fetch pkgcache's /+ledger/artifacts
+and /+ledger/stats per role and combine them here, so the ledger schema has a single
+owner (pkgcache) and the two processes talk over HTTP, not a shared database file.
+Owns nothing mutable — it reads on each call — so the only injected collaborator is
+the disk-usage cache."""
 import json
 import statistics
 import subprocess
 
-from app import manifest, settings
-from app.gateways import ledgers, proc
+from app import settings
+from app.gateways import pkgcache, proc
 from app.services import projects
 
-# Cache subdirs holding a ledger.db (apt + apk share "apt"). Used by the stats
-# aggregation, which opens each DB once.
-_SUBDIRS = ("docker", "npm", "pip", "apt", "git", "files")
+# eco label → the role whose ledger holds it, for mapping a per-eco row back to the
+# role's bandwidth samples when estimating time saved (apt + apk share the apt role).
+_ECO_ROLE = {"docker": "oci", "npm": "npm", "pip": "pypi", "apt": "apt",
+             "apk": "apt", "git": "git", "files": "files"}
 
 
 def _repo(project):
@@ -26,22 +33,20 @@ def _empty_eco(eco):
 
 
 class Reads:
-    """The read side of the control API: live cache contents (from the per-project
-    SQLite ledgers), the last-checkpoint manifest, cache-repo git history, and proxy
-    container status. Owns nothing mutable — it reads the filesystem on each call —
-    so the only injected collaborator is the disk-usage cache."""
+    """The read side of the control API: live cache contents (from pkgcache's ledger
+    admin endpoints), the last-checkpoint manifest, cache-repo git history, and proxy
+    container status."""
 
     def __init__(self, usage) -> None:
         self._usage = usage
 
     def manifests(self, project=projects.GLOBAL):
-        """Snapshot for /api/manifests: live cache contents (from the ledgers) + how
-        many each ecosystem has versioned in the last checkpoint, for THIS project."""
-        root = _repo(project)
+        """Snapshot for /api/manifests: live cache contents (full inventory per eco) +
+        how many each ecosystem has versioned in the last checkpoint, for THIS project."""
         committed = self._committed(project)
         return {
             "project": project,
-            "ecosystems": {eco: ledgers.ledger_rows(eco, root) for eco in settings.ECOS},
+            "ecosystems": {eco: pkgcache.ledger_artifacts(project, eco) for eco in settings.ECOS},
             "checkpointed": {eco: len(committed.get(eco, [])) for eco in settings.ECOS},
             "usage": self._usage.read(),  # disk footprint + deduplicated docker bytes (cached)
             "age": 0.0,  # read live on every request
@@ -51,11 +56,13 @@ class Reads:
         """Server-side filter / sort / paginate for /api/packages — richer than the
         manifest view (origin, arch). The controller parses the HTTP query into these
         typed args, so this service never touches a request dict."""
-        root = _repo(project)
         ecos = [eco] if eco in settings.ECOS else settings.ECOS
         return {
             "project": project,
-            "ecosystems": {e: ledgers.ledger_rows(e, root, q=q, sort=sort, page=page, full=True) for e in ecos},
+            "ecosystems": {
+                e: pkgcache.ledger_artifacts(project, e, q=q, sort=sort, page=page, page_size=1000)
+                for e in ecos
+            },
             "page": page,
             "sort": sort,
         }
@@ -63,79 +70,43 @@ class Reads:
     def stats(self, project=projects.GLOBAL):
         """Aggregate statistics for the stats tab — inventory, per-package request
         leaderboard, hit/miss traffic, and an estimated 'time saved' from passive
-        upstream-bandwidth samples. All read-only over the per-eco ledgers."""
-        import sqlite3
-
-        root = _repo(project)
+        upstream-bandwidth samples. Combines each role's /+ledger/stats slice."""
+        role_stats = pkgcache.ledger_stats(project)  # {role: dict|None}
         by_eco_map = {eco: _empty_eco(eco) for eco in settings.ECOS}
         leaderboard = {eco: [] for eco in settings.ECOS}
-        top_largest, recent_added, samples = [], [], []
-        arch_map, bw_by_subdir = {}, {}
-        eco_subdir = {eco: sd for eco, (sd, _) in manifest.ECOS.items()}
+        top_largest, recent_added, points = [], [], []
+        arch_map, bw_by_role = {}, {}
 
-        for subdir in _SUBDIRS:
-            db = root / subdir / "ledger.db"
-            conn = ledgers.ro(db)
-            if conn is None:
+        for role, data in role_stats.items():
+            if not isinstance(data, dict):
                 continue
-            try:
-                for eco, (sd, ecosystem) in manifest.ECOS.items():
-                    if sd != subdir:
-                        continue
-                    cnt, size = conn.execute(
-                        "SELECT COUNT(*), COALESCE(SUM(size),0) FROM artifacts WHERE ecosystem=?",
-                        (ecosystem,),
-                    ).fetchone()
-                    tr = conn.execute(
-                        "SELECT hit_count,hit_bytes,miss_count,miss_bytes FROM traffic_stats WHERE ecosystem=?",
-                        (ecosystem,),
-                    ).fetchone()
-                    req = conn.execute(
-                        "SELECT COALESCE(SUM(access_count),0) FROM package_stats WHERE ecosystem=?",
-                        (ecosystem,),
-                    ).fetchone()[0]
-                    row = by_eco_map[eco]
-                    row.update(count=cnt, size=size, requests=req)
-                    if tr:
-                        row.update(hit_count=tr["hit_count"], hit_bytes=tr["hit_bytes"],
-                                   miss_count=tr["miss_count"], miss_bytes=tr["miss_bytes"])
-                    leaderboard[eco] = [
-                        {"name": r["name"], "count": r["access_count"], "last_access": r["last_access"]}
-                        for r in conn.execute(
-                            "SELECT name,access_count,last_access FROM package_stats "
-                            "WHERE ecosystem=? ORDER BY access_count DESC, name LIMIT 10", (ecosystem,))
-                    ]
-                    for r in conn.execute(
-                        "SELECT COALESCE(NULLIF(arch,''),'(none)') a, COUNT(*) c, COALESCE(SUM(size),0) s "
-                        "FROM artifacts WHERE ecosystem=? GROUP BY a", (ecosystem,)):
-                        m = arch_map.setdefault(r["a"], [0, 0])
-                        m[0] += r["c"]
-                        m[1] += r["s"]
-                    for r in conn.execute(
-                        "SELECT name,version,size FROM artifacts WHERE ecosystem=? AND size IS NOT NULL "
-                        "ORDER BY size DESC LIMIT 15", (ecosystem,)):
-                        top_largest.append({"eco": eco, "name": r["name"], "version": r["version"], "size": r["size"]})
-                    for r in conn.execute(
-                        "SELECT name,version,size,cached_at FROM artifacts WHERE ecosystem=? "
-                        "ORDER BY cached_at DESC LIMIT 15", (ecosystem,)):
-                        recent_added.append({"eco": eco, "name": r["name"], "version": r["version"],
-                                             "size": r["size"], "cached_at": r["cached_at"]})
-                bps = [r["bps"] for r in conn.execute("SELECT bps FROM bandwidth_samples ORDER BY ts DESC LIMIT 500")]
-                bw_by_subdir[subdir] = bps
-                for r in conn.execute("SELECT ts,bps,source FROM bandwidth_samples ORDER BY ts DESC LIMIT 120"):
-                    samples.append({"ts": r["ts"], "bps": r["bps"], "source": r["source"]})
-            except sqlite3.Error:
-                pass
-            finally:
-                conn.close()
+            for eco, agg in data.get("by_eco", {}).items():
+                if eco not in by_eco_map:
+                    continue
+                by_eco_map[eco].update(
+                    count=agg.get("count", 0), size=agg.get("size", 0),
+                    requests=agg.get("requests", 0),
+                    hit_count=agg.get("hit_count", 0), hit_bytes=agg.get("hit_bytes", 0),
+                    miss_count=agg.get("miss_count", 0), miss_bytes=agg.get("miss_bytes", 0))
+            for eco, lb in data.get("leaderboard", {}).items():
+                if eco in leaderboard:
+                    leaderboard[eco] = lb
+            for a in data.get("arch", []):
+                m = arch_map.setdefault(a["arch"], [0, 0])
+                m[0] += a.get("count", 0)
+                m[1] += a.get("size", 0)
+            top_largest.extend(data.get("top_largest", []))
+            recent_added.extend(data.get("recent_added", []))
+            bw_by_role[role] = data.get("bandwidth", [])
+            points.extend(data.get("bandwidth_points", []))
 
-        all_bps = [b for v in bw_by_subdir.values() for b in v]
+        all_bps = [b for v in bw_by_role.values() for b in v]
         global_bps = statistics.median(all_bps) if all_bps else 0.0
         by_eco = list(by_eco_map.values())
         time_saved = 0.0
         for row in by_eco:
-            sd_bps = bw_by_subdir.get(eco_subdir.get(row["eco"]), [])
-            bps = statistics.median(sd_bps) if sd_bps else global_bps
+            role_bps = bw_by_role.get(_ECO_ROLE.get(row["eco"]), [])
+            bps = statistics.median(role_bps) if role_bps else global_bps
             if bps > 0:
                 time_saved += row["hit_bytes"] / bps
 
@@ -143,7 +114,7 @@ class Reads:
         misses = sum(r["miss_count"] for r in by_eco)
         top_largest.sort(key=lambda x: x["size"] or 0, reverse=True)
         recent_added.sort(key=lambda x: x["cached_at"] or "", reverse=True)
-        samples.sort(key=lambda x: x["ts"])
+        points.sort(key=lambda x: x["ts"])
         arch = sorted(
             ({"arch": k, "count": v[0], "size": v[1]} for k, v in arch_map.items()),
             key=lambda x: x["count"], reverse=True,
@@ -168,7 +139,7 @@ class Reads:
             "recent_added": recent_added[:15],
             "bandwidth": {
                 "current_bps": round(global_bps, 1),
-                "samples": samples[-120:],
+                "samples": points[-120:],
             },
             "usage": self._usage.read(),
         }

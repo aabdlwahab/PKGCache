@@ -222,9 +222,10 @@ class Ledger:
 
     def query(self, ecosystem: str | None = None, q: str | None = None,
               sort: str = "name", page: int = 1, page_size: int = 200) -> list[dict]:
-        # NOTE: the control UI is stdlib-only and can't import this module, so it
-        # reimplements this same artifacts query/sort over the ledger.db files in
-        # webui/reads.py:_ledger_rows. Keep the sort whitelist + column set in sync.
+        # The control UI reaches this over HTTP (GET /+ledger/artifacts, served by
+        # app.py) via the webui pkgcache gateway — it no longer opens ledger.db
+        # itself, so this is the single implementation. page_size<=0 returns ALL rows
+        # (the manifest view wants the full inventory, not a page).
         sort_col = {"name": "name", "size": "size", "date": "cached_at",
                     "version": "version"}.get(sort, "name")
         clauses, args = [], []
@@ -236,7 +237,9 @@ class Ledger:
             args.append(f"%{q}%")
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         page = max(1, page)
-        args += [page_size, (page - 1) * page_size]
+        limit = page_size if page_size > 0 else -1          # -1 → no limit (all rows)
+        offset = (page - 1) * page_size if page_size > 0 else 0
+        args += [limit, offset]
         with self._lock:
             cur = self._conn.execute(
                 f"SELECT ecosystem, name, version, digest, size, origin, arch, cached_at "
@@ -244,6 +247,73 @@ class Ledger:
                 args,
             )
             return [dict(r) for r in cur.fetchall()]
+
+    def stats(self) -> dict:
+        """Per-ecosystem usage aggregates for THIS ledger, plus this ledger's
+        bandwidth samples. The control UI (webui reads service) fetches one of these
+        per role over HTTP and combines them across roles into the /api/stats view —
+        so the aggregation SQL lives here, next to the schema it reads, instead of
+        being reimplemented over the raw file. apt's ledger holds two ecosystems
+        (apt + apk); they come back as separate by_eco/leaderboard entries."""
+        with self._lock:
+            c = self._conn
+            by_eco: dict[str, dict] = {}
+            for r in c.execute(
+                "SELECT ecosystem, COUNT(*) n, COALESCE(SUM(size),0) sz "
+                "FROM artifacts GROUP BY ecosystem"
+            ):
+                by_eco.setdefault(r["ecosystem"], {}).update(count=r["n"], size=r["sz"])
+            for r in c.execute(
+                "SELECT ecosystem, hit_count, hit_bytes, miss_count, miss_bytes FROM traffic_stats"
+            ):
+                by_eco.setdefault(r["ecosystem"], {}).update(
+                    hit_count=r["hit_count"], hit_bytes=r["hit_bytes"],
+                    miss_count=r["miss_count"], miss_bytes=r["miss_bytes"])
+            for r in c.execute(
+                "SELECT ecosystem, COALESCE(SUM(access_count),0) req "
+                "FROM package_stats GROUP BY ecosystem"
+            ):
+                by_eco.setdefault(r["ecosystem"], {}).update(requests=r["req"])
+            leaderboard = {
+                eco: [
+                    {"name": r["name"], "count": r["access_count"], "last_access": r["last_access"]}
+                    for r in c.execute(
+                        "SELECT name, access_count, last_access FROM package_stats "
+                        "WHERE ecosystem=? ORDER BY access_count DESC, name LIMIT 10", (eco,))
+                ]
+                for eco in by_eco
+            }
+            arch = [
+                {"arch": r["a"], "count": r["c"], "size": r["s"]}
+                for r in c.execute(
+                    "SELECT COALESCE(NULLIF(arch,''),'(none)') a, COUNT(*) c, "
+                    "COALESCE(SUM(size),0) s FROM artifacts GROUP BY a")
+            ]
+            top_largest = [
+                {"eco": r["ecosystem"], "name": r["name"], "version": r["version"], "size": r["size"]}
+                for r in c.execute(
+                    "SELECT ecosystem, name, version, size FROM artifacts "
+                    "WHERE size IS NOT NULL ORDER BY size DESC LIMIT 15")
+            ]
+            recent_added = [
+                {"eco": r["ecosystem"], "name": r["name"], "version": r["version"],
+                 "size": r["size"], "cached_at": r["cached_at"]}
+                for r in c.execute(
+                    "SELECT ecosystem, name, version, size, cached_at FROM artifacts "
+                    "ORDER BY cached_at DESC LIMIT 15")
+            ]
+            bandwidth = [r["bps"] for r in c.execute(
+                "SELECT bps FROM bandwidth_samples ORDER BY ts DESC LIMIT 500")]
+            points = [
+                {"ts": r["ts"], "bps": r["bps"], "source": r["source"]}
+                for r in c.execute(
+                    "SELECT ts, bps, source FROM bandwidth_samples ORDER BY ts DESC LIMIT 120")
+            ]
+        return {
+            "by_eco": by_eco, "leaderboard": leaderboard, "arch": arch,
+            "top_largest": top_largest, "recent_added": recent_added,
+            "bandwidth": bandwidth, "bandwidth_points": points,
+        }
 
     def export(self, ecosystem: str) -> list[dict]:
         """Deterministic git-snapshot subset (volatile fields dropped)."""
@@ -330,6 +400,12 @@ class Ledger:
 
     async def alist_tags(self, *a):
         return await asyncio.to_thread(self.list_tags, *a)
+
+    async def aquery(self, **kw):
+        return await asyncio.to_thread(lambda: self.query(**kw))
+
+    async def astats(self):
+        return await asyncio.to_thread(self.stats)
 
 
 def _now_iso() -> str:

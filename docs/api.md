@@ -90,8 +90,8 @@ One job runs at a time. The job's streamed log is polled via `GET /api/jobs/{id}
   [webui/app/api/routes.py](../webui/app/api/routes.py); the server plumbing (send
   helpers, service wiring) in
   [webui/app/api/handler.py](../webui/app/api/handler.py).
-- Ledger-backed reads (`/api/manifests`, `/api/packages`, `/api/stats`) currently
-  read the per-project SQLite ledgers directly through the `ledgers` gateway; a
-  planned change moves them behind a pkgcache admin API (see
-  [docs/refactor-plan.md](refactor-plan.md), Phase 4). Wire shapes above are
-  expected to stay the same across that change.
+- Ledger-backed reads (`/api/manifests`, `/api/packages`, `/api/stats`) fetch
+  pkgcache's `GET /+ledger/artifacts` and `/+ledger/stats` per (project, role)
+  through the `pkgcache` gateway and combine them in the reads service — the webui
+  no longer opens `ledger.db` directly. If pkgcache is unreachable, a short last-good
+  cache serves the previous values (then empty), so a role blip doesn't blank a panel.

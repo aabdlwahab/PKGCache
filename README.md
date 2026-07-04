@@ -569,10 +569,11 @@ and supports real queries for the UI. Rich, volatile fields (`cached_at`, `origi
 `{ecosystem, name, version, digest, size}`, sorted, so diffs stay clean. A
 `--rebuild` repair path can repopulate a ledger from disk if it ever drifts.
 
-> Because the webui is deliberately stdlib-only it can't import `pkgcache`, so it
-> re-reads the ledger files directly ([webui/app/services/reads.py](webui/app/services/reads.py)) instead of
-> calling `Ledger.query`. The two query implementations carry cross-reference notes
-> to keep the sort whitelist + column set in sync.
+> The webui reads these ledgers over HTTP, not by opening the files: pkgcache serves
+> `GET /+ledger/artifacts` and `/+ledger/stats` per (project, role), and the webui's
+> pkgcache gateway fetches + combines them ([webui/app/services/reads.py](webui/app/services/reads.py)).
+> So `Ledger.query`/`Ledger.stats` are the single implementation — the stdlib-only
+> control plane no longer duplicates the query, and pkgcache owns its schema outright.
 
 ### 6. Versioning & air-gap transfer (git + DVC)
 

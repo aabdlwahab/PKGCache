@@ -86,7 +86,17 @@ like pkgops). Update the two external importers: `scripts/pkgops.py` and the tes
   item — it completes the layering (no service does raw file I/O) and is fully
   unit-tested (corrupt-file → ApiError; env-driven path).
 
-## Phase 4 — ledger reads behind pkgcache (independent after Phase 1)
+## Phase 4 — ledger reads behind pkgcache (independent after Phase 1)  ✅ DONE
+
+Implemented: pkgcache serves `GET /+ledger/artifacts` (wraps `Ledger.query`, with
+page_size<=0 → all rows) and `GET /+ledger/stats` (new `Ledger.stats()`), registered
+before the greedy handler routes. The webui `pkgcache` gateway fetches these per
+(project, role) — prefix-aware, concurrent for stats — with a last-good cache; the
+reads service combines them and no longer opens `ledger.db` (the `ledgers` gateway is
+deleted). Verified: pkgcache pytest (Ledger.query/stats + TestClient routes), webui
+unit tests (mocked gateway + stats-combine), and a real-HTTP round-trip (webui gateway
+↔ a live pkgcache role from the test venv). Original plan text below.
+
 
 - pkgcache: per-(project, role) admin routes beside `/+progress`:
   `GET /+ledger/artifacts?q=&sort=&page=&full=` and `GET /+ledger/stats`
