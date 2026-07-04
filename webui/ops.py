@@ -201,6 +201,14 @@ def _cache_checkpoints(cwd):
     return out
 
 
+def _git_maintain_url(project):
+    """The git role's /+maintain endpoint for THIS project: the shared git port
+    plus the project's URL prefix (all projects share the role ports; the project
+    rides the path — see projects.role_prefix). Raises ProjectError if unknown."""
+    port = projects.ports(project)["git"]
+    return f"https://pkgcache:{port}{projects.role_prefix(project, 'git')}/+maintain"
+
+
 def lockwarm_path(project=GLOBAL):
     """Path of the rewritten uv.lock for a project — written by the lockwarm op,
     streamed by the UI's download route."""
@@ -345,12 +353,12 @@ class Operations:
             return  # no git mirrors → nothing to compact
         yield _echo("compacting git mirrors (geometric repack) before hashing")
         try:
-            port = projects.ports(project).get("git")
+            url = _git_maintain_url(project)
         except projects.ProjectError:
-            port = None
-        if port:
+            url = None
+        if url:
             try:
-                req = urllib.request.Request(f"https://pkgcache:{port}/+maintain", method="POST")
+                req = urllib.request.Request(url, method="POST")
                 with urllib.request.urlopen(
                     req, timeout=1800, context=ssl._create_unverified_context()
                 ) as resp:

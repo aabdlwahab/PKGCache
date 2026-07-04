@@ -48,7 +48,18 @@ def proxies(project=projects.GLOBAL):
     return out
 
 _JOB_RE = re.compile(r"/api/jobs/(\d+)")
-_PROJECT_RE = re.compile(r"/api/projects/([a-z0-9-]+)")
+# Capture any non-empty segment and let projects.validate_name decide — a stricter
+# pattern here silently 404s names the create API accepts (e.g. with '.' or '_').
+_PROJECT_RE = re.compile(r"/api/projects/([^/]+)")
+
+
+def files_target(project, rel, overwrite=False):
+    """The path (plus query) an artifact PUT/DELETE must hit on the shared files
+    port for THIS project: the project's URL prefix (see projects.role_prefix) +
+    the quoted artifact path. Raises ProjectError for an unknown project."""
+    projects.ports(project)  # existence check — raises ProjectError on a typo
+    url = projects.role_prefix(project, "files") + "/" + urllib.parse.quote(rel, safe="/")
+    return url + "?overwrite=1" if overwrite else url
 
 
 class _LimitedReader:
@@ -214,19 +225,15 @@ class Handler(BaseHTTPRequestHandler):
         rel = (q.get("path", [""])[0] or "").strip("/")
         if not rel:
             return self._send_json({"error": "path required"}, 400)
+        overwrite = method == "PUT" and q.get("overwrite", ["0"])[0] in ("1", "true", "yes")
         try:
-            port = projects.ports(project).get("files")
+            url = files_target(project, rel, overwrite)
         except projects.ProjectError as exc:
             return self._send_json({"error": str(exc)}, 400)
-        if not port:
-            return self._send_json({"error": "files role not allocated for this project"}, 400)
         token = projects.write_token(project)
         if not token:
             return self._send_json({"error": "no write token set — generate one first"}, 409)
 
-        url = "/" + urllib.parse.quote(rel, safe="/")
-        if method == "PUT" and q.get("overwrite", ["0"])[0] in ("1", "true", "yes"):
-            url += "?overwrite=1"
         headers = {"Authorization": f"Bearer {token}"}
         body = None
         if method == "PUT":
@@ -236,7 +243,8 @@ class Handler(BaseHTTPRequestHandler):
             body = _LimitedReader(self.rfile, length)
         try:
             conn = http.client.HTTPSConnection(
-                "pkgcache", port, timeout=3600, context=ssl._create_unverified_context())
+                "pkgcache", projects.ROLE_PORT["files"], timeout=3600,
+                context=ssl._create_unverified_context())
             conn.request(method, url, body=body, headers=headers)
             resp = conn.getresponse()
             payload = resp.read()

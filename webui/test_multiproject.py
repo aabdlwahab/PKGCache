@@ -237,5 +237,49 @@ class SharedDvcCacheTests(unittest.TestCase):
         self.assertFalse((self.repo / "docker" / "ledger.db.unshare").exists())
 
 
+class PrefixRoutingFixTests(unittest.TestCase):
+    """Regressions from the port-pool → URL-prefix migration: every internal call
+    to a named project's role must carry its prefix (the shared ports alone reach
+    only the GLOBAL sub-app), and the HTTP layer's name patterns must accept the
+    same grammar validate_name does."""
+
+    def setUp(self):
+        projects.save_registry({"projects": {}, "tokens": {}})
+        projects.create("proja")
+
+    def test_files_proxy_target_carries_project_prefix(self):
+        import server
+        # Global keeps the bare root path; a named project is prefixed — without
+        # this, a console upload for proja lands in the GLOBAL files tree.
+        self.assertEqual(server.files_target("global", "a/b.txt"), "/a/b.txt")
+        self.assertEqual(server.files_target("proja", "a/b.txt"), "/proja/files/a/b.txt")
+        self.assertEqual(
+            server.files_target("proja", "a/b.txt", overwrite=True),
+            "/proja/files/a/b.txt?overwrite=1",
+        )
+        # Path segments are quoted; the separator survives.
+        self.assertEqual(server.files_target("global", "dir/a b.txt"), "/dir/a%20b.txt")
+        with self.assertRaises(projects.ProjectError):
+            server.files_target("ghost", "a.txt")
+
+    def test_git_maintain_url_carries_project_prefix(self):
+        # Checkpoint's mirror repack must hit THIS project's git sub-app, not global's.
+        self.assertEqual(ops._git_maintain_url("global"), "https://pkgcache:3143/+maintain")
+        self.assertEqual(ops._git_maintain_url("proja"),
+                         "https://pkgcache:3143/proja/git/+maintain")
+        with self.assertRaises(projects.ProjectError):
+            ops._git_maintain_url("ghost")
+
+    def test_project_delete_route_accepts_full_name_grammar(self):
+        import server
+        # Names with '.' and '_' are creatable, so the DELETE route must match them
+        # (validate_name is the gatekeeper, not the route pattern).
+        for name in ("proja", "my_app", "team.web-2"):
+            m = server._PROJECT_RE.fullmatch(f"/api/projects/{name}")
+            self.assertIsNotNone(m, name)
+            self.assertEqual(m.group(1), name)
+        self.assertIsNone(server._PROJECT_RE.fullmatch("/api/projects/a/b"))
+
+
 if __name__ == "__main__":
     unittest.main()
