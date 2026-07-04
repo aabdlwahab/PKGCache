@@ -141,6 +141,23 @@ class RegistryTests(unittest.TestCase):
         self.assertTrue(p.exists("old"))
         self.assertEqual(p.ports("old"), p.ROLE_PORT)
 
+    def test_corrupt_registry_fails_loudly_not_silently_empty(self):
+        # A present-but-corrupt registry must NOT read as empty (that once handed two
+        # projects the same ports). The gateway raises ApiError so a mutation aborts.
+        from app.errors import ApiError
+        from app.gateways import registry
+        Path(os.environ["PKGCACHE_PROJECTS"]).write_text("{ not valid json")
+        with self.assertRaises(ApiError):
+            registry.load()
+        with self.assertRaises(ApiError):
+            self.projects.load_registry()  # the re-export goes through the gateway too
+
+    def test_registry_path_follows_the_env(self):
+        # The gateway resolves the path per call, so no import-time capture leaks the
+        # real config/projects.json into a test.
+        from app.gateways import registry
+        self.assertEqual(str(registry.path()), os.environ["PKGCACHE_PROJECTS"])
+
 
 if __name__ == "__main__":
     unittest.main()

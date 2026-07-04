@@ -23,15 +23,12 @@ block are read fine — the ports are simply ignored.
 This module is shared by the operations service (per-project VC + shuttle) and the
 HTTP layer (project CRUD + scoped reads); pkgcache reads the same file independently
 in pkgcache/core/config.py."""
-import json
-import os
-import pathlib
 import re
 import secrets
-import threading
 
 from app import settings
 from app.errors import ApiError
+from app.gateways import registry as _registry
 
 ROOT = settings.ROOT
 
@@ -42,9 +39,11 @@ ROOT = settings.ROOT
 CACHE_REPO = settings.CACHE_REPO
 PROJECTS_SUBDIR = "projects"
 
-# The registry file. Same env var pkgcache reads (PKGCACHE_PROJECTS), so the two
-# processes always agree; defaults to config/projects.json in the repo.
-REGISTRY = pathlib.Path(os.environ.get("PKGCACHE_PROJECTS") or (ROOT / "config" / "projects.json"))
+# Registry file I/O lives in the registry gateway (shared config/projects.json, the
+# same file pkgcache reads). Re-exported here so callers — and tests — keep using
+# projects.load_registry / projects.save_registry unchanged.
+load_registry = _registry.load
+save_registry = _registry.save
 
 GLOBAL = "global"  # the implicit default project (default ports, caches/ repo)
 
@@ -90,40 +89,6 @@ def validate_name(name):
     if name in RESERVED_NAMES:
         raise ProjectError(f"'{name}' is a reserved name")
     return name
-
-
-# ---- registry I/O --------------------------------------------------------
-
-def load_registry():
-    """The registry dict, with defaults filled in. A MISSING file is a legitimate
-    first run → empty registry. A file that EXISTS but is unreadable/corrupt is NOT
-    treated as empty: doing so would make the allocator believe no projects exist,
-    hand out ports already in use, and overwrite the real entries on the next save
-    (this is exactly how two projects ended up on identical ports). Fail loudly so a
-    mutation aborts instead of clobbering."""
-    data = {}
-    if REGISTRY.is_file():
-        try:
-            data = json.loads(REGISTRY.read_text()) or {}
-        except (OSError, ValueError) as exc:
-            raise ProjectError(
-                f"project registry {REGISTRY} is unreadable/corrupt ({exc}); refusing "
-                f"to proceed — fix or remove the file"
-            ) from exc
-    data.setdefault("projects", {})
-    data.setdefault("tokens", {})   # {project: write-token} for the files role
-    return data
-
-
-def save_registry(data):
-    """Persist the registry atomically (temp→rename) so a crash never leaves a
-    half-written file the other process would fail to parse. The temp name is unique
-    per writer so two concurrent saves can't corrupt a shared .new file (the rename
-    is atomic; the write to the temp is not)."""
-    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-    tmp = REGISTRY.with_name(f"{REGISTRY.name}.{os.getpid()}.{threading.get_ident()}.new")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    os.replace(tmp, REGISTRY)
 
 
 # ---- queries -------------------------------------------------------------
@@ -191,13 +156,9 @@ def list_projects():
 
 
 # ---- mutations -----------------------------------------------------------
-
-# The API server is multi-threaded (ThreadingHTTPServer), so two concurrent
-# creates/deletes would otherwise race on the registry read-modify-write. Serialize
-# the whole load→mutate→save so each sees every already-committed project. The webui
-# is the only writer process (pkgcache only reads, over save_registry's atomic
-# temp→rename), so an in-process lock is sufficient.
-_LOCK = threading.Lock()
+# Each mutation holds _registry.LOCK across the whole load→mutate→save so two
+# concurrent creates/deletes can't race on the read-modify-write (the webui is the
+# only writer; pkgcache only reads, over the gateway's atomic temp→rename).
 
 
 def create(name, *, probe=True):
@@ -207,7 +168,7 @@ def create(name, *, probe=True):
     registry poll and starts routing `/<name>/<role>/…` to it, no restart or rebind.
     `probe` is accepted for call-site compatibility and ignored."""
     name = validate_name(name)
-    with _LOCK:
+    with _registry.LOCK:
         registry = load_registry()
         if name in registry["projects"]:
             raise ProjectError(f"project already exists: {name}")
@@ -226,7 +187,7 @@ def delete(name):
     deleting cached bytes is a separate, explicit step the operator takes, never a
     side effect of dropping the entry."""
     name = validate_name(name)
-    with _LOCK:
+    with _registry.LOCK:
         registry = load_registry()
         if name not in registry["projects"]:
             raise ProjectError(f"no such project: {name}")
@@ -266,7 +227,7 @@ def rotate_write_token(project):
     The value is stored but never handed back by a read API — copy it now."""
     project = _valid_token_project(project)
     token = secrets.token_urlsafe(32)
-    with _LOCK:
+    with _registry.LOCK:
         registry = load_registry()
         if project != GLOBAL and project not in registry["projects"]:
             raise ProjectError(f"no such project: {project}")

@@ -70,11 +70,21 @@ like pkgops). Update the two external importers: `scripts/pkgops.py` and the tes
 
 ## Phase 3 — structured data out of the backend
 
-- `/api/endpoints` returns `{scheme, port, prefix, path, transport, hint}` per
+- ✅ `docs/api.md`: hand-written contract table for the whole surface (the OpenAPI
+  substitute while stdlib-only). Done.
+- ⏸ `/api/endpoints` returns `{scheme, port, prefix, path, transport, hint}` per
   eco instead of pre-formatted display strings; EndpointsPanel renders them.
-  Breaking change — backend + panel + types.ts in one PR.
-- `docs/api.md`: hand-written contract table for the whole surface (the OpenAPI
-  substitute while stdlib-only).
+  DEFERRED — it's a breaking change requiring a coordinated EndpointsPanel + types.ts
+  edit, and the console can't be typechecked/built in the current env (no node/npm).
+  Do it together with Phase 5, once a console build is available.
+
+## Phase 1 follow-up (done out of order)
+
+- ✅ Registry file I/O split into `app/gateways/registry.py` (load/save/LOCK, path
+  resolved from the env per call); `services/projects.py` re-exports load_registry /
+  save_registry so callers and tests are unchanged. This was the deferred Phase 1
+  item — it completes the layering (no service does raw file I/O) and is fully
+  unit-tested (corrupt-file → ApiError; env-driven path).
 
 ## Phase 4 — ledger reads behind pkgcache (independent after Phase 1)
 
