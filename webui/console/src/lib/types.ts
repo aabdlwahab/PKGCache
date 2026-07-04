@@ -140,7 +140,13 @@ export interface RecentResp {
   pulls: RecentPull[];
 }
 
-export type Endpoints = Partial<Record<Eco, string>>;
+// A client pull endpoint as data (the backend no longer preformats a display string):
+// `url` is the copy-able target (carries the "<host>" placeholder), `note` a usage hint.
+export interface Endpoint {
+  url: string;
+  note: string;
+}
+export type Endpoints = Partial<Record<Eco, Endpoint>>;
 
 export interface Commit {
   hash: string;

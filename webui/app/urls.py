@@ -9,16 +9,19 @@ and prefix rules from the projects service, so there are no hard-coded ports her
 beyond the global project's hand-written hint strings."""
 from app.services import projects
 
-# Where clients pull from, per ecosystem — shown verbatim in the UI's endpoints
-# panel for the GLOBAL project (named projects get the same shapes with a prefix).
+# Where clients pull from, per ecosystem, as DATA — {url, note} — not a preformatted
+# display string: the console renders the copy-able `url` and the human `note`
+# separately (presentation lives in the console, not here). `url` carries the literal
+# "<host>" placeholder the operator substitutes. This is the GLOBAL project's set;
+# named projects get the same shapes with their URL prefix (see endpoints()).
 ENDPOINTS = {
-    "docker": "<host>:5000        (pull <host>:5000/{dockerhub,ghcr,quay}/<image>)",
-    "npm": "https://<host>:4873/",
-    "pip": "https://<host>:3141/root/pypi/+simple/",
-    "apt": "http://<host>:3142/",
-    "apk": "http://<host>:3142/        (apk: set http_proxy to this, HTTP repos)",
-    "git": "https://<host>:3143/<upstream-host>/<owner>/<repo>.git   (insteadOf github.com etc.)",
-    "files": "https://<host>:3144/<path>   (wget --ca-certificate=ca.crt; PUT needs the write token)",
+    "docker": {"url": "<host>:5000", "note": "pull <host>:5000/{dockerhub,ghcr,quay}/<image>"},
+    "npm": {"url": "https://<host>:4873/", "note": ""},
+    "pip": {"url": "https://<host>:3141/root/pypi/+simple/", "note": ""},
+    "apt": {"url": "http://<host>:3142/", "note": ""},
+    "apk": {"url": "http://<host>:3142/", "note": "apk: set http_proxy to this, HTTP repos"},
+    "git": {"url": "https://<host>:3143/<upstream-host>/<owner>/<repo>.git", "note": "insteadOf github.com etc."},
+    "files": {"url": "https://<host>:3144/<path>", "note": "wget --ca-certificate=ca.crt; PUT needs the write token"},
 }
 
 # Internal progress feeds for the GLOBAL project, on the `pkgcache` container. HTTPS
@@ -97,21 +100,27 @@ def pypi_internal(project=projects.GLOBAL):
 
 
 def endpoints(project=projects.GLOBAL):
-    """Client-facing pull URLs per ecosystem, shown in the UI. Global keeps its
-    hand-written hints; a named project gets the same shapes with its URL prefix
-    (apt/apk carry the project as the proxy username, since a forward proxy has no
-    path to prefix)."""
+    """Client-facing pull endpoints per ecosystem as {url, note} DATA (the console
+    renders them). Global keeps its bare URLs; a named project gets the same shapes
+    with its URL prefix (apt/apk carry the project as the proxy username, since a
+    forward proxy has no path to prefix)."""
     if project == projects.GLOBAL:
-        return dict(ENDPOINTS)
+        return {eco: dict(ep) for eco, ep in ENDPOINTS.items()}
     oci = projects.ROLE_PORT["oci"]
-    npm = f"/{project}/npm"
-    pip = f"/{project}/pypi"
+    npm = projects.ROLE_PORT["npm"]
+    pip = projects.ROLE_PORT["pypi"]
+    apt = projects.ROLE_PORT["apt"]
+    git = projects.ROLE_PORT["git"]
+    files = projects.ROLE_PORT["files"]
     return {
-        "docker": f"<host>:{oci}        (pull <host>:{oci}/{project}/{{dockerhub,ghcr,quay}}/<image>)",
-        "npm": f"https://<host>:{projects.ROLE_PORT['npm']}{npm}/",
-        "pip": f"https://<host>:{projects.ROLE_PORT['pypi']}{pip}/root/pypi/+simple/",
-        "apt": f"http://{project}@<host>:{projects.ROLE_PORT['apt']}/        (apt: proxy username = project)",
-        "apk": f"http://{project}@<host>:{projects.ROLE_PORT['apt']}/        (apk: http_proxy with this user)",
-        "git": f"https://<host>:{projects.ROLE_PORT['git']}/{project}/git/<upstream-host>/<owner>/<repo>.git",
-        "files": f"https://<host>:{projects.ROLE_PORT['files']}/{project}/files/<path>   (wget; PUT needs the write token)",
+        "docker": {"url": f"<host>:{oci}/{project}",
+                   "note": f"pull <host>:{oci}/{project}/{{dockerhub,ghcr,quay}}/<image>"},
+        "npm": {"url": f"https://<host>:{npm}/{project}/npm/", "note": ""},
+        "pip": {"url": f"https://<host>:{pip}/{project}/pypi/root/pypi/+simple/", "note": ""},
+        "apt": {"url": f"http://{project}@<host>:{apt}/", "note": "apt: proxy username = project"},
+        "apk": {"url": f"http://{project}@<host>:{apt}/", "note": "apk: http_proxy with this user"},
+        "git": {"url": f"https://<host>:{git}/{project}/git/<upstream-host>/<owner>/<repo>.git",
+                "note": "insteadOf github.com etc."},
+        "files": {"url": f"https://<host>:{files}/{project}/files/<path>",
+                  "note": "wget --ca-certificate=ca.crt; PUT needs the write token"},
     }

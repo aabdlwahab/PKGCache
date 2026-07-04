@@ -44,15 +44,16 @@ class MultiProjectTests(unittest.TestCase):
 
     def test_endpoints_use_project_prefix_on_shared_ports(self):
         ep = config.endpoints("proja")
-        # Projects share the default ports; the project rides a URL prefix (or the
-        # proxy username for apt). Global keeps its bare root URLs.
-        self.assertIn(":4873/proja/npm/", ep["npm"])
-        self.assertIn("/proja/pypi/root/pypi/+simple/", ep["pip"])
-        self.assertIn("/proja/git/", ep["git"])
-        self.assertIn("proja@", ep["apt"])                      # proxy username
-        self.assertIn(":5000/proja/", ep["docker"])             # project in image name
-        self.assertIn(":4873/", config.endpoints("global")["npm"])
-        self.assertNotIn("/proja/", config.endpoints("global")["npm"])
+        # Endpoints are {url, note} data now (the console renders them). Projects share
+        # the default ports; the project rides a URL prefix (or the proxy username for
+        # apt). Global keeps its bare root URLs.
+        self.assertIn(":4873/proja/npm/", ep["npm"]["url"])
+        self.assertIn("/proja/pypi/root/pypi/+simple/", ep["pip"]["url"])
+        self.assertIn("/proja/git/", ep["git"]["url"])
+        self.assertIn("proja@", ep["apt"]["url"])               # proxy username
+        self.assertIn(":5000/proja", ep["docker"]["url"])       # project in image name
+        self.assertIn(":4873/", config.endpoints("global")["npm"]["url"])
+        self.assertNotIn("/proja/", config.endpoints("global")["npm"]["url"])
 
     def test_progress_and_health_sources_scoped(self):
         ps = config.progress_sources("proja")

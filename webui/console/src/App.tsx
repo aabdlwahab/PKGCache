@@ -309,7 +309,7 @@ export default function App() {
           <ArtifactsPanel
             project={project}
             online={online}
-            filesEndpoint={endpoints.data?.files ?? ""}
+            filesEndpoint={endpoints.data?.files?.url ?? ""}
             onChanged={() => setRefreshKey((k) => k + 1)}
           />
           <PackagesPanel

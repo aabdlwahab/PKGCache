@@ -23,22 +23,24 @@ export function EndpointsPanel({ endpoints, theme }: { endpoints: Endpoints; the
     <Panel title="Pull endpoints">
       <div className="list-pad">
         {rows.map((eco) => {
-          const cmd = endpoints[eco] as string;
+          const ep = endpoints[eco]!; // rows is filtered to defined entries
           const c = ecoColors(eco, theme);
           const isCopied = copied === eco;
+          // Show the url plus its note inline (as before), but copy only the clean url.
+          const shown = ep.note ? `${ep.url}   (${ep.note})` : ep.url;
           return (
             <div className="ep-row" key={eco}>
               <span className="ep-eco" style={{ color: c.color }}>
                 <span className="eco-square" style={{ background: c.color }} />
                 {eco}
               </span>
-              <code className="ep-cmd" title={cmd}>
-                {cmd}
+              <code className="ep-cmd" title={shown}>
+                {shown}
               </code>
               <button
                 className="copy-btn"
                 style={{ color: isCopied ? "var(--ok)" : "var(--muted)" }}
-                onClick={() => copy(eco, cmd)}
+                onClick={() => copy(eco, ep.url)}
               >
                 {isCopied ? "✓ copied" : "copy"}
               </button>

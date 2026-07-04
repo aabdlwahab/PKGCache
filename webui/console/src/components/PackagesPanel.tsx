@@ -62,7 +62,7 @@ export function PackagesPanel({
           : `${all.length} ${all.length === 1 ? "pkg" : "pkgs"}`,
         hasNew: !q && newCount > 0,
         newCount,
-        hint: endpoints[eco] ?? "",
+        hint: endpoints[eco]?.url ?? "",
         emptyMsg: q ? "no matches" : "nothing cached",
       };
     });
