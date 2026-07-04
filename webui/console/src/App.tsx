@@ -189,7 +189,7 @@ export default function App() {
     const proxiesTotal = proxies.data?.roles?.length ?? 4;
 
     return [
-      { label: "Packages", value: totalPkgs, sub: "7 ecosystems" },
+      { label: "Packages", value: totalPkgs, sub: `${ECOS.length} ecosystems` },
       { label: "Cache size", value: diskSize ?? totalSize, sub: "on disk" },
       {
         label: "Hit rate",

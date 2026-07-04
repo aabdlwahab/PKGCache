@@ -112,6 +112,19 @@ unit tests (mocked gateway + stats-combine), and a real-HTTP round-trip (webui g
 
 ## Phase 5 — frontend restructure
 
+STATUS: blocked on a console build environment (no node/npm in the dev sandbox where
+this refactor ran, so nothing here can be typechecked/built/run). Done so far: the
+safe, no-layout-risk bits — job-log tailing in useJob (Phase 2.5) and the hardcoded
+"7 ecosystems" KPI now uses ECOS.length. Deferred until a build is available: 5.1
+(TanStack Query — also adds a dependency not in package.json), 5.2 (the 15-file
+feature-folder + context migration), 5.3 (global JobConsole — moves where the console
+renders, a layout change that needs visual verification). Phase 3.1 (structured
+/api/endpoints) is deferred for the same reason — it reshapes 4 console components
+(EndpointsPanel, ArtifactsPanel, PackagesPanel, types) to render data instead of the
+backend's preformatted strings, and can't be verified without a build.
+
+Original plan below.
+
 - Adopt TanStack Query: `refetchInterval` replaces `usePolling`,
   `invalidateQueries` replaces the `refreshKey` bump, `enabled:` replaces the
   stats-tab poll hack. Bundled at build time — air-gap unaffected.
