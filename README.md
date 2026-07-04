@@ -14,8 +14,9 @@ shuttled across an air gap as **deltas only**, with a per-ecosystem **SQLite led
 recording exactly what each checkpoint contains.
 
 The same instance can serve **one or many isolated projects** — each with its own
-URLs (a port per role), its own cache tree, and its own git + DVC repo — from a
-single always-on process, with no container-per-project sprawl.
+URLs (a project prefix on the shared role ports, not a port per project), its own
+cache tree, and its own git + DVC repo — from a single always-on process, with no
+container-per-project sprawl.
 
 An operator **console** (React + TypeScript) sits on top: browse cache contents,
 watch live downloads, see usage **statistics** (per-ecosystem leaderboards, hit
@@ -761,6 +762,7 @@ python3 scripts/pkgops.py --project projA export        # → shuttle/out/projec
 | pip / uv | `https://<host>:3141/root/pypi/+simple/` (and `root/pytorch-*` indexes) |
 | apt / apk | HTTP forward proxy at `http://<host>:3142/` |
 | git | `https://<host>:3143/<upstream-host>/<owner>/<repo>.git` (HTTPS, read-only) |
+| files | `https://<host>:3144/<path>` (HTTPS; wget to download, PUT with the write token) |
 | Console UI | `http://<host>:8088` |
 
 A named project serves the same shapes on the **same ports** with a project prefix
