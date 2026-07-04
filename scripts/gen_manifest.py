@@ -35,6 +35,8 @@ ECOS = {
     "pip": ("pip", "pip"),
     "apt": ("apt", "apt"),
     "apk": ("apt", "apk"),
+    "git": ("git", "git"),
+    "files": ("files", "files"),
 }
 
 
@@ -66,7 +68,7 @@ def rebuild() -> None:
         sys.exit("--rebuild needs the pkgcache package importable (pip install ./pkgcache)")
 
     for role, repo_cls in REPOSITORIES.items():
-        subdir = {"oci": "docker", "npm": "npm", "pypi": "pip", "apt": "apt"}[role]
+        subdir = {"oci": "docker", "npm": "npm", "pypi": "pip", "apt": "apt", "git": "git", "files": "files"}[role]
         cache_dir = CACHES / subdir
         if not cache_dir.exists():
             continue

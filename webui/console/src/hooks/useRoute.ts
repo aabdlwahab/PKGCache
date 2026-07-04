@@ -1,27 +1,39 @@
 import { useEffect, useState } from "react";
 
-// Two real routes driven by the nav control. We use the History API directly
-// (no router dependency — this is an air-gap-friendly static SPA): `/` is the
-// overview, `/packages` the packages table. nginx + the Vite dev server both
-// fall back to index.html, so deep-linking and refresh on /packages work.
-export type View = "overview" | "packages";
+// Real routes driven by the nav control. We use the History API directly (no
+// router dependency — this is an air-gap-friendly static SPA): `/` is the
+// overview, `/statistics` the stats tab, `/packages` the packages table. nginx +
+// the Vite dev server both fall back to index.html, so deep-linking and refresh
+// on any of these work.
+export type View = "overview" | "statistics" | "packages";
 
-const PATHS: Record<View, string> = { overview: "/", packages: "/packages" };
+const PATHS: Record<View, string> = {
+  overview: "/",
+  statistics: "/statistics",
+  packages: "/packages",
+};
 
 function viewFromPath(path: string): View {
-  return path.replace(/\/+$/, "") === "/packages" ? "packages" : "overview";
+  const p = path.replace(/\/+$/, "");
+  if (p === "/statistics") return "statistics";
+  if (p === "/packages") return "packages";
+  return "overview";
+}
+
+function initialView(): View {
+  const fromPath = viewFromPath(window.location.pathname);
+  if (fromPath !== "overview") return fromPath; // the URL wins on load
+  try {
+    const saved = localStorage.getItem("pcc_view");
+    if (saved === "statistics" || saved === "packages") return saved;
+  } catch {
+    /* ignore */
+  }
+  return "overview";
 }
 
 export function useRoute(): [View, (v: View) => void] {
-  const [view, setView] = useState<View>(() => {
-    // The URL wins on load; otherwise restore the last view from localStorage.
-    if (viewFromPath(window.location.pathname) === "packages") return "packages";
-    try {
-      return localStorage.getItem("pcc_view") === "packages" ? "packages" : "overview";
-    } catch {
-      return "overview";
-    }
-  });
+  const [view, setView] = useState<View>(initialView);
 
   useEffect(() => {
     // Sync the URL to the initial view (e.g. one restored from localStorage on `/`)

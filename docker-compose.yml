@@ -41,10 +41,11 @@ services:
       - "4873:4873"   # npm  (HTTPS)                                                  [global]
       - "3141:3141"   # pip  (HTTPS)                                                  [global]
       - "3142:3142"   # apt + apk (HTTP forward proxy)                                [global]
-      # Per-project ports. Published as a range up front so the central process can
-      # bind a newly-created project's ports live, with no container recreate. Keep
-      # this range in sync with the registry "pool" (config/projects.json).
-      - "20000-20099:20000-20099"
+      - "3143:3143"   # git  (HTTPS)  clone <host>:3143/<upstream-host>/<repo>.git    [global]
+      - "3144:3144"   # files (HTTPS) wget <host>:3144/<path>; PUT with write token   [global]
+      # Projects are NOT separate ports: every project shares the six ports above and
+      # is reached by a URL prefix (/<project>/<role>/… ; the OCI project rides the
+      # image name, the apt project the proxy username). See pkgcache/router.py.
     volumes:
       - ./caches:/caches        # global → /caches/<eco>; projects → /caches/projects/<name>/<eco>
       - ./config:/config:ro     # the project registry (config/projects.json), webui-managed

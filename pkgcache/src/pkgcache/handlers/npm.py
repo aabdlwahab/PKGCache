@@ -100,6 +100,7 @@ class NpmRepo:
         def opener():
             return client.stream("GET", url)
 
+        self._core.stats.access("npm", name)  # leaderboard / LRU
         return await self._core.cache.fetch(
             key=f"npm/{name}/-/{filename}",
             final_path=final_path,
@@ -109,6 +110,7 @@ class NpmRepo:
             request=request,
             media_type="application/octet-stream",
             on_commit=on_commit,
+            eco="npm",
         )
 
     def rebuild_ledger(self, cache_dir: Path) -> Iterable[ArtifactRecord]:

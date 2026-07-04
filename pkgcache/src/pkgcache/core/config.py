@@ -1,8 +1,8 @@
 """Role + upstream configuration, loaded from one YAML file with env overrides.
 
 Two run modes share this:
-  * single role  — PKGCACHE_ROLE=<role>      → load()      (dev / one role per proc)
-  * all roles    — PKGCACHE_ROLE unset       → load_all()  (one container, 4 ports)
+  * single role  — PKGCACHE_ROLE=<role>      → load()       (dev / one role per proc)
+  * all roles    — PKGCACHE_ROLE unset       → load_roles() (one container, 6 ports)
 
 In all-roles mode each role caches under PKGCACHE_CACHE_ROOT/<subdir> (compose
 mounts ./caches there), and the HTTPS roles terminate TLS in-process using the
@@ -10,10 +10,12 @@ PKGCACHE_TLS_CERT/KEY cert (no separate proxy needed).
 
 Multi-project: a single process can serve extra *projects* beyond the default
 ("global") one. Each project in the registry (PKGCACHE_PROJECTS — the same JSON
-file the control UI manages) gets its own four ports and its own cache tree at
+file the control UI manages) gets its own cache tree at
 PKGCACHE_CACHE_ROOT/projects/<name>/<subdir>, so its content and version control
-are isolated from global's. load_all() returns global's four configs plus four per
-project; global is unchanged (default ports, PKGCACHE_CACHE_ROOT/<subdir>).
+are isolated from global's. Projects are NOT separate ports: load_roles() returns
+one Config per (role, project) all sharing the role's default port, and the router
+(pkgcache/router.py) dispatches by request path/name/proxy-user. global is unchanged
+(root URLs, PKGCACHE_CACHE_ROOT/<subdir>).
 """
 from __future__ import annotations
 
@@ -25,11 +27,13 @@ from pathlib import Path
 import yaml
 
 # Default ports per role (overridable via the YAML `listen_port`).
-_DEFAULT_PORTS = {"oci": 5000, "npm": 4873, "pypi": 3141, "apt": 3142}
+_DEFAULT_PORTS = {"oci": 5000, "npm": 4873, "pypi": 3141, "apt": 3142, "git": 3143, "files": 3144}
 # caches/<subdir> each role owns. apt holds both apt + apk (ecosystem column).
-_ROLE_SUBDIR = {"oci": "docker", "npm": "npm", "pypi": "pip", "apt": "apt"}
+_ROLE_SUBDIR = {"oci": "docker", "npm": "npm", "pypi": "pip", "apt": "apt", "git": "git", "files": "files"}
 # Roles fronted by HTTPS; apt is a plain-HTTP forward proxy and is never TLS.
-_HTTPS_ROLES = {"oci", "npm", "pypi"}
+_HTTPS_ROLES = {"oci", "npm", "pypi", "git", "files"}
+# Every role served in all-roles mode (order = startup order).
+_ALL_ROLES = ("oci", "npm", "pypi", "apt", "git", "files")
 
 # The implicit default project: default ports, cache tree directly under the root.
 GLOBAL = "global"
@@ -51,6 +55,9 @@ class Config:
     upstream: str | None = None                               # npm: single registry base
     tls_cert: str | None = None    # in-process TLS (HTTPS roles); None = plain HTTP
     tls_key: str | None = None
+    refs_ttl: float = 60.0         # git: seconds an advertised ref set is trusted before re-fetch
+    max_upload_packs: int = 8      # git: concurrent upload-pack (pack computation) cap
+    max_upload_mb: int = 0         # files: reject PUTs larger than this (0 = unlimited)
 
 
 def _as_bool(v: str | None) -> bool:
@@ -91,6 +98,9 @@ def _build(role: str, data: dict, *, cache_root: Path, offline: bool,
         upstream=role_cfg.get("upstream"),
         tls_cert=cert if use_tls else None,
         tls_key=key if use_tls else None,
+        refs_ttl=float(role_cfg.get("refs_ttl") or 60),
+        max_upload_packs=int(role_cfg.get("max_upload_packs") or 8),
+        max_upload_mb=int(role_cfg.get("max_upload_mb") or 0),
     )
 
 
@@ -122,33 +132,64 @@ def _registry() -> dict:
     return {}
 
 
-def load_all() -> list[Config]:
-    """All role configs to serve in one process: the global four (default ports,
-    base/<subdir>) plus four per registered project (its assigned ports,
-    base/projects/<name>/<subdir>). Used when PKGCACHE_ROLE is unset.
+# The files role verifies write tokens against the SAME registry file the webui
+# writes (PKGCACHE_PROJECTS). Re-reading it per PUT would be wasteful, and baking
+# the token into the frozen Config would go stale on rotation — so cache the parsed
+# tokens map keyed by the file's mtime+size, re-parsing only when it changes. A
+# webui rotation is then picked up within one write, with no restart/rebind.
+_TOKENS_CACHE: dict = {"key": None, "tokens": {}}
+
+
+def files_token(project: str) -> str | None:
+    """The write token for a project's files role, or None if unset. mtime-cached."""
+    path = os.environ.get("PKGCACHE_PROJECTS")
+    if not path:
+        return None
+    p = Path(path)
+    try:
+        stat = p.stat()
+    except OSError:
+        return None
+    key = (stat.st_mtime_ns, stat.st_size)
+    if _TOKENS_CACHE["key"] != key:
+        try:
+            data = json.loads(p.read_text()) or {}
+            _TOKENS_CACHE["tokens"] = data.get("tokens", {}) or {}
+        except (OSError, ValueError):
+            _TOKENS_CACHE["tokens"] = {}
+        _TOKENS_CACHE["key"] = key
+    return _TOKENS_CACHE["tokens"].get(project)
+
+
+def load_roles() -> dict[str, dict[str, Config]]:
+    """Per-role config sets to serve in one process, keyed {role: {project: Config}}.
+
+    One server per role listens on that role's default port; every project shares
+    that port and is distinguished by request path/name/proxy-user (see router.py),
+    NOT by a per-project port. So each project's Config for a role carries the same
+    default port (used only for logging) but its own cache tree at
+    base/projects/<name>/<subdir>. `global` is always present with the base tree.
 
     Read fresh each call so the entrypoint's supervisor can diff this against the
-    running servers and bind newly-created projects without a restart."""
+    running role servers and add/drop projects without a restart or rebind."""
     data = _read()
     base = Path(os.environ.get("PKGCACHE_CACHE_ROOT", "/caches"))
     offline = _as_bool(os.environ.get("OFFLINE", "0"))
     cert = os.environ.get("PKGCACHE_TLS_CERT") or None
     key = os.environ.get("PKGCACHE_TLS_KEY") or None
+    names = sorted(_registry())
 
-    configs = [
-        _build(role, data, cache_root=base / _ROLE_SUBDIR[role],
-               offline=offline, cert=cert, key=key)
-        for role in ("oci", "npm", "pypi", "apt")
-    ]
-    for name, assigned in sorted(_registry().items()):
-        proj_base = base / _PROJECTS_SUBDIR / name
-        for role in ("oci", "npm", "pypi", "apt"):
-            port = assigned.get(role)
-            if port is None:
-                continue  # a malformed entry → skip that role rather than crash
-            configs.append(_build(
-                role, data, cache_root=proj_base / _ROLE_SUBDIR[role],
-                offline=offline, cert=cert, key=key,
-                project=name, port=int(port),
-            ))
-    return configs
+    out: dict[str, dict[str, Config]] = {}
+    for role in _ALL_ROLES:
+        port = _DEFAULT_PORTS[role]
+        projects = {
+            GLOBAL: _build(role, data, cache_root=base / _ROLE_SUBDIR[role],
+                           offline=offline, cert=cert, key=key, port=port),
+        }
+        for name in names:
+            projects[name] = _build(
+                role, data, cache_root=base / _PROJECTS_SUBDIR / name / _ROLE_SUBDIR[role],
+                offline=offline, cert=cert, key=key, project=name, port=port,
+            )
+        out[role] = projects
+    return out

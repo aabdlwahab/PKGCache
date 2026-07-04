@@ -15,11 +15,12 @@ from .storage import Storage
 
 
 class Cache:
-    def __init__(self, storage: Storage, inflight: InflightRegistry, progress, ledger) -> None:
+    def __init__(self, storage: Storage, inflight: InflightRegistry, progress, ledger, stats) -> None:
         self.storage = storage
         self.inflight = inflight
         self.progress = progress
         self.ledger = ledger
+        self.stats = stats
 
     async def fetch(
         self,
@@ -35,15 +36,21 @@ class Cache:
         expected_sha256: str | None = None,
         expected_size: int | None = None,
         on_commit: Callable[[int, str], Any] | None = None,
+        eco: str | None = None,
     ) -> Response:
         """Serve `key` from cache, fetching once through `stream_opener` on a miss.
 
         `on_commit(size, sha256_hex)` runs after a successful atomic commit and may
-        return an ArtifactRecord to write to the ledger.
-        """
+        return an ArtifactRecord to write to the ledger. `eco` tags the byte traffic
+        for the stats tab (hit rate / bytes saved); the miss path also samples
+        upstream bandwidth. Per-package *access* counts are recorded by the handlers
+        (they know the package identity, not just the file)."""
         # ---- hit -------------------------------------------------------------
         if final_path.exists():
-            self.progress.record_recent(key, name, final_path.stat().st_size, hit=True)
+            size = final_path.stat().st_size
+            self.progress.record_recent(key, name, size, hit=True)
+            if eco:
+                self.stats.traffic(eco, hit=True, nbytes=size)
             return Storage.file_response(
                 final_path, media_type=media_type, headers=response_headers, method=method
             )
@@ -58,6 +65,8 @@ class Cache:
                 storage=self.storage,
                 progress=self.progress,
                 ledger=self.ledger,
+                stats=self.stats,
+                eco=eco,
                 name=name,
                 expected_sha256=expected_sha256,
                 expected_size=expected_size,

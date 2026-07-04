@@ -4,20 +4,23 @@
 
 # package-registry — a versioned, air-gap-portable package cache
 
-A single host runs **one Python service** that pull-through-caches four package
-ecosystems at once — **container images (OCI/Docker), npm, PyPI (pip/uv), and
-apt + apk** — for build/CI machines on a trusted network. Everything fetched once
-is stored under `caches/`, versioned in its **own git + DVC repo**, and shuttled
-across an air gap as **deltas only**, with a per-ecosystem **SQLite ledger**
+A single host runs **one Python service** that serves six package ecosystems at
+once — **container images (OCI/Docker), npm, PyPI (pip/uv), apt + apk, git
+repositories** (all pull-through-cached), and **generic file artifacts** (a
+wget-downloadable, token-gated upload store) — for build/CI machines on a trusted
+network. Everything
+fetched once is stored under `caches/`, versioned in its **own git + DVC repo**, and
+shuttled across an air gap as **deltas only**, with a per-ecosystem **SQLite ledger**
 recording exactly what each checkpoint contains.
 
 The same instance can serve **one or many isolated projects** — each with its own
-URLs (a port per ecosystem), its own cache tree, and its own git + DVC repo — from
-a single always-on process, with no container-per-project sprawl.
+URLs (a port per role), its own cache tree, and its own git + DVC repo — from a
+single always-on process, with no container-per-project sprawl.
 
 An operator **console** (React + TypeScript) sits on top: browse cache contents,
-watch live downloads, monitor disk, switch projects, and drive checkpoint / export
-/ import / rollback and online↔offline switching — all over a dependency-free
+watch live downloads, see usage **statistics** (per-ecosystem leaderboards, hit
+rate, estimated time saved), monitor disk, switch projects, and drive checkpoint /
+export / import / rollback and online↔offline switching — all over a dependency-free
 standard-library API.
 
 ---
@@ -28,7 +31,7 @@ standard-library API.
 
 ```bash
 cp .env.example .env && ./scripts/gen-certs.sh         # one-time: host ids + TLS CA
-docker compose --profile online --profile ui up -d     # one process, 4 roles + console
+docker compose --profile online --profile ui up -d     # one process, 6 roles + console
 ```
 
 Air-gapped host: `OFFLINE=1 docker compose --profile offline --profile ui up -d` (serves from cache only).
@@ -55,10 +58,21 @@ echo 'Acquire::http::Proxy "http://HOST:3142";' | sudo tee /etc/apt/apt.conf.d/0
 
 # apk     (Alpine — reads http_proxy; switch repos to http)
 http_proxy=http://HOST:3142 apk add --no-cache curl
+
+# git     (mirror-and-serve; real upstream host in the path — read-only)
+git clone https://HOST:3143/github.com/pallets/click.git
+#   transparent: git config --global url."https://HOST:3143/github.com/".insteadOf "https://github.com/"
+
+# files   (generic artifacts — wget to download; PUT with the write token to upload)
+wget --ca-certificate=certs/ca.crt https://HOST:3144/builds/v1.2/app.tar.gz
+curl --cacert certs/ca.crt -T app.tar.gz -H "Authorization: Bearer $TOKEN" https://HOST:3144/builds/v1.2/app.tar.gz
 ```
 
-For a **named project**, swap the global port for that project's allocated port
-(`20000…`, shown in the console). Full client recipes:
+For a **named project**, keep the same port and add the project prefix — for
+npm/pip/git/files a `/<project>/<role>/…` path segment, for Docker the project is
+the first segment of the image name (`HOST:5000/<project>/dockerhub/…`), and for
+apt/apk the project is the proxy username (`http://<project>@HOST:3142`). The exact
+per-project URLs are shown in the console. Full client recipes:
 [Pulling from the cache](#pulling-from-the-cache-per-ecosystem). Versioning + air-gap
 transfer: [How to use it](#how-to-use-it).
 
@@ -75,7 +89,7 @@ trust are in [Quick start](#quick-start) below.)
 git init                                            # the code repo (the cache repo self-inits later)
 cp .env.example .env                                # set PKGCACHE_UID/GID + DOCKER_GID to your host's ids
 ./scripts/gen-certs.sh                              # mint the private CA + in-process TLS cert
-docker compose --profile online --profile ui up -d  # cache (one process, 4 roles) + console on :8088
+docker compose --profile online --profile ui up -d  # cache (one process, 6 roles) + console on :8088
 ```
 
 **2 — Point your build/CI tools at it** (install `certs/ca.crt` so HTTPS is trusted
@@ -87,6 +101,8 @@ docker compose --profile online --profile ui up -d  # cache (one process, 4 role
 | pip / uv | `--index-url https://<host>:3141/root/pypi/+simple/` |
 | npm | `--registry https://<host>:4873/` |
 | apt / apk | HTTP proxy `http://<host>:3142/` |
+| git | `https://<host>:3143/<upstream-host>/<owner>/<repo>.git` |
+| files | `wget https://<host>:3144/<path>` · upload `curl -T … -H "Authorization: Bearer <token>"` |
 
 The cache fills automatically on the first request for each package, and the
 console at **http://&lt;host&gt;:8088** shows it live (downloads, hit/miss feed, disk).
@@ -129,6 +145,8 @@ built into its own image:
 | npm | **Verdaccio** | Node | `pkgcache` `npm` handler |
 | PyPI / pip | **devpi** | Python | `pkgcache` `pypi` handler |
 | apt + apk | **apt-cacher-ng** | C++ | `pkgcache` `apt` handler |
+| git repositories | *(new — no prior component)* | — | `pkgcache` `git` handler (mirror-and-serve) |
+| generic file artifacts | *(new — no prior component)* | — | `pkgcache` `files` handler (upload + wget) |
 
 Those four protocols' **read / pull-through paths have been ported into one
 dependency-light Python codebase** (`pkgcache/`). This intentionally reverses the
@@ -143,7 +161,10 @@ project's former "never reimplement a package protocol" stance. The drivers:
   reverse-engineering and re-walking each upstream's private cache format.
 - **Smaller, air-gap-friendly images.**
 
-Only the **pull/read** path is reimplemented — there is no publish/push.
+For the five pull-through ecosystems only the **read** path is reimplemented (no
+publish/push). The **`files`** ecosystem is the deliberate exception — the one write
+path — for artifacts that have no upstream to pull from (see
+[docs/artifacts.md](docs/artifacts.md)).
 
 Layered on top of that rewrite, the more recent changes are:
 
@@ -157,12 +178,21 @@ Layered on top of that rewrite, the more recent changes are:
   (`scripts/pkgops.py`) is a thin wrapper over the *same* code, so the two can
   never drift.
 - **Multi-project support.** One process serves a default **global** project plus
-  any number of named projects, each on its own allocated port-set, cache tree and
-  repo — created, switched and deleted live from the console (see
-  [docs/multi-project.md](docs/multi-project.md)).
+  any number of named projects, each with its own cache tree and repo and reached by
+  a URL prefix on the shared ports — created, switched and deleted live from the
+  console (see [docs/multi-project.md](docs/multi-project.md)).
 - **Live, no-downtime checkpoints.** Atomic writes let DVC hash the cache while the
   proxies keep serving — no quiesce, no stop/start.
-- **A two-page React console** (Overview + Packages) with a project switcher.
+- **A git ecosystem** (5th role, port `3143`). Unlike the byte-cached ecosystems a
+  git fetch is a *negotiation*, so the git role is a **mirror-and-serve** smart-HTTP
+  server: it keeps a local bare mirror (`git clone --mirror`), revalidates it online
+  and serves `git upload-pack` from it offline — read-only, with Git LFS support and
+  DVC-safe geometric repack at checkpoint. See [docs/git-cache.md](docs/git-cache.md).
+- **A usage statistics tab.** The proxies record each request natively (per-package
+  access counts, hit/miss bytes, passive upstream-bandwidth samples), surfaced as a
+  **Statistics** console page: per-ecosystem leaderboards, hit rate, bytes served
+  from cache, and an estimated **"time saved"** vs. fetching from upstream.
+- **A three-page React console** (Overview + Statistics + Packages) with a project switcher.
 - **Fixed shuttle staging dirs** (`shuttle/out`, `shuttle/in`) instead of passing a
   drive path — the operator copies `out/` onto media and drops it into `in/` on the
   far side.
@@ -182,12 +212,13 @@ flowchart LR
     np["npm install"]
     pp["uv / pip install"]
     at["apt-get / apk add"]
+    gt["git clone / fetch"]
   end
 
   subgraph image["pkgcache — ONE image, ONE process"]
     direction TB
-    g["global project\noci :5000 · npm :4873 · pypi :3141 (HTTPS)\napt :3142 (HTTP forward proxy)"]
-    p["project &lt;name&gt;\noci/npm/pypi/apt on allocated\npool ports (20000–20099)"]
+    g["global project\noci :5000 · npm :4873 · pypi :3141 · git :3143 · files :3144 (HTTPS)\napt :3142 (HTTP forward proxy)"]
+    p["project &lt;name&gt;\nSAME ports — reached by prefix:\n/&lt;name&gt;/&lt;role&gt;/… · /v2/&lt;name&gt;/… (oci) · &lt;name&gt;@ proxy user (apt)"]
   end
 
   subgraph core["shared core (every role, every project)"]
@@ -211,6 +242,7 @@ flowchart LR
   np --> g & p
   pp --> g & p
   at --> g & p
+  gt --> g & p
   g & p --> core
   core -->|"miss, online only"| ups
   st --> dvc
@@ -222,33 +254,40 @@ flowchart LR
 
 TLS for the three HTTPS roles is **terminated in-process** from `./certs` (minted
 by `gen-certs.sh`) — there is no separate TLS proxy. apt/apk is a plain-HTTP
-forward proxy, so it is never TLS. Every project reuses the same server cert (ports
-don't affect the cert's SANs).
+forward proxy, so it is never TLS. Every project is reached on the **same** ports as
+global (distinguished by a URL prefix, not a port), so the one server cert covers
+them all — a new project needs no cert change and no new Docker `certs.d` entry.
 
 ---
 
 ## Multi-project on one instance
 
 One central process serves a reserved **global** project on the default ports
-*plus* any number of named projects, each fully isolated. Full design notes:
-[docs/multi-project.md](docs/multi-project.md).
+*plus* any number of named projects, each fully isolated. Projects are **not**
+separate ports — every project shares the six role ports and is distinguished by a
+URL prefix. Full design notes: [docs/multi-project.md](docs/multi-project.md).
 
 | Aspect | Global project | Named project |
 |---|---|---|
-| URLs | fixed `5000 / 4873 / 3141 / 3142` | one port per role from the pool (default `20000–20099`) |
+| npm / pip / git / files | root URLs on `4873 / 3141 / 3143 / 3144` | same ports, `/<name>/<role>/…` path prefix |
+| Docker (oci `5000`) | `5000/dockerhub/<image>` | `5000/<name>/dockerhub/<image>` (project in the image name) |
+| apt / apk (`3142`) | `http://HOST:3142` proxy | `http://<name>@HOST:3142` (project = proxy username) |
 | Cache tree | `caches/<eco>/` | `caches/projects/<name>/<eco>/` |
 | Version control | `caches/.git` + `.dvc` | `caches/projects/<name>/.git` + `.dvc` (its own repo) |
 | Shuttle | `shuttle/{out,in}/` | `shuttle/{out,in}/projects/<name>/` |
-| Registry entry | implicit (never stored/allocated) | `config/projects.json` |
+| Registry entry | implicit (never stored) | `config/projects.json` |
 
-- **One process, always.** The instance binds more sockets per project; it never
-  forks a process or container per project. The compose file publishes the whole
-  pool range up front, so creating a project needs **no container recreate** — a
-  supervisor in `pkgcache/__main__.py` polls the registry and binds/unbinds a
-  project's ports live.
-- **Stable URLs.** Ports are allocated **once at create time** (lowest free in the
-  pool, OS-probed), persisted to `config/projects.json`, and never recomputed on
-  boot. Deleting a project frees its ports back to the pool.
+- **One process, one set of ports.** The instance never forks a process or container
+  per project, and a new project binds **no new socket** — a `RoleServer` per role
+  (`pkgcache/router.py`) dispatches each request to the right project's sub-app by
+  path / image-name / proxy-user, falling back to global. A supervisor in
+  `pkgcache/__main__.py` polls the registry and adds/drops project sub-apps live, so
+  creating a project needs no restart, rebind, or container recreate.
+- **Stable, self-describing URLs.** A project's URL is just its name in the path, so
+  it never drifts (nothing to allocate or recompute) and a rewritten `uv.lock` or a
+  `FROM` line reads as `…/<name>/…`. Reserved names (`global`, the role names,
+  `dockerhub`/`ghcr`/`quay`, `root`, `v2`) can't be taken, so the prefix stays
+  unambiguous.
 - **Isolation by construction.** Separate cache trees and separate repos mean a
   per-project checkpoint / rollback / shuttle only ever touches that one project.
   There is no cross-project dedup (a deliberate tradeoff for isolation).
@@ -257,12 +296,13 @@ One central process serves a reserved **global** project on the default ports
   because it's per-host state.
 
 ```json
-// config/projects.json
+// config/projects.json — project entries are name-only (no ports to allocate)
 {
-  "pool": {"start": 20000, "end": 20099},
   "projects": {
-    "projA": {"oci": 20000, "npm": 20001, "pypi": 20002, "apt": 20003}
-  }
+    "projA": {},
+    "projB": {}
+  },
+  "tokens": { "projA": "<files write token>" }
 }
 ```
 
@@ -279,11 +319,12 @@ air-gapped side re-registers it and binds its URLs automatically.
 package-registry/
 ├── docker-compose.yml         # pkgcache (one process) + webui + console; online/offline/ui profiles
 ├── .env.example               # host UID/GID + docker gid + shuttle dir → copy to .env (gitignored)
-├── pkgcache/                  # THE cache service (one image, four roles, multi-project)
+├── pkgcache/                  # THE cache service (one image, six roles, multi-project)
 │   ├── Dockerfile  pyproject.toml  pkgcache.yaml  seed.example.yaml  usage.md
 │   └── src/pkgcache/
 │       ├── app.py             # builds the ASGI app for a (project, role); mounts /healthz + progress
-│       ├── __main__.py        # uvicorn entrypoint + supervisor that binds projects live
+│       ├── router.py          # RoleServer: one per role port; routes a request to a project sub-app
+│       ├── __main__.py        # uvicorn entrypoint + supervisor that adds/drops project sub-apps live
 │       ├── repositories.py    # registry {role: Repository} — the one place ecosystems are listed
 │       ├── core/
 │       │   ├── repository.py  # the unified Repository contract + ArtifactRecord
@@ -292,13 +333,17 @@ package-registry/
 │       │   ├── inflight.py    # single-flight leader/follower; tees upstream→disk→client
 │       │   ├── upstream.py    # shared httpx pool + anonymous Bearer-token dance
 │       │   ├── progress.py    # in-proc progress: in-flight downloads + recent feed (HIT/MISS/FAIL)
+│       │   ├── stats.py       # in-proc usage stats (access/hit-miss/bandwidth), flushed to the ledger
 │       │   ├── ledger.py      # per-eco SQLite: record() at commit, query()/export() for UI/manifest
+│       │   ├── gitmirror.py   # git role: bare-mirror clone/fetch/HEAD-sync/repack + upload-pack streaming
 │       │   └── config.py      # per-(project, role) config from env + one YAML + the registry
 │       └── handlers/          # one Repository implementation per ecosystem
 │           ├── oci.py         # /v2/* — replaces zot
 │           ├── npm.py         # packument + tarball — replaces Verdaccio
 │           ├── pypi.py        # PEP 503/691 simple index + files — replaces devpi
 │           ├── apt.py         # forward proxy, volatile/immutable revalidation — replaces apt-cacher-ng
+│           ├── git.py         # mirror-and-serve smart-HTTP + Git LFS (new ecosystem)
+│           ├── files.py       # generic artifact store: wget download + token-gated PUT (write path)
 │           └── common.py      # shared name/filename normalization
 ├── webui/                     # operator control plane (standard-library only)
 │   ├── server.py              # thin stdlib HTTP router; wires the collaborators below (DI)
@@ -308,8 +353,8 @@ package-registry/
 │   ├── jobs.py                # Jobs   — one-at-a-time background job runner over Operations
 │   ├── ops.py                 # Operations — checkpoint/export/import/rollback/mode (yields log lines)
 │   ├── usage.py               # Usage  — TTL-cached cache-disk scan + dedup totals
-│   ├── projects.py            # the project registry + port allocator (single source of truth)
-│   ├── test_projects.py       # unit tests: allocator (next-free, reserved, persistence, exhaustion)
+│   ├── projects.py            # the project registry (single source of truth for project names)
+│   ├── test_projects.py       # unit tests: registry CRUD, name rules + reserved names, tokens
 │   ├── test_multiproject.py   # integration tests: scoped reads / ops / endpoints / shuttle paths
 │   ├── index.html             # legacy single-file UI (fallback; superseded by console)
 │   └── console/               # the React + TypeScript SPA (Vite) + nginx Dockerfile
@@ -323,22 +368,24 @@ package-registry/
 │   └── projects/<name>/       #   one git+DVC repo per named project
 ├── shuttle/                   # fixed air-gap staging: out/ (export) and in/ (import)
 ├── certs/                     # private CA + server cert/key (gen-certs.sh; gitignored)
-└── docs/                      # multi-project.md, docker-builds.md
+└── docs/                      # multi-project.md, docker-builds.md, git-cache.md, artifacts.md
 ```
 
 ---
 
 ## Components & design choices
 
-### 1. One image, one process, four roles, many projects
+### 1. One image, one process, six roles, many projects
 
 `pkgcache` is a single installable package built into one image. In the default
-mode (env unset) **one container runs all four roles in one process**, each bound
-to its own port; a supervisor reads the project registry and binds each named
-project's port-set live. (A single role can still be run alone via `PKGCACHE_ROLE`
-for dev.) The protocols can't share a port — OCI owns `/v2/` at the root and apt is
-a forward proxy — so the global ports are fixed: **5000 / 4873 / 3141 (HTTPS), 3142
-(HTTP)**; project ports come from the pool.
+mode (env unset) **one container runs all six roles in one process**, each bound to
+its own port: **5000 / 4873 / 3141 / 3143 / 3144 (HTTPS), 3142 (HTTP)**. (A single
+role can still be run alone via `PKGCACHE_ROLE` for dev.) The protocols can't share
+a port — OCI owns `/v2/` at the root and apt is a forward proxy. Named projects add
+**no** ports: each role's server is a `RoleServer` (`pkgcache/router.py`) that
+routes a request to the right project's sub-app by URL prefix (`/<name>/<role>/…`),
+image name (`/v2/<name>/…`) or apt proxy-username, and a supervisor adds/drops those
+sub-apps live as the registry changes — no rebind, no recreate.
 
 > **Why:** the cache is identical across ecosystems and projects; only the
 > *protocol wrapper* and the *cache root* differ. One image + one process is the
@@ -468,6 +515,31 @@ header semantics, and quirks are ported from the component it replaces.
   `ETag`/`Last-Modified`; **immutable** files (`*.deb`, `*.apk`, `pool/*`) are served
   from cache without upstream contact. Stays plain HTTP on `:3142`.
 
+- **`git.py` — a new ecosystem, not a port.** A git fetch is a *negotiation* (the
+  client posts its have/want set and the server computes a bespoke packfile), so it
+  can't be byte-cached by URL like the others. Instead the git role is
+  **mirror-and-serve**: it keeps a local **bare mirror** (`caches/git/<host>/<repo>.git`,
+  heads + tags, `gc.auto=0`), revalidates it on a short TTL online, and streams
+  `git upload-pack` from it — serving the mirror as-is offline. Clients put the real
+  upstream host in the path (`https://<cache>:3143/github.com/<owner>/<repo>.git`) or
+  use a one-time `insteadOf` rewrite so submodules, `pip git+https` deps and CPM all
+  route through the cache. **Read-only** (push refused); protocol **v0 + v2**, shallow,
+  partial, and SHA-pinned fetches all work; a `git_refs` ledger table records ref→commit
+  so offline can report what a mirror holds; and **Git LFS** objects reuse the shared
+  CAS (they're sha256-addressed). At checkpoint the mirrors get one deliberate
+  **geometric repack** so the DVC delta stays proportional to new commits, not the whole
+  mirror. Full client + air-gap notes: [docs/git-cache.md](docs/git-cache.md).
+
+- **`files.py` — the write path.** A generic artifact store for things with no
+  package protocol: `GET/HEAD` serve files (Range/resume free, HTML directory
+  autoindex so `wget -r` and browsers work), `PUT` uploads, `DELETE` removes. Writes
+  are **token-gated** (per-project write token, generated in the console;
+  `Authorization: Bearer …`), **write-once** (`?overwrite=1` to replace), sha256'd
+  inline (optional `X-Checksum-Sha256` verification), and **online-only** (`403`
+  under `OFFLINE=1` — the air-gapped side is serve-only). It reuses the shared
+  storage atomics/ledger/progress and rides the checkpoint→shuttle flow like any
+  other eco. Full recipes: [docs/artifacts.md](docs/artifacts.md).
+
 ### 5. The cache ledger (per-ecosystem SQLite)
 
 The manifest is no longer a checkpoint-time JSON re-derived by walking each
@@ -481,8 +553,14 @@ flowchart LR
   px["role — on each cache commit"] -->|"record(ArtifactRecord)"| db[("caches/&lt;eco&gt;/ledger.db\nSQLite · fixed schema")]
   db -->|"read-only (WAL)"| api["webui /api/manifests, /api/packages\nlive · filter · sort · group"]
   db -->|"deterministic export"| git["gen_manifest.py → manifests/* (git-diffable)"]
-  db -->|"oci_tags"| offl["offline tag→digest resolution"]
+  db -->|"oci_tags / git_refs"| offl["offline tag→digest / ref→commit resolution"]
 ```
+
+The OCI role keeps a tag→digest index (`oci_tags`) and the git role a ref→commit
+index (`git_refs`) in the same DB, so the offline side can resolve tags and report
+what each mirror holds with no upstream. Usage stats (per-package access counts,
+hit/miss byte tallies, upstream-bandwidth samples) live here too, flushed from
+memory periodically and read by the console's **Statistics** page.
 
 **Why SQLite:** it's stdlib (the webui stays dependency-free), a single
 DVC-trackable file that ships across the gap and rolls back with `dvc checkout`,
@@ -559,13 +637,13 @@ flowchart LR
     jobs["Jobs — run Operations as background jobs"]
     ops["Operations — checkpoint/export/import/rollback/mode"]
     usage["Usage — disk usage + dedup totals"]
-    proj["projects — registry + port allocator"]
+    proj["projects — registry (project names + tokens)"]
   end
   nginx -->|"/api/*"| api
   api --> reads & live & jobs & usage & proj
   jobs --> ops
   reads -->|"read-only"| ledgers[("caches/**/ledger.db")]
-  live -.-> roles["pkgcache project ports"]
+  live -.-> roles["pkgcache role ports (per-project via prefix)"]
   ops -->|"git · dvc · docker compose"| host["host (mounted socket + repo)"]
 ```
 
@@ -586,21 +664,30 @@ flowchart LR
     generator of log lines, scoped by `project`.
   - **`Usage`** ([usage.py](webui/usage.py)) — a TTL-cached `du`-style scan with deduplicated-docker
     totals.
-  - **`projects`** ([projects.py](webui/projects.py)) — the registry + port allocator: the single source
-    of truth for what projects exist and where they live.
+  - **`projects`** ([projects.py](webui/projects.py)) — the registry: the single source of truth for
+    what projects exist (names + files write tokens) and where their trees live.
 
   webui is **internal only** — reached as `webui:8088` on the compose network.
 - **console** ([webui/console/](webui/console/)) — a full **React + TypeScript (Vite)** SPA with **no
   runtime dependencies**, built to static assets and served by a small **nginx**
   container that reverse-proxies `/api` to webui (the public entry on `:8088`). It is
-  a **two-page** app behind a top bar with a **project switcher** (select / create /
+  a **three-page** app behind a top bar with a **project switcher** (select / create /
   delete; selection persisted in `localStorage`):
   - **Overview** — a health-strip of KPIs (packages, cache size, hit rate, active
-    downloads, uncommitted-since-checkpoint, proxies up), a live **downloads** panel,
-    a **HIT / MISS / FAIL** recent feed, a maintenance **Actions** panel with a
-    streaming job console, **git history + rollback**, a **storage monitor** (cache
-    share vs other vs free, with low-space warnings), and copy-paste pull endpoints.
-  - **Packages** — a full-height browse of cached artifacts by ecosystem (each group
+    downloads, uncommitted-since-checkpoint, proxies up), a live **downloads** panel
+    (fixed-height, scrollable), a **HIT / MISS / FAIL** recent feed, a maintenance
+    **Actions** panel with a streaming job console, **git history + rollback**, a
+    **storage monitor** (cache share vs other vs free, with low-space warnings), and
+    copy-paste pull endpoints.
+  - **Statistics** — headline cards (**time saved**, bytes served from cache, hit
+    rate, requests, packages, cache size), a per-ecosystem table (counts / size /
+    hits / misses), a **most-requested leaderboard** per ecosystem, largest + recently
+    cached, a platform/arch breakdown, and an upstream-speed sparkline. Backed by the
+    native usage stats (`/api/stats`); the tallies accumulate from when the feature
+    was deployed.
+  - **Packages** — an **Artifacts** panel on top (generate/rotate the project's
+    files write token; drag-drop upload with a progress bar and a copy-paste `wget`
+    line) above a full-height browse of cached artifacts by ecosystem (each group
     scrolls on its own; server-side filter / sort / paginate).
 
   OKLCH dark/light theming, IBM Plex Mono throughout. nginx defers DNS to request
@@ -633,7 +720,7 @@ flowchart LR
 git init                                               # the CODE repo (cache repo self-inits on first checkpoint)
 cp .env.example .env                                   # set PKGCACHE_UID/GID + DOCKER_GID to your host's ids
 ./scripts/gen-certs.sh                                 # mint the CA + in-process TLS cert
-docker compose --profile online up -d                  # bring up the cache (one process, four roles)
+docker compose --profile online up -d                  # bring up the cache (one process, six roles)
 docker compose --profile online --profile ui up -d     # + the operator console on :8088
 # install certs/ca.crt on each build host so HTTPS is trusted (see below)
 ```
@@ -672,20 +759,33 @@ python3 scripts/pkgops.py --project projA export        # → shuttle/out/projec
 | npm | `https://<host>:4873/` |
 | pip / uv | `https://<host>:3141/root/pypi/+simple/` (and `root/pytorch-*` indexes) |
 | apt / apk | HTTP forward proxy at `http://<host>:3142/` |
+| git | `https://<host>:3143/<upstream-host>/<owner>/<repo>.git` (HTTPS, read-only) |
 | Console UI | `http://<host>:8088` |
 
-A named project serves the same shapes on its own allocated ports (shown in the
-console's Endpoints panel) — swap the port and use the rest of each recipe below
-verbatim.
+A named project serves the same shapes on the **same ports** with a project prefix
+(shown in the console's Endpoints panel):
+
+| Ecosystem | Named project `<p>` |
+|---|---|
+| Docker / OCI | `<host>:5000/<p>/{dockerhub,ghcr,quay}/<image>` (project in the image name) |
+| npm | `https://<host>:4873/<p>/npm/` |
+| pip / uv | `https://<host>:3141/<p>/pypi/root/pypi/+simple/` |
+| apt / apk | `http://<p>@<host>:3142/` (project = proxy username) |
+| git | `https://<host>:3143/<p>/git/<upstream-host>/<owner>/<repo>.git` |
+| files | `https://<host>:3144/<p>/files/<path>` |
+
+The recipes below are written for global; for a project, insert the prefix as
+above and use the rest of each recipe verbatim.
 
 ### Pulling from the cache (per ecosystem)
 
 `HOST` = the cache host (name or IP). The three HTTPS roles use the private CA, so
 each client must trust `certs/ca.crt` first (see
 [Trusting the TLS cert](#trusting-the-caches-tls-certificate-fixes-x509-certificate-signed-by-unknown-authority));
-apt/apk need nothing — they use the plain-HTTP proxy. For a **named project**,
-replace the global port with that project's allocated port (`20000…` etc., from the
-console's Endpoints panel).
+apt/apk need nothing — they use the plain-HTTP proxy. For a **named project**, keep
+the same port and add the project prefix (path segment, image-name segment, or apt
+proxy-username — see the per-project table above; shown in the console's Endpoints
+panel).
 
 #### Docker / OCI — port 5000 (HTTPS)
 
@@ -711,7 +811,8 @@ FROM ${REGISTRY}/library/python:3.12-slim
 ```
 
 > Docker trusts a registry CA **per `host:port`** — add `certs/ca.crt` under
-> `/etc/docker/certs.d/HOST:5000/` (and under each project's OCI port you pull from).
+> `/etc/docker/certs.d/HOST:5000/`. Projects share this port (the project is in the
+> image name), so one entry covers global and every project.
 
 #### pip / uv — port 3141 (HTTPS)
 
@@ -770,6 +871,24 @@ RUN sed -i 's/https/http/' /etc/apk/repositories \
  && http_proxy=http://HOST:3142 apk add --no-cache ca-certificates curl
 ```
 
+#### git — port 3143 (HTTPS, read-only)
+
+Put the real upstream host in the path. The cache mirrors the repo server-side on
+first request and serves clones/fetches from the mirror (offline too). No CA is
+needed if `certs/ca.crt` is in the system store; otherwise point git at it.
+
+```bash
+# one-off:
+GIT_SSL_CAINFO=/path/to/ca.crt git clone https://HOST:3143/github.com/pallets/click.git
+# transparent (once per machine/CI image — covers submodules, pip git+https, CPM, …):
+git config --global http."https://HOST:3143/".sslCAInfo /path/to/ca.crt
+git config --global url."https://HOST:3143/github.com/".insteadOf "https://github.com/"
+git config --global url."https://HOST:3143/gitlab.com/".insteadOf  "https://gitlab.com/"
+```
+
+Push is refused (read-only mirror); shallow / partial / SHA-pinned fetches and Git
+LFS all work. Details: [docs/git-cache.md](docs/git-cache.md).
+
 > **Online vs offline is transparent to clients.** The recipes are identical on both
 > sides of the gap — online fills the cache on first request; with `OFFLINE=1` the
 > same URLs serve from cache and a miss simply fails.
@@ -782,20 +901,19 @@ connection, e.g.:
 
 ```
 Error response from daemon: failed to resolve reference
-"172.17.21.107:20000/dockerhub/pgvector/pgvector:pg17": ... tls: failed to verify
-certificate: x509: certificate signed by unknown authority
+"172.17.21.107:5000/projA/dockerhub/pgvector/pgvector:pg17": ... tls: failed to
+verify certificate: x509: certificate signed by unknown authority
 ```
 
-Copy `certs/ca.crt` to the build host, then trust it. **Docker trusts a registry
-CA per `host:port`**, so you need one entry for each OCI port you pull from — the
-global port (`5000`) *and* every project's allocated OCI port (`20000`, `20010`, …
-from the registry pool):
+Copy `certs/ca.crt` to the build host, then trust it. **Docker trusts a registry CA
+per `host:port`** — and since every project now shares the one OCI port (`5000`,
+with the project in the image name), a **single** entry covers global and all
+projects:
 
 ```bash
-# Docker — per registry host:port (no daemon restart needed):
-sudo mkdir -p /etc/docker/certs.d/172.17.21.107:20000
-sudo cp ca.crt /etc/docker/certs.d/172.17.21.107:20000/ca.crt
-#   repeat for :5000 and any other project OCI ports you pull from.
+# Docker — one entry for the shared OCI port (no daemon restart needed):
+sudo mkdir -p /etc/docker/certs.d/172.17.21.107:5000
+sudo cp ca.crt /etc/docker/certs.d/172.17.21.107:5000/ca.crt
 ```
 
 For everything else, install the CA into the **system trust store** (covers the
@@ -818,12 +936,12 @@ npm config set cafile /path/to/ca.crt          # or: export NODE_EXTRA_CA_CERTS=
 **Skip verification per host (`--trusted-host`, no CA needed).** If you can't
 distribute the CA, you can tell the client to trust the cache host without
 verifying its certificate — the TLS-level equivalent of Docker's
-`insecure-registries`. For pip (use the *same* `host:port` you pull from, including
-a project's port):
+`insecure-registries`. For pip (use the *same* `host:port` you pull from — the port
+is shared across projects, so `--trusted-host` is per host:port, not per project):
 
 ```bash
-pip install --index-url https://172.17.21.107:20000/root/pypi/+simple/ \
-            --trusted-host 172.17.21.107:20000  <pkg>
+pip install --index-url https://172.17.21.107:3141/projA/pypi/root/pypi/+simple/ \
+            --trusted-host 172.17.21.107:3141  <pkg>
 ```
 
 Or make it permanent in `pip.conf` (`~/.config/pip/pip.conf`, or `pip.ini` on
@@ -831,8 +949,8 @@ Windows):
 
 ```ini
 [global]
-index-url = https://172.17.21.107:20000/root/pypi/+simple/
-trusted-host = 172.17.21.107:20000
+index-url = https://172.17.21.107:3141/projA/pypi/root/pypi/+simple/
+trusted-host = 172.17.21.107:3141
 ```
 
 The npm equivalent is `npm config set strict-ssl false` (global, not per-host —
@@ -860,14 +978,22 @@ The control plane ships with tests that don't need docker/dvc:
 cd webui && python3 -m unittest test_projects test_multiproject -v
 ```
 
-- **`test_projects.py`** — the port allocator: lowest-free + contiguous allocation,
-  reserved (global) ports never handed out, freed ports reused, persistence across
-  reload, name validation, pool exhaustion.
-- **`test_multiproject.py`** — the scoped control plane: per-project endpoint /
-  progress / health derivation, per-project ledger reads, per-project git history
-  (must not leak the code repo's history), per-project shuttle paths, the `build`
-  dispatcher's project validation, and the DVC `md5/`-tree normalization an import
-  performs.
+- **`test_projects.py`** — the registry: name-only project creation, shared default
+  ports, name validation + reserved names, the `role_prefix` scheme, files write
+  tokens, and reading a legacy registry that still carries pool ports.
+- **`test_multiproject.py`** — the scoped control plane: per-project prefixed
+  endpoints, per-project progress + per-server health derivation, per-project ledger
+  reads, per-project git history (must not leak the code repo's history), per-project
+  shuttle paths, the `build` dispatcher's project validation, and the DVC `md5/`-tree
+  normalization an import performs.
+
+The cache process (pkgcache) has its own suite covering the router — the per-role
+selection rules (path prefix, OCI image-name, apt proxy-username), `external_base`
+prefixing, and end-to-end ASGI dispatch to the right project's core:
+
+```bash
+cd pkgcache && pip install -e '.[test]' && python -m pytest -q
+```
 
 ---
 
@@ -875,8 +1001,9 @@ cd webui && python3 -m unittest test_projects test_multiproject -v
 
 - **Single worker per role.** Progress and single-flight state are in-process; each
   role runs one uvicorn worker (don't replicate a role).
-- **One process, many ports.** Projects are added/removed live by a registry-polling
-  supervisor; the pool range is published once in compose, so no container recreate.
+- **One process, six ports, many projects.** Projects share the role ports and are
+  routed by URL prefix; a registry-polling supervisor adds/drops project sub-apps
+  live, so creating one needs no new port, rebind, or container recreate.
 - **No cross-project dedup.** Each project has its own tree and repo — isolation over
   sharing. (A shared DVC remote could be layered later without changing topology.)
 - **No garbage collection, by design.** Caches grow unbounded; size is managed by
@@ -885,6 +1012,18 @@ cd webui && python3 -m unittest test_projects test_multiproject -v
   upstream credentials. Docker Hub's anonymous pull cap applies to cold bursts.
 - **Open forward proxy (apt).** No mirror allowlist — acceptable only on the
   isolated networks this stack targets (same posture as the no-auth UI).
+- **git is mirror-and-serve, read-only.** Local bare mirrors (heads + tags only, so
+  commits reachable only from `refs/pull/*` aren't cached), a short revalidation TTL,
+  and push refused. Requires a **local filesystem** (repack-while-serving relies on
+  POSIX unlink-while-open; not NFS-safe). Git LFS objects are cached in the CAS.
+- **`files` is the one write path.** `GET/HEAD` anonymous; `PUT`/`DELETE` need the
+  per-project write token (generated in the console, stored in `config/projects.json`,
+  verified mtime-cached so rotation applies with no restart) and are **refused when
+  `OFFLINE=1`** — uploads happen online, then shuttle across. Write-once by default
+  (`?overwrite=1` to replace).
+- **Stats accumulate forward.** The Statistics tab's tallies (leaderboards, hit rate,
+  time saved) start from when the feature was deployed — historical pulls aren't
+  backfilled — and "time saved" is an online-side, bandwidth-based estimate.
 - **Fixed shuttle dirs.** Export writes `shuttle/out`, import reads `shuttle/in`
   (relocatable via `PKGCACHE_SHUTTLE`); the operator moves bytes between them across
   the gap. The tool never takes a drive path.
@@ -898,9 +1037,11 @@ cd webui && python3 -m unittest test_projects test_multiproject -v
 
 ## Status
 
-A working rewrite, exercised end-to-end through each ecosystem, with multi-project
-serving and air-gap shuttle in place and the control plane unit/integration-tested.
-Pin image digests before production. The retired upstream projects remain in the
-tree (untracked) for reference and for serving any pre-rewrite checkpoints.
+A working rewrite, exercised end-to-end through each of the six roles / seven
+ecosystem views (including the git mirror-and-serve role with Git LFS and the
+generic `files` write path), with multi-project serving, usage statistics, and
+air-gap shuttle in place and the control plane unit/integration-tested. Pin image digests before production. The retired upstream
+projects remain in the tree (untracked) for reference and for serving any
+pre-rewrite checkpoints.
 </content>
 </invoke>

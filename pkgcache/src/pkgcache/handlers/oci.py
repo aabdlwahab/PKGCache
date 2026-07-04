@@ -68,6 +68,10 @@ class OciRepo:
         if ref.startswith("sha256:"):
             return await self._manifest_by_digest(base, repo, name, ref, head)
 
+        # A tag pull is the truest "image requested" signal (blobs are sub-resources
+        # a cached pull may skip) — record access here for the leaderboard / LRU.
+        self._core.stats.access("docker", name)
+
         # tag
         if self._core.config.offline:
             row = await self._core.ledger.aget_tag(dest, repo, ref)
@@ -188,6 +192,7 @@ class OciRepo:
             media_type="application/octet-stream",
             response_headers=headers,
             expected_sha256=digest.split(":", 1)[-1],
+            eco="docker",
         )
 
     # ---- tags/list -----------------------------------------------------------
@@ -198,11 +203,29 @@ class OciRepo:
         base, dest, repo = routed
         if self._core.config.offline:
             tags = await self._core.ledger.alist_tags(dest, repo)
-            return JSONResponse({"name": request.path_params["name"], "tags": tags})
+            return JSONResponse({"name": self._display_name(request), "tags": tags})
         r = await self._fetch(f"{base}/v2/{repo}/tags/list", "application/json")
         if r.status_code != 200:
             return Response(r.text, status_code=r.status_code)
+        # Re-prefix the echoed name for a project pull so it matches what the client
+        # requested (the router stripped the /<project>/ segment before this app saw
+        # it). Only the `name` field is name-bearing; digests are content-addressed.
+        prefix = request.scope.get("pkgcache_oci_project")
+        if prefix:
+            try:
+                doc = json.loads(r.content)
+                doc["name"] = f"{prefix}/{doc.get('name', request.path_params['name'])}"
+                return JSONResponse(doc)
+            except (ValueError, TypeError):
+                pass  # non-JSON upstream body — pass through untouched
         return Response(r.content, media_type="application/json")
+
+    def _display_name(self, request: Request) -> str:
+        """The repo name as the client sees it: the router-stripped project prefix
+        (if any) re-joined to the name this app matched."""
+        name = request.path_params["name"]
+        prefix = request.scope.get("pkgcache_oci_project")
+        return f"{prefix}/{name}" if prefix else name
 
     # ---- helpers -------------------------------------------------------------
     def _route(self, name: str) -> tuple[str, str, str] | None:

@@ -20,7 +20,7 @@ import gen_manifest
 
 # eco cache subdirs to measure. apt + apk share the "apt" subdir, so we measure
 # by subdir (four), not by ecosystem (five).
-_SUBDIRS = ("docker", "npm", "pip", "apt")
+_SUBDIRS = ("docker", "npm", "pip", "apt", "git", "files")
 _TTL = 20.0
 
 

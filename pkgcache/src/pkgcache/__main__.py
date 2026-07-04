@@ -10,12 +10,13 @@ Two modes:
 A single event loop runs every uvicorn server, so the in-process progress registry
 and single-flight dedup keep their (per-role) single-worker semantics.
 
-Multi-project: load_all() returns the global four roles plus four per registered
-project (see core/config.py). A lightweight supervisor re-reads the registry on an
-interval and binds the ports of newly-created projects — and drops ports of removed
-ones — WITHOUT restarting the process, so creating a project from the control UI
-never disturbs in-flight downloads on other ports. (The pool's host ports are
-published up front by compose, so no container recreate is needed either.)
+Multi-project: there is exactly ONE server per role (six total), each on the role's
+default port. Projects are NOT separate ports — a RoleServer (see router.py)
+dispatches each request to the right project's sub-app by path/name/proxy-user, and
+falls back to global. A lightweight supervisor re-reads the registry on an interval
+and tells each RoleServer to add/drop project sub-apps live, WITHOUT restarting the
+process or binding any new port, so creating a project from the control UI never
+disturbs in-flight downloads.
 """
 from __future__ import annotations
 
@@ -26,16 +27,17 @@ import signal
 import uvicorn
 
 from .app import build_app
-from .core.config import Config, load, load_all
+from .core.config import GLOBAL, Config, load, load_roles
+from .router import RoleServer
 
 # How often the supervisor re-reads the project registry to pick up new/removed
 # projects. Small enough that "create project" feels live; large enough to be cheap.
 _POLL = float(os.environ.get("PKGCACHE_PROJECT_POLL", "5"))
 
 
-def _server(cfg: Config) -> uvicorn.Server:
+def _server(app, cfg: Config) -> uvicorn.Server:
     ucfg = uvicorn.Config(
-        build_app(cfg),
+        app,
         host=cfg.host,
         port=cfg.port,
         log_level="info",
@@ -50,19 +52,35 @@ def _server(cfg: Config) -> uvicorn.Server:
 
 
 def _label(cfg: Config) -> str:
-    return f"{cfg.project}/{cfg.role}:{cfg.port}{'(tls)' if cfg.tls_cert else ''}"
+    return f"{cfg.role}:{cfg.port}{'(tls)' if cfg.tls_cert else ''}"
 
 
-async def _serve_all(initial: list[Config]) -> None:
+async def _serve_all() -> None:
     loop = asyncio.get_running_loop()
-    servers: dict[int, uvicorn.Server] = {}   # port -> running server
-    tasks: dict[int, asyncio.Task] = {}       # port -> its serve() task
+
+    # Build one RoleServer per role and prime it with global + every registered
+    # project BEFORE serving, so the first request already has its core ready.
+    role_cfgs = load_roles()
+    role_servers: dict[str, RoleServer] = {}
+    for role, projects in role_cfgs.items():
+        rs = RoleServer(role)
+        await rs.reconcile(projects)
+        role_servers[role] = rs
+
+    servers: list[tuple[str, Config, uvicorn.Server]] = []
+    for role, rs in role_servers.items():
+        g = role_cfgs[role][GLOBAL]
+        try:
+            servers.append((role, g, _server(rs, g)))
+        except Exception as exc:  # noqa: BLE001 - one bad port must not kill the rest
+            print(f"pkgcache: could not build server {_label(g)}: {exc}")
+
     stopping = False
 
     def stop_all() -> None:
         nonlocal stopping
         stopping = True
-        for s in servers.values():
+        for _, _, s in servers:
             s.should_exit = True
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -74,44 +92,26 @@ async def _serve_all(initial: list[Config]) -> None:
         except Exception as exc:  # noqa: BLE001 - one bad port must not kill the rest
             print(f"pkgcache: server {_label(cfg)} exited with error: {exc}")
 
-    def start(cfg: Config) -> None:
-        try:
-            server = _server(cfg)
-        except Exception as exc:  # noqa: BLE001 - skip a misconfigured role/project
-            print(f"pkgcache: could not build server {_label(cfg)}: {exc}")
-            return
-        servers[cfg.port] = server
-        tasks[cfg.port] = asyncio.create_task(run(server, cfg))
+    tasks = [asyncio.create_task(run(s, g)) for _, g, s in servers]
+    print("pkgcache serving → " + ", ".join(_label(g) for _, g, _ in servers))
 
-    for cfg in initial:
-        start(cfg)
-    print("pkgcache serving → " + ", ".join(_label(c) for c in initial))
-
-    # Supervisor: diff the registry against what's running and reconcile.
+    # Supervisor: re-read the registry and reconcile each role's project set.
     while not stopping:
         await asyncio.sleep(_POLL)
         if stopping:
             break
         try:
-            desired = {c.port: c for c in load_all()}
+            desired = load_roles()
         except Exception as exc:  # noqa: BLE001 - a bad registry write shouldn't crash us
             print(f"pkgcache: project registry reload failed: {exc}")
             continue
-        for port, cfg in desired.items():
-            if port not in servers:
-                print(f"pkgcache: binding new project port {_label(cfg)}")
-                start(cfg)
-        for port in list(servers):
-            if port not in desired:
-                print(f"pkgcache: releasing removed project port {port}")
-                servers[port].should_exit = True
-        # Reap finished tasks so a re-created project (same port) can rebind.
-        for port, task in list(tasks.items()):
-            if task.done():
-                tasks.pop(port, None)
-                servers.pop(port, None)
+        for role, rs in role_servers.items():
+            try:
+                await rs.reconcile(desired[role])
+            except Exception as exc:  # noqa: BLE001 - a bad project shouldn't stop others
+                print(f"pkgcache: reconcile {role} failed: {exc}")
 
-    await asyncio.gather(*tasks.values(), return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def main() -> None:
@@ -120,7 +120,7 @@ def main() -> None:
         uvicorn.run(build_app(cfg), host=cfg.host, port=cfg.port, workers=1,
                     log_level="info", ssl_certfile=cfg.tls_cert, ssl_keyfile=cfg.tls_key)
     else:
-        asyncio.run(_serve_all(load_all()))
+        asyncio.run(_serve_all())
 
 
 if __name__ == "__main__":

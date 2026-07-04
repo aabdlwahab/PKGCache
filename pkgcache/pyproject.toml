@@ -11,6 +11,13 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# Test suite (pkgcache/tests). Install with: pip install -e '.[test]'
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
 [project.scripts]
 pkgcache = "pkgcache.__main__:main"
 
@@ -20,3 +27,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pkgcache"]
+
+[tool.pytest.ini_options]
+# The router's end-to-end tests are async; auto mode runs them without per-test markers.
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -13,10 +13,12 @@ from __future__ import annotations
 
 from .core.repository import Repository
 from .handlers.apt import AptRepo
+from .handlers.files import FilesRepo
+from .handlers.git import GitRepo
 from .handlers.npm import NpmRepo
 from .handlers.oci import OciRepo
 from .handlers.pypi import PypiRepo
 
 REPOSITORIES: dict[str, type[Repository]] = {
-    cls.role: cls for cls in (OciRepo, NpmRepo, PypiRepo, AptRepo)
+    cls.role: cls for cls in (OciRepo, NpmRepo, PypiRepo, AptRepo, GitRepo, FilesRepo)
 }

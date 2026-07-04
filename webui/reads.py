@@ -3,12 +3,17 @@ the committed manifest, git history, and proxy container status."""
 import json
 import os
 import sqlite3
+import statistics
 import subprocess
 
 import gen_manifest
 import projects
 
 from config import ECOS, GIT_ENV, ROOT
+
+# Cache subdirs holding a ledger.db (apt + apk share "apt"). Used by the stats
+# aggregation, which opens each DB once.
+_SUBDIRS = ("docker", "npm", "pip", "apt", "git", "files")
 
 
 def _repo(project):
@@ -22,6 +27,23 @@ def _repo(project):
 # UI is deliberately stdlib-only and can't import pkgcache, so it reads the same
 # ledger.db files directly. Keep this sort whitelist + the column set in sync there.
 _SORT_COLS = {"name": "name", "size": "size", "date": "cached_at", "version": "version"}
+
+
+def _ro(db):
+    """Open a ledger.db read-only, or None if it doesn't exist / can't be opened."""
+    if not db.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.Error:
+        return None
+
+
+def _empty_eco(eco):
+    return {"eco": eco, "count": 0, "size": 0, "requests": 0,
+            "hit_count": 0, "hit_bytes": 0, "miss_count": 0, "miss_bytes": 0}
 
 
 def _ledger_rows(eco, root, q=None, sort="name", page=1, page_size=1000, full=False):
@@ -107,6 +129,117 @@ class Reads:
             "ecosystems": {e: _ledger_rows(e, root, q=q, sort=sort, page=page, full=True) for e in ecos},
             "page": page,
             "sort": sort,
+        }
+
+    def stats(self, project=projects.GLOBAL):
+        """Aggregate statistics for the stats tab — inventory, per-package request
+        leaderboard, hit/miss traffic, and an estimated 'time saved' from passive
+        upstream-bandwidth samples. All read-only over the per-eco ledgers."""
+        root = _repo(project)
+        by_eco_map = {eco: _empty_eco(eco) for eco in ECOS}
+        leaderboard = {eco: [] for eco in ECOS}
+        top_largest, recent_added, samples = [], [], []
+        arch_map, bw_by_subdir = {}, {}
+        eco_subdir = {eco: sd for eco, (sd, _) in gen_manifest.ECOS.items()}
+
+        for subdir in _SUBDIRS:
+            db = root / subdir / "ledger.db"
+            conn = _ro(db)
+            if conn is None:
+                continue
+            try:
+                for eco, (sd, ecosystem) in gen_manifest.ECOS.items():
+                    if sd != subdir:
+                        continue
+                    cnt, size = conn.execute(
+                        "SELECT COUNT(*), COALESCE(SUM(size),0) FROM artifacts WHERE ecosystem=?",
+                        (ecosystem,),
+                    ).fetchone()
+                    tr = conn.execute(
+                        "SELECT hit_count,hit_bytes,miss_count,miss_bytes FROM traffic_stats WHERE ecosystem=?",
+                        (ecosystem,),
+                    ).fetchone()
+                    req = conn.execute(
+                        "SELECT COALESCE(SUM(access_count),0) FROM package_stats WHERE ecosystem=?",
+                        (ecosystem,),
+                    ).fetchone()[0]
+                    row = by_eco_map[eco]
+                    row.update(count=cnt, size=size, requests=req)
+                    if tr:
+                        row.update(hit_count=tr["hit_count"], hit_bytes=tr["hit_bytes"],
+                                   miss_count=tr["miss_count"], miss_bytes=tr["miss_bytes"])
+                    leaderboard[eco] = [
+                        {"name": r["name"], "count": r["access_count"], "last_access": r["last_access"]}
+                        for r in conn.execute(
+                            "SELECT name,access_count,last_access FROM package_stats "
+                            "WHERE ecosystem=? ORDER BY access_count DESC, name LIMIT 10", (ecosystem,))
+                    ]
+                    for r in conn.execute(
+                        "SELECT COALESCE(NULLIF(arch,''),'(none)') a, COUNT(*) c, COALESCE(SUM(size),0) s "
+                        "FROM artifacts WHERE ecosystem=? GROUP BY a", (ecosystem,)):
+                        m = arch_map.setdefault(r["a"], [0, 0])
+                        m[0] += r["c"]
+                        m[1] += r["s"]
+                    for r in conn.execute(
+                        "SELECT name,version,size FROM artifacts WHERE ecosystem=? AND size IS NOT NULL "
+                        "ORDER BY size DESC LIMIT 15", (ecosystem,)):
+                        top_largest.append({"eco": eco, "name": r["name"], "version": r["version"], "size": r["size"]})
+                    for r in conn.execute(
+                        "SELECT name,version,size,cached_at FROM artifacts WHERE ecosystem=? "
+                        "ORDER BY cached_at DESC LIMIT 15", (ecosystem,)):
+                        recent_added.append({"eco": eco, "name": r["name"], "version": r["version"],
+                                             "size": r["size"], "cached_at": r["cached_at"]})
+                bps = [r["bps"] for r in conn.execute("SELECT bps FROM bandwidth_samples ORDER BY ts DESC LIMIT 500")]
+                bw_by_subdir[subdir] = bps
+                for r in conn.execute("SELECT ts,bps,source FROM bandwidth_samples ORDER BY ts DESC LIMIT 120"):
+                    samples.append({"ts": r["ts"], "bps": r["bps"], "source": r["source"]})
+            except sqlite3.Error:
+                pass
+            finally:
+                conn.close()
+
+        all_bps = [b for v in bw_by_subdir.values() for b in v]
+        global_bps = statistics.median(all_bps) if all_bps else 0.0
+        by_eco = list(by_eco_map.values())
+        time_saved = 0.0
+        for row in by_eco:
+            sd_bps = bw_by_subdir.get(eco_subdir.get(row["eco"]), [])
+            bps = statistics.median(sd_bps) if sd_bps else global_bps
+            if bps > 0:
+                time_saved += row["hit_bytes"] / bps
+
+        hits = sum(r["hit_count"] for r in by_eco)
+        misses = sum(r["miss_count"] for r in by_eco)
+        top_largest.sort(key=lambda x: x["size"] or 0, reverse=True)
+        recent_added.sort(key=lambda x: x["cached_at"] or "", reverse=True)
+        samples.sort(key=lambda x: x["ts"])
+        arch = sorted(
+            ({"arch": k, "count": v[0], "size": v[1]} for k, v in arch_map.items()),
+            key=lambda x: x["count"], reverse=True,
+        )[:12]
+
+        return {
+            "project": project,
+            "totals": {
+                "packages": sum(r["count"] for r in by_eco),
+                "size": sum(r["size"] for r in by_eco),
+                "requests": sum(r["requests"] for r in by_eco),
+                "hits": hits,
+                "misses": misses,
+            },
+            "hit_rate": round(hits / (hits + misses) * 100, 1) if (hits + misses) else None,
+            "bytes_saved": sum(r["hit_bytes"] for r in by_eco),
+            "time_saved_seconds": round(time_saved, 1),
+            "by_eco": by_eco,
+            "by_arch": arch,
+            "leaderboard": leaderboard,
+            "top_largest": top_largest[:15],
+            "recent_added": recent_added[:15],
+            "bandwidth": {
+                "current_bps": round(global_bps, 1),
+                "samples": samples[-120:],
+            },
+            "usage": self._usage.read(),
         }
 
     def history(self, project=projects.GLOBAL):

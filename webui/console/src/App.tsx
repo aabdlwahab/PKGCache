@@ -18,10 +18,13 @@ import { useRoute } from "./hooks/useRoute";
 import { TopBar, OfflineBanner, Footer } from "./components/Chrome";
 import { HealthStrip, type Kpi } from "./components/HealthStrip";
 import { PackagesPanel } from "./components/PackagesPanel";
+import { ArtifactsPanel } from "./components/ArtifactsPanel";
+import { StatisticsPanel } from "./components/StatisticsPanel";
 import { StoragePanel } from "./components/StoragePanel";
 import { DownloadsPanel } from "./components/DownloadsPanel";
 import { RecentPanel } from "./components/RecentPanel";
 import { ActionsPanel } from "./components/ActionsPanel";
+import { LockwarmPanel } from "./components/LockwarmPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { EndpointsPanel } from "./components/EndpointsPanel";
 
@@ -61,6 +64,13 @@ export default function App() {
   const history = usePolling((s) => api.history(project, s), 8000, [refreshKey, project]);
   const endpoints = usePolling((s) => api.endpoints(project, s), 30000, [project]);
   const shuttle = usePolling((s) => api.shuttle(project, s), 6000, [refreshKey, project]);
+  // Stats are heavier to aggregate (opens every ledger), so poll fast only while
+  // the tab is open; otherwise idle it to ~hourly.
+  const stats = usePolling(
+    (s) => api.stats(project, s),
+    view === "statistics" ? 5000 : 3_600_000,
+    [refreshKey, project, view],
+  );
 
   // Create/select/delete a project from the switcher. Create selects the new one;
   // deleting the current one falls back to global. The central process binds/drops
@@ -179,7 +189,7 @@ export default function App() {
     const proxiesTotal = proxies.data?.roles?.length ?? 4;
 
     return [
-      { label: "Packages", value: totalPkgs, sub: "5 ecosystems" },
+      { label: "Packages", value: totalPkgs, sub: "7 ecosystems" },
       { label: "Cache size", value: diskSize ?? totalSize, sub: "on disk" },
       {
         label: "Hit rate",
@@ -274,6 +284,14 @@ export default function App() {
               onCloseJob={close}
             />
             <div className="col history">
+              <LockwarmPanel
+                busy={busy}
+                job={job}
+                project={project}
+                online={online}
+                onStart={start}
+                onCloseJob={close}
+              />
               <HistoryPanel commits={commits} busy={busy} onRollback={rollback} />
               <StoragePanel fs={usage?.fs} cacheBytes={usage?.disk_total ?? 0} />
               <EndpointsPanel endpoints={endpoints.data ?? {}} theme={theme} />
@@ -282,8 +300,18 @@ export default function App() {
 
           <Footer clock={new Date(now).toLocaleTimeString("en-GB")} />
         </>
+      ) : view === "statistics" ? (
+        <div className="page-stats">
+          <StatisticsPanel data={stats.data ?? undefined} theme={theme} now={now} />
+        </div>
       ) : (
         <div className="page-packages">
+          <ArtifactsPanel
+            project={project}
+            online={online}
+            filesEndpoint={endpoints.data?.files ?? ""}
+            onChanged={() => setRefreshKey((k) => k + 1)}
+          />
           <PackagesPanel
             fullHeight
             ecosystems={ecosystems}

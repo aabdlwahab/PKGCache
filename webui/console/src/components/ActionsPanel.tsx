@@ -14,7 +14,7 @@ function statusColors(status: JobStatus): { color: string; bg: string } {
   return { color: "var(--warn)", bg: "var(--warn-bg)" };
 }
 
-function JobConsole({ job, onClose }: { job: ActiveJob; onClose: () => void }) {
+export function JobConsole({ job, onClose }: { job: ActiveJob; onClose: () => void }) {
   const c = statusColors(job.status);
   const running = job.status === "running";
   return (
@@ -346,7 +346,8 @@ export function ActionsPanel({
         </div>
         </div>
 
-        {job && <JobConsole job={job} onClose={onCloseJob} />}
+        {/* lockwarm jobs render under their own panel; everything else here. */}
+        {job && job.action !== "lockwarm" && <JobConsole job={job} onClose={onCloseJob} />}
       </div>
     </Panel>
   );

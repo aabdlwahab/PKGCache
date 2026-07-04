@@ -53,25 +53,35 @@ def _make_ledger(db_path, ecosystem, rows):
 class MultiProjectTests(unittest.TestCase):
     def setUp(self):
         # Fresh registry per test.
-        projects.save_registry({"pool": dict(projects.POOL_DEFAULT), "projects": {}})
-        self.rec = projects.create("proja", probe=False)
+        projects.save_registry({"projects": {}, "tokens": {}})
+        self.rec = projects.create("proja")
         self.repo = projects.repo_dir("proja")
 
-    def test_endpoints_use_allocated_ports(self):
+    def test_endpoints_use_project_prefix_on_shared_ports(self):
         ep = config.endpoints("proja")
-        npm_port = self.rec["ports"]["npm"]
-        self.assertIn(f":{npm_port}/", ep["npm"])
-        # Global endpoints stay on the default ports, untouched.
+        # Projects share the default ports; the project rides a URL prefix (or the
+        # proxy username for apt). Global keeps its bare root URLs.
+        self.assertIn(":4873/proja/npm/", ep["npm"])
+        self.assertIn("/proja/pypi/root/pypi/+simple/", ep["pip"])
+        self.assertIn("/proja/git/", ep["git"])
+        self.assertIn("proja@", ep["apt"])                      # proxy username
+        self.assertIn(":5000/proja/", ep["docker"])             # project in image name
         self.assertIn(":4873/", config.endpoints("global")["npm"])
+        self.assertNotIn("/proja/", config.endpoints("global")["npm"])
 
     def test_progress_and_health_sources_scoped(self):
         ps = config.progress_sources("proja")
         hs = config.health_sources("proja")
-        self.assertEqual(ps["npm"], f"https://pkgcache:{self.rec['ports']['npm']}/-/progress")
-        self.assertEqual(hs["apt"], f"http://pkgcache:{self.rec['ports']['apt']}/healthz")
-        # apt is plain HTTP, the rest HTTPS.
+        # Progress is per-project (per-core), reached by prefix on the shared port.
+        self.assertEqual(ps["npm"], "https://pkgcache:4873/proja/npm/-/progress")
+        self.assertEqual(ps["docker"], "https://pkgcache:5000/v2/proja/_progress")
+        self.assertEqual(ps["apt"], "http://pkgcache:3142/proja/apt/acng-progress")
         self.assertTrue(ps["docker"].startswith("https://"))
         self.assertTrue(ps["apt"].startswith("http://"))
+        # Health is per-SERVER now (projects share one process per role): the global
+        # endpoints answer for every project.
+        self.assertEqual(hs, config.health_sources("global"))
+        self.assertEqual(hs["apt"], "http://pkgcache:3142/healthz")
 
     def test_packages_read_from_project_ledger(self):
         reader = reads.Reads(usage.Usage())
@@ -163,6 +173,68 @@ class MultiProjectTests(unittest.TestCase):
         self.assertTrue(hasattr(gen, "__next__"))
         # import may register a brand-new project, so non-existence is allowed there.
         self.assertTrue(hasattr(operations.build("import", {"project": "fresh"}), "__next__"))
+
+
+class SharedDvcCacheTests(unittest.TestCase):
+    """Phase 1 offline import dedup: the shared DVC object store wiring. dvc itself
+    runs only in the container, so we test the pure-Python pieces — the command
+    construction (stubbed run) and the hardlink-breaking ledger detach (real fs)."""
+
+    def setUp(self):
+        projects.save_registry({"projects": {}, "tokens": {}})
+        projects.create("proja")
+        self.repo = projects.repo_dir("proja")
+
+    def test_use_shared_dvc_cache_writes_local_config(self):
+        # Stub run() so no real dvc is needed; capture the argv of each call.
+        calls = []
+
+        def fake_run(cmd, env=None, cwd=None):
+            calls.append((cmd, str(cwd)))
+            yield "$ " + " ".join(cmd) + "\n"
+
+        orig = ops.run
+        ops.run = fake_run
+        try:
+            list(ops._use_shared_dvc_cache(self.repo))
+        finally:
+            ops.run = orig
+
+        # The store dir is created, and every dvc write targets .dvc/config.local
+        # (--local) in THIS repo — never the tracked config the bundle carries.
+        self.assertTrue(ops._SHARED_DVC_STORE.is_dir())
+        self.assertEqual(
+            calls[0][0],
+            ["dvc", "cache", "dir", "--local", str(ops._SHARED_DVC_STORE)],
+        )
+        self.assertEqual(calls[1][0], ["dvc", "config", "--local", "cache.type", "reflink,hardlink,copy"])
+        self.assertTrue(all(c[1] == str(self.repo) for c in calls))
+        self.assertTrue(all("--local" in c[0] for c in calls))
+
+    def test_unshare_ledgers_breaks_the_hardlink(self):
+        # Simulate a hardlink-mode checkout: the role's ledger.db is a link into the
+        # shared store (nlink == 2), sharing an inode with the store object.
+        db = self.repo / "docker" / "ledger.db"
+        db.parent.mkdir(parents=True, exist_ok=True)
+        db.write_bytes(b"LEDGER-V1")
+        store_obj = Path(tempfile.mkdtemp()) / "store-object"
+        os.link(db, store_obj)
+        self.assertEqual(os.stat(db).st_nlink, 2)
+
+        list(ops._unshare_ledgers(self.repo))
+
+        # The repo copy is now a private inode; the store object is untouched.
+        self.assertEqual(os.stat(db).st_nlink, 1)
+        self.assertNotEqual(os.stat(db).st_ino, os.stat(store_obj).st_ino)
+        self.assertEqual(db.read_bytes(), b"LEDGER-V1")
+        # A subsequent in-place write to the ledger must NOT reach the shared store.
+        db.write_bytes(b"LEDGER-V2-written-by-proxy")
+        self.assertEqual(store_obj.read_bytes(), b"LEDGER-V1")
+
+    def test_unshare_ledgers_skips_absent_dbs(self):
+        # No ledger.db in any role dir → clean no-op, no exception, no stray files.
+        list(ops._unshare_ledgers(self.repo))
+        self.assertFalse((self.repo / "docker" / "ledger.db.unshare").exists())
 
 
 if __name__ == "__main__":

@@ -18,10 +18,13 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 # Wait this long for a competing writer before raising SQLITE_BUSY. Generous: the
 # single writer only contends with its own thread-hopped writes and the WAL readers.
 _BUSY_TIMEOUT_MS = 5000
+# Cap the rolling bandwidth-sample log per ledger (passive miss throughput + active
+# speed-test points). Plenty for an over-time chart; pruned on every flush.
+_BANDWIDTH_KEEP = 2000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -50,6 +53,44 @@ CREATE TABLE IF NOT EXISTS oci_tags (
   media_type TEXT,
   fetched_at TEXT,
   PRIMARY KEY (upstream, repo, tag)
+);
+
+-- Per-package request tally (leaderboard + future LRU eviction). One row per
+-- (ecosystem, package); access_count is cumulative, last_access is epoch seconds.
+CREATE TABLE IF NOT EXISTS package_stats (
+  ecosystem    TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_access  REAL,
+  PRIMARY KEY (ecosystem, name)
+);
+
+-- Cumulative hit/miss tallies per ecosystem → hit rate + bytes-saved.
+CREATE TABLE IF NOT EXISTS traffic_stats (
+  ecosystem  TEXT PRIMARY KEY,
+  hit_count  INTEGER NOT NULL DEFAULT 0,
+  hit_bytes  INTEGER NOT NULL DEFAULT 0,
+  miss_count INTEGER NOT NULL DEFAULT 0,
+  miss_bytes INTEGER NOT NULL DEFAULT 0
+);
+
+-- Rolling upstream-throughput samples: passive (measured from real cache-miss
+-- downloads) + active (scheduled speed tests). Feeds the "time saved" estimate.
+CREATE TABLE IF NOT EXISTS bandwidth_samples (
+  ts     REAL NOT NULL,
+  bps    REAL NOT NULL,
+  source TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_bw_ts ON bandwidth_samples(ts);
+
+-- git ref → commit map (the oci_tags analog): lets the offline side report which
+-- branches/tags a mirror holds. repo = "<host>/<owner>/<name>".
+CREATE TABLE IF NOT EXISTS git_refs (
+  repo       TEXT NOT NULL,
+  ref        TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  fetched_at TEXT,
+  PRIMARY KEY (repo, ref)
 );
 """
 
@@ -103,6 +144,18 @@ class Ledger:
                 ),
             )
 
+    def delete_artifact(self, ecosystem: str, name: str) -> None:
+        """Remove every row for one (ecosystem, name) — used by the files role to make
+        an overwrite/delete replace rather than accumulate rows (record() upserts on
+        the full identity incl. digest, so a changed-content re-upload would otherwise
+        leave a stale row)."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM artifacts WHERE ecosystem=? AND name=?", (ecosystem, name))
+
+    async def adelete_artifact(self, ecosystem: str, name: str) -> None:
+        await asyncio.to_thread(self.delete_artifact, ecosystem, name)
+
     def set_tag(self, upstream: str, repo: str, tag: str, digest: str, media_type: str | None) -> None:
         with self._lock:
             self._conn.execute(
@@ -129,6 +182,43 @@ class Ledger:
                 (upstream, repo),
             )
             return [r["tag"] for r in cur.fetchall()]
+
+    def sync_git_refs(self, repo: str, entries: list[tuple[str, str]],
+                      head_ref: str | None, mirror_size: int | None) -> None:
+        """Replace the ledger view of one git mirror after a clone/fetch.
+
+        entries: [(ref_shortname, commit_sha), …] for heads + tags. head_ref is the
+        default-branch shortname (carries the mirror's on-disk size on its artifacts
+        row so the git eco's total size is the sum of mirror sizes, counted once).
+        Wholesale replace (delete-then-insert) handles pruned refs for free."""
+        now = _now_iso()
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                self._conn.execute("DELETE FROM git_refs WHERE repo=?", (repo,))
+                self._conn.execute(
+                    "DELETE FROM artifacts WHERE ecosystem='git' AND name=?", (repo,))
+                self._conn.executemany(
+                    "INSERT INTO git_refs(repo, ref, commit_sha, fetched_at) VALUES (?,?,?,?)",
+                    [(repo, ref, sha, now) for ref, sha in entries],
+                )
+                self._conn.executemany(
+                    """INSERT INTO artifacts
+                         (ecosystem, name, version, digest, size, origin, path, arch, cached_at, extra)
+                       VALUES ('git', ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL)
+                       ON CONFLICT(ecosystem, name, version, digest) DO UPDATE SET size=excluded.size""",
+                    [
+                        (repo, ref, sha, (mirror_size if ref == head_ref else None), now)
+                        for ref, sha in entries
+                    ],
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+
+    async def async_sync_git_refs(self, *a) -> None:
+        await asyncio.to_thread(self.sync_git_refs, *a)
 
     def query(self, ecosystem: str | None = None, q: str | None = None,
               sort: str = "name", page: int = 1, page_size: int = 200) -> list[dict]:
@@ -164,6 +254,52 @@ class Ledger:
                 (ecosystem,),
             )
             return [dict(r) for r in cur.fetchall()]
+
+    def apply_stats(self, access: dict, traffic: dict, bandwidth: list) -> None:
+        """Fold one flush window's in-memory deltas into the persistent tallies.
+
+        access:    {(ecosystem, name): (count_delta, last_access_epoch)}
+        traffic:   {ecosystem: (hit_count, hit_bytes, miss_count, miss_bytes)} deltas
+        bandwidth: [(ts, bps, source), …] samples to append
+        All applied in one transaction; bandwidth log is pruned to the last N rows."""
+        if not (access or traffic or bandwidth):
+            return
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                for (eco, name), (cnt, last_ts) in access.items():
+                    self._conn.execute(
+                        """INSERT INTO package_stats(ecosystem, name, access_count, last_access)
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(ecosystem, name) DO UPDATE SET
+                             access_count = access_count + excluded.access_count,
+                             last_access  = excluded.last_access""",
+                        (eco, name, cnt, last_ts),
+                    )
+                for eco, (hc, hb, mc, mb) in traffic.items():
+                    self._conn.execute(
+                        """INSERT INTO traffic_stats(ecosystem, hit_count, hit_bytes, miss_count, miss_bytes)
+                           VALUES (?, ?, ?, ?, ?)
+                           ON CONFLICT(ecosystem) DO UPDATE SET
+                             hit_count  = hit_count  + excluded.hit_count,
+                             hit_bytes  = hit_bytes  + excluded.hit_bytes,
+                             miss_count = miss_count + excluded.miss_count,
+                             miss_bytes = miss_bytes + excluded.miss_bytes""",
+                        (eco, hc, hb, mc, mb),
+                    )
+                if bandwidth:
+                    self._conn.executemany(
+                        "INSERT INTO bandwidth_samples(ts, bps, source) VALUES (?, ?, ?)", bandwidth
+                    )
+                    self._conn.execute(
+                        "DELETE FROM bandwidth_samples WHERE rowid NOT IN "
+                        "(SELECT rowid FROM bandwidth_samples ORDER BY ts DESC LIMIT ?)",
+                        (_BANDWIDTH_KEEP,),
+                    )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
 
     def clear(self) -> None:
         with self._lock:

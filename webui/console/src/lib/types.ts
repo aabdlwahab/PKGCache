@@ -1,7 +1,7 @@
 // API response shapes — mirror webui's JSON endpoints (see webui/server.py).
 
-export type Eco = "docker" | "npm" | "pip" | "apt" | "apk";
-export const ECOS: Eco[] = ["docker", "npm", "pip", "apt", "apk"];
+export type Eco = "docker" | "npm" | "pip" | "apt" | "apk" | "git" | "files";
+export const ECOS: Eco[] = ["docker", "npm", "pip", "apt", "apk", "git", "files"];
 
 // The implicit default project: today's default URLs, the caches/ repo.
 export const GLOBAL_PROJECT = "global";
@@ -53,6 +53,60 @@ export interface PackagesResp {
   ecosystems: Partial<Record<Eco, Artifact[]>>;
   page: number;
   sort: string;
+}
+
+// ---- /api/stats ----------------------------------------------------------
+export interface StatsEco {
+  eco: Eco;
+  count: number;
+  size: number;
+  requests: number;
+  hit_count: number;
+  hit_bytes: number;
+  miss_count: number;
+  miss_bytes: number;
+}
+export interface LeaderEntry {
+  name: string;
+  count: number;
+  last_access: number | null; // epoch seconds
+}
+export interface ArchEntry {
+  arch: string;
+  count: number;
+  size: number;
+}
+export interface LargeEntry {
+  eco: Eco;
+  name: string;
+  version: string;
+  size: number;
+}
+export interface RecentAdded {
+  eco: Eco;
+  name: string;
+  version: string;
+  size: number | null;
+  cached_at: string | null;
+}
+export interface BwSample {
+  ts: number;
+  bps: number;
+  source: string;
+}
+export interface StatsResp {
+  project: string;
+  totals: { packages: number; size: number; requests: number; hits: number; misses: number };
+  hit_rate: number | null;
+  bytes_saved: number;
+  time_saved_seconds: number;
+  by_eco: StatsEco[];
+  by_arch: ArchEntry[];
+  leaderboard: Partial<Record<Eco, LeaderEntry[]>>;
+  top_largest: LargeEntry[];
+  recent_added: RecentAdded[];
+  bandwidth: { current_bps: number; samples: BwSample[] };
+  usage?: Usage;
 }
 
 export interface DownloadItem {
@@ -138,7 +192,7 @@ export interface JobsResp {
   jobs: { id: number; action: string; status: JobStatus }[];
 }
 
-export type JobAction = "checkpoint" | "export" | "import" | "rollback" | "mode";
+export type JobAction = "checkpoint" | "export" | "import" | "rollback" | "mode" | "lockwarm";
 
 export interface ShuttleCheckpoint {
   hash: string;

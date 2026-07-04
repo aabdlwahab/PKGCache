@@ -27,9 +27,25 @@ roles:
     indexes:
       root/pypi: https://pypi.org/simple
       root/pytorch-cu124: https://download.pytorch.org/whl/cu124
+      root/pytorch-cu128: https://download.pytorch.org/whl/cu128
       root/pytorch-cpu: https://download.pytorch.org/whl/cpu
 
   apt:
     listen_port: 3142
     # forward proxy — no upstream map; the Host header carries the mirror. Proxies
     # to ANY host (no allowlist) by design; trusted/isolated networks only.
+
+  git:
+    listen_port: 3143
+    # Mirror-and-serve smart-HTTP git. Client URL: https://<host>:3143/<upstream-
+    # host>/<owner>/<repo>.git — the first path segment is the real upstream host
+    # (any public https host, like apt's any-host stance). Read-only; push refused.
+    refs_ttl: 60            # seconds an advertised ref set is trusted before a re-fetch
+    max_upload_packs: 8     # concurrent upload-pack (pack computation) cap
+
+  files:
+    listen_port: 3144
+    # Generic artifact store: wget-downloadable, uploaded via PUT (or the console).
+    # GET/HEAD are anonymous; PUT/DELETE need the per-project write token (generated
+    # in the console) and are refused when OFFLINE=1. Write-once (?overwrite=1 to replace).
+    max_upload_mb: 0        # reject PUTs larger than this many MB (0 = unlimited)

@@ -12,10 +12,11 @@ from .config import Config
 from .inflight import InflightRegistry
 from .ledger import Ledger
 from .progress import Progress
+from .stats import Stats
 from .storage import Storage
 from .upstream import Upstream
 
-__all__ = ["Core", "build_core", "Config", "Ledger", "Storage", "Upstream", "Progress", "Cache"]
+__all__ = ["Core", "build_core", "Config", "Ledger", "Storage", "Upstream", "Progress", "Stats", "Cache"]
 
 
 @dataclass
@@ -25,9 +26,11 @@ class Core:
     ledger: Ledger
     upstream: Upstream
     progress: Progress
+    stats: Stats
     cache: Cache
 
     async def aclose(self) -> None:
+        await self.stats.flush(self.ledger)  # persist the final window before closing
         await self.upstream.aclose()
         self.ledger.close()
 
@@ -38,12 +41,14 @@ def build_core(config: Config) -> Core:
     ledger = Ledger(config.cache_root / "ledger.db")
     upstream = Upstream(timeout=config.request_timeout, offline=config.offline)
     progress = Progress()
-    cache = Cache(storage, InflightRegistry(), progress, ledger)
+    stats = Stats()
+    cache = Cache(storage, InflightRegistry(), progress, ledger, stats)
     return Core(
         config=config,
         storage=storage,
         ledger=ledger,
         upstream=upstream,
         progress=progress,
+        stats=stats,
         cache=cache,
     )

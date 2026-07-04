@@ -7,6 +7,8 @@ export const HUE: Record<Eco, number> = {
   pip: 95,
   apt: 320,
   apk: 168,
+  git: 210,
+  files: 285,
 };
 
 export interface EcoColors {

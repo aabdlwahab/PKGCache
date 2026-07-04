@@ -23,3 +23,9 @@ apt:
   - curl
 apk:
   - ca-certificates
+
+# git: "<upstream-host>/<owner>/<repo>" — a server-side clone --mirror is triggered
+# by an ls-remote through the cache (heads + tags only).
+git:
+  - github.com/octocat/Hello-World
+  - github.com/pallets/click

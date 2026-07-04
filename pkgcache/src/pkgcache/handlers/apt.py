@@ -115,14 +115,17 @@ class AptRepo:
             return PlainTextResponse("not cached (offline)", status_code=404)
 
         rel = str(final.relative_to(self._core.storage.root))
+        art = _artifact_for(filename)  # (eco, name, version) | None (None = index blob)
+        eco = art[0] if art else "apt"
+        if art:
+            self._core.stats.access(art[0], art[1])  # leaderboard / LRU
 
         def on_commit(size: int, hexd: str):
-            rec = _artifact_for(filename)
-            if rec is None:
+            if art is None:
                 return None  # immutable but not a package (e.g. by-hash index blob)
-            eco, name, version = rec
+            a_eco, name, version = art
             return ArtifactRecord(
-                ecosystem=eco, name=name, version=version,
+                ecosystem=a_eco, name=name, version=version,
                 digest=f"sha256:{hexd}", size=size, origin=target, path=rel,
             )
 
@@ -139,6 +142,7 @@ class AptRepo:
             method=request.method,
             request=request,
             on_commit=on_commit,
+            eco=eco,
         )
 
     @staticmethod

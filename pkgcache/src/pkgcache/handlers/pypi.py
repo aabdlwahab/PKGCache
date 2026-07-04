@@ -66,10 +66,18 @@ class PypiRepo:
 
     def mount(self, core: Core) -> list[BaseRoute]:
         self._core = core
+        # /+indexes is registered before the greedy {index:path} routes so it wins.
         return [
+            Route("/+indexes", self.indexes, methods=["GET"]),
             Route("/{index:path}/+simple/{project}/", self.simple, methods=["GET"]),
             Route("/{index:path}/+f/{project}/{filename}", self.file, methods=["GET", "HEAD"]),
         ]
+
+    # ---- index map -----------------------------------------------------------
+    async def indexes(self, request: Request) -> Response:
+        """The configured index→upstream map, so the control plane can translate a
+        uv.lock's registry URLs into local indexes without parsing pkgcache.yaml."""
+        return JSONResponse(dict(self._core.config.indexes))
 
     # ---- simple index --------------------------------------------------------
     async def simple(self, request: Request) -> Response:
@@ -89,6 +97,16 @@ class PypiRepo:
         prefix = f"{ext}/{index}/+f/{project}"
         wants_json = _JSON_ACCEPT in request.headers.get("accept", "")
         return _render_json(project, files, prefix) if wants_json else _render_html(project, files, prefix)
+
+    @staticmethod
+    def _read_cached(cache_file) -> list[dict] | None:
+        """The locally-cached, parsed simple index — no upstream, no parse."""
+        if cache_file.exists():
+            try:
+                return json.loads(cache_file.read_text())
+            except (ValueError, OSError):
+                return None
+        return None
 
     async def _load_simple(self, index, project, base, cache_file) -> list[dict] | None:
         page_url = f"{base}/{project}/"
@@ -122,9 +140,19 @@ class PypiRepo:
         is_metadata = filename.endswith(".metadata")
         lookup_name = filename[: -len(".metadata")] if is_metadata else filename
 
+        # Resolve the file from the LOCALLY CACHED index first. uv fetches
+        # /+simple/<project>/ (which caches simple.json) immediately before
+        # requesting files, so this is a hot read — never re-fetch the upstream
+        # index per file. Re-fetching grpcio's 6 MB / 10k-file index on every wheel
+        # request (× its .metadata sidecar) is what stalled the event loop under a
+        # heavy concurrent CUDA-wheel install and timed clients out. Fall back to a
+        # one-shot upstream refetch only if the cache is missing or stale.
         cache_file = self._core.storage.safe_path(index, project, "simple.json")
-        files = await self._load_simple(index, project, base, cache_file)
+        files = self._read_cached(cache_file)
         entry = next((f for f in (files or []) if f.get("filename") == lookup_name), None)
+        if entry is None:
+            files = await self._load_simple(index, project, base, cache_file)
+            entry = next((f for f in (files or []) if f.get("filename") == lookup_name), None)
         if entry is None:
             self._core.progress.record_recent(filename, filename, None, hit=False, failed=True)
             return PlainTextResponse(f"unknown file {filename}", status_code=404)
@@ -151,6 +179,8 @@ class PypiRepo:
         def opener():
             return client.stream("GET", upstream_url)
 
+        if not is_metadata:
+            self._core.stats.access("pip", project)  # leaderboard / LRU
         return await self._core.cache.fetch(
             key=f"{index}/+f/{project}/{filename}",
             final_path=final_path,
@@ -161,6 +191,7 @@ class PypiRepo:
             media_type=media_type,
             expected_sha256=expected,
             on_commit=on_commit,
+            eco="pip",
         )
 
     # ---- helpers -------------------------------------------------------------

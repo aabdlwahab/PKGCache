@@ -10,22 +10,29 @@ _SDIST_SUFFIXES = (".tar.gz", ".tar.bz2", ".tgz", ".zip")
 
 
 def external_base(request: Request) -> str:
-    """Absolute scheme://host the client reached us on, honoring the TLS proxy.
+    """Absolute scheme://host[/<project>/<role>] the client reached us on.
 
     Caddy terminates HTTPS and forwards plain HTTP, setting X-Forwarded-* (and
     X-outside-url for the pip block). URL rewriting must use these so links point
     back at the public https endpoint, not the internal container.
+
+    When the request was dispatched to a per-project sub-app, the role server put
+    the stripped `/<project>/<role>` prefix in scope["root_path"]; we re-append it
+    so rewritten links (pypi file links, npm tarballs, git LFS, files URLs) point
+    back at the same project path the client used. Global has an empty root_path,
+    so its links are unchanged.
     """
+    root = request.scope.get("root_path", "")
     xou = request.headers.get("x-outside-url")
     if xou:
-        return xou.rstrip("/")
+        return xou.rstrip("/") + root
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = (
         request.headers.get("x-forwarded-host")
         or request.headers.get("host")
         or request.url.netloc
     )
-    return f"{proto}://{host}"
+    return f"{proto}://{host}{root}"
 
 
 def normalize_pypi_name(name: str) -> str:

@@ -12,11 +12,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 CHUNK = 1 << 16  # 64 KiB
+# Only sample bandwidth from misses large enough that transfer time (not latency /
+# TLS handshake) dominates — small files would skew the upstream-throughput estimate.
+_BW_MIN_BYTES = 2 << 20  # 2 MiB
 
 
 class IntegrityError(Exception):
@@ -38,6 +42,8 @@ class Download:
         expected_size: int | None,
         on_commit: Callable[[int, str], Any] | None,
         on_finish: Callable[[str], None],
+        stats=None,
+        eco: str | None = None,
     ) -> None:
         self.key = key
         self.final_path = final_path
@@ -46,6 +52,8 @@ class Download:
         self._storage = storage
         self._progress = progress
         self._ledger = ledger
+        self._stats = stats
+        self._eco = eco
         self._name = name
         self._expected_sha256 = expected_sha256
         self._expected_size = expected_size
@@ -94,6 +102,7 @@ class Download:
                 self.tmp_path = tmp
                 f = fh
                 await self._pulse()  # readers may now open tmp
+                t0 = time.monotonic()  # measure pure transfer (post-connect) for bandwidth
                 async for chunk in resp.aiter_bytes(CHUNK):
                     f.write(chunk)
                     h.update(chunk)
@@ -120,6 +129,12 @@ class Download:
                     await self._ledger.arecord(rec)
             self._progress.complete(self.key)
             self._progress.record_recent(self.key, self._name, self.written, hit=False)
+            if self._stats is not None and self._eco:
+                # A miss = bytes fetched from upstream (counts against "bytes saved").
+                self._stats.traffic(self._eco, hit=False, nbytes=self.written)
+                elapsed = time.monotonic() - t0
+                if self.written >= _BW_MIN_BYTES and elapsed > 0:
+                    self._stats.bandwidth(self.written / elapsed, source="passive")
         except BaseException as e:  # noqa: BLE001 — surface to readers, clean up
             self.error = e
             self._progress.error(self.key)

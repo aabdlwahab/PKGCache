@@ -15,8 +15,10 @@ SECURITY: these endpoints run real git/dvc/docker commands and there is NO auth.
 The server binds 0.0.0.0 — only run it on a trusted network. Set UI_HOST=127.0.0.1
 to restrict it to localhost.
 """
+import http.client
 import json
 import re
+import ssl
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -24,7 +26,7 @@ import projects
 from config import HOST, PORT, WEBROOT, endpoints
 from jobs import Jobs
 from live import LiveFeed
-from ops import Operations, shuttle_info
+from ops import Operations, lockwarm_path, shuttle_info
 from reads import Reads
 from usage import Usage
 
@@ -49,6 +51,24 @@ _JOB_RE = re.compile(r"/api/jobs/(\d+)")
 _PROJECT_RE = re.compile(r"/api/projects/([a-z0-9-]+)")
 
 
+class _LimitedReader:
+    """Read exactly `n` bytes from a socket rfile, then EOF — so http.client streams
+    the upload body through without over-reading into the next request on a keep-alive
+    connection. http.client calls read(blocksize), which is all we implement."""
+
+    def __init__(self, fp, n):
+        self._fp = fp
+        self._n = n
+
+    def read(self, size=-1):
+        if self._n <= 0:
+            return b""
+        want = self._n if (size is None or size < 0) else min(size, self._n)
+        data = self._fp.read(want)
+        self._n -= len(data)
+        return data
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):  # quiet
         pass
@@ -69,6 +89,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_download(self, path, filename):
+        try:
+            body = path.read_bytes()
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -97,6 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/downloads": _live.downloads,
             "/api/recent": _live.recent,
             "/api/manifests": _reads.manifests,
+            "/api/stats": _reads.stats,
             "/api/history": _reads.history,
             "/api/endpoints": endpoints,
             "/api/shuttle": shuttle_info,
@@ -109,6 +143,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/packages":
             params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             return self._send_json(_reads.packages(params))
+        # files write-token status — never returns the token itself, only whether one exists.
+        if path == "/api/token":
+            return self._send_json({"set": projects.has_write_token(self._project())})
+        # Download the rewritten uv.lock a lockwarm job produced for this project.
+        if path == "/api/lockfile":
+            project = self._project()
+            try:
+                if project != projects.GLOBAL:
+                    projects.validate_name(project)
+            except projects.ProjectError as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            lock = lockwarm_path(project)
+            if not lock.is_file():
+                return self._send_json({"error": "no rewritten lock for this project yet"}, 404)
+            return self._send_download(lock, "uv.lock")
         m = _JOB_RE.fullmatch(path)
         if m:
             job = _jobs.get(int(m.group(1)))
@@ -141,9 +190,73 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, RuntimeError) as exc:
                 return self._send_json({"error": str(exc)}, 400)
             return self._send_json({"id": jid})
+        # Generate/rotate a project's files write token; returned ONCE (copy it now).
+        if path == "/api/token":
+            body = self._read_body() or {}
+            project = body.get("project", projects.GLOBAL) or projects.GLOBAL
+            try:
+                token = projects.rotate_write_token(project)
+            except (ValueError, RuntimeError) as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            return self._send_json({"token": token})
+        # Console upload proxy: stream the raw body → PUT to the files role with the
+        # project's Bearer token injected here (the browser never sees the token).
+        if path == "/api/artifacts":
+            return self._files_proxy("PUT")
         return self.send_error(404)
 
+    def _files_proxy(self, method):
+        """Proxy a console PUT/DELETE to the project's files role, injecting the write
+        token from the registry so the browser never holds it. Streams the request
+        body straight through (no buffering)."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        project = (q.get("project", [projects.GLOBAL])[0] or projects.GLOBAL)
+        rel = (q.get("path", [""])[0] or "").strip("/")
+        if not rel:
+            return self._send_json({"error": "path required"}, 400)
+        try:
+            port = projects.ports(project).get("files")
+        except projects.ProjectError as exc:
+            return self._send_json({"error": str(exc)}, 400)
+        if not port:
+            return self._send_json({"error": "files role not allocated for this project"}, 400)
+        token = projects.write_token(project)
+        if not token:
+            return self._send_json({"error": "no write token set — generate one first"}, 409)
+
+        url = "/" + urllib.parse.quote(rel, safe="/")
+        if method == "PUT" and q.get("overwrite", ["0"])[0] in ("1", "true", "yes"):
+            url += "?overwrite=1"
+        headers = {"Authorization": f"Bearer {token}"}
+        body = None
+        if method == "PUT":
+            length = int(self.headers.get("Content-Length", 0))
+            headers["Content-Length"] = str(length)
+            headers["Content-Type"] = "application/octet-stream"
+            body = _LimitedReader(self.rfile, length)
+        try:
+            conn = http.client.HTTPSConnection(
+                "pkgcache", port, timeout=3600, context=ssl._create_unverified_context())
+            conn.request(method, url, body=body, headers=headers)
+            resp = conn.getresponse()
+            payload = resp.read()
+            code, ctype = resp.status, resp.getheader("Content-Type", "application/json")
+        except OSError as exc:
+            return self._send_json({"error": f"files role unreachable: {exc}"}, 502)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_DELETE(self):
+        if urllib.parse.urlparse(self.path).path == "/api/artifacts":
+            return self._files_proxy("DELETE")
         # Drop a project from the registry (frees its ports; leaves cached bytes on
         # disk). Path: /api/projects/<name>.
         m = _PROJECT_RE.fullmatch(urllib.parse.urlparse(self.path).path)

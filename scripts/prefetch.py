@@ -18,11 +18,17 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 
 HOST = os.environ.get("CACHE_HOST", "localhost")
 CA = os.environ.get("CA_CERT", "certs/ca.crt")
+# Images are pulled concurrently across the seed list (each `docker pull` already
+# parallelises its own layers). Bounded because Docker Hub anonymous pulls are
+# rate-limited; shared base layers across images coalesce in the proxy's inflight
+# registry, so overlap never duplicates an upstream download.
+DOCKER_JOBS = int(os.environ.get("DOCKER_JOBS", "4"))
 
 
 def run(cmd: list[str], **kwargs) -> bool:
@@ -31,8 +37,10 @@ def run(cmd: list[str], **kwargs) -> bool:
 
 
 def do_docker(refs: list[str]) -> None:
-    for ref in refs:
-        run(["docker", "pull", f"{HOST}:5000/{ref}"])
+    if not refs:
+        return
+    with ThreadPoolExecutor(max_workers=min(DOCKER_JOBS, len(refs))) as pool:
+        list(pool.map(lambda ref: run(["docker", "pull", f"{HOST}:5000/{ref}"]), refs))
 
 
 def do_pip(specs: list[str]) -> None:
@@ -75,6 +83,15 @@ def do_apk(pkgs: list[str]) -> None:
          "alpine:3.20", "sh", "-c", script])
 
 
+def do_git(repos: list[str]) -> None:
+    """Warm git mirrors by hitting info/refs — `git ls-remote` through the cache
+    triggers the server-side clone --mirror. Entries are `<upstream-host>/<owner>/
+    <repo>`, e.g. github.com/octocat/Hello-World."""
+    env = dict(os.environ, GIT_SSL_CAINFO=CA)
+    for repo in repos:
+        run(["git", "ls-remote", f"https://{HOST}:3143/{repo}.git"], env=env)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: prefetch.py <seed.yaml>   (CACHE_HOST, CA_CERT env)", file=sys.stderr)
@@ -85,6 +102,7 @@ def main(argv: list[str]) -> int:
     do_npm(seed.get("npm", []) or [])
     do_apt(seed.get("apt", []) or [])
     do_apk(seed.get("apk", []) or [])
+    do_git(seed.get("git", []) or [])
     print("==> prefetch complete; run `pkgops.py checkpoint` to version the delta.")
     return 0
 

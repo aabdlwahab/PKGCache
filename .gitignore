@@ -14,12 +14,20 @@
 
 # Shuttle staging area (fixed export/import dirs) — local transfer artifacts.
 /shuttle/
+# Rewritten uv.locks produced by the lock-warm op — downloadable artifacts, not source.
+/lockwarm/
 *.bundle
 /dvcstore/
 
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local virtualenvs (e.g. pkgcache/.venv-test for running the pytest suite)
+.venv/
+.venv-*/
+*.egg-info/
+.pytest_cache/
 
 # TLS material (scripts/gen-certs.sh). Private keys never leave this host; the
 # CA cert is shareable (carry it across the gap, install on build hosts).

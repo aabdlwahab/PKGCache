@@ -111,6 +111,7 @@ export function TopBar({
         onChange={onView}
         options={[
           { value: "overview", label: "overview" },
+          { value: "statistics", label: "statistics" },
           { value: "packages", label: "packages" },
         ]}
       />

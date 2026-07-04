@@ -13,6 +13,7 @@ import {
   type ProxiesResp,
   type RecentResp,
   type ShuttleResp,
+  type StatsResp,
 } from "./types";
 
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -32,6 +33,8 @@ function withProject(path: string, project?: string): string {
 export const api = {
   manifests: (project?: string, s?: AbortSignal) =>
     getJSON<ManifestsResp>(withProject("/api/manifests", project), s),
+  stats: (project?: string, s?: AbortSignal) =>
+    getJSON<StatsResp>(withProject("/api/stats", project), s),
   downloads: (project?: string, s?: AbortSignal) =>
     getJSON<DownloadsResp>(withProject("/api/downloads", project), s),
   recent: (project?: string, s?: AbortSignal) =>
@@ -45,6 +48,72 @@ export const api = {
   shuttle: (project?: string, s?: AbortSignal) =>
     getJSON<ShuttleResp>(withProject("/api/shuttle", project), s),
   job: (id: number, s?: AbortSignal) => getJSON<JobResp>(`/api/jobs/${id}`, s),
+
+  // The rewritten uv.lock a lockwarm job produced for a project (a download URL,
+  // not JSON — the browser fetches it directly).
+  lockfileUrl: (project?: string) => withProject("/api/lockfile", project),
+
+  // ---- files ecosystem: write token + artifact upload/delete --------------
+  // Whether a write token is set for the project (never returns the token itself).
+  tokenStatus: (project?: string, s?: AbortSignal) =>
+    getJSON<{ set: boolean }>(withProject("/api/token", project), s),
+
+  // Generate/rotate the project's write token; returned ONCE for the UI to display.
+  async rotateToken(project?: string): Promise<string> {
+    const r = await fetch("/api/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: project ?? GLOBAL_PROJECT }),
+    });
+    const data = (await r.json().catch(() => ({}))) as { token?: string; error?: string };
+    if (!r.ok || data.error || !data.token)
+      throw new Error(data.error || `token generation failed (${r.status})`);
+    return data.token;
+  },
+
+  // Upload one file via the webui proxy (which injects the write token). Uses
+  // XMLHttpRequest because fetch has no upload-progress events. onProgress gets a
+  // 0–1 fraction. The raw File is the body; server streams it to the files role.
+  uploadArtifact(
+    project: string | undefined,
+    path: string,
+    file: File | Blob,
+    overwrite: boolean,
+    onProgress?: (frac: number) => void,
+  ): Promise<{ path: string; size: number; sha256: string; url: string }> {
+    const qs = new URLSearchParams({ path });
+    if (project && project !== GLOBAL_PROJECT) qs.set("project", project);
+    if (overwrite) qs.set("overwrite", "1");
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/artifacts?${qs.toString()}`);
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
+      if (onProgress && xhr.upload)
+        xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+      xhr.onload = () => {
+        let data: Record<string, unknown> = {};
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          /* non-JSON error body (e.g. plain text from the role) */
+        }
+        if (xhr.status >= 200 && xhr.status < 300)
+          resolve(data as { path: string; size: number; sha256: string; url: string });
+        else reject(new Error((data.error as string) || xhr.responseText || `upload failed (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("upload failed (network error)"));
+      xhr.send(file);
+    });
+  },
+
+  async deleteArtifact(project: string | undefined, path: string): Promise<void> {
+    const qs = new URLSearchParams({ path });
+    if (project && project !== GLOBAL_PROJECT) qs.set("project", project);
+    const r = await fetch(`/api/artifacts?${qs.toString()}`, { method: "DELETE" });
+    if (r.status === 204) return;
+    const data = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `delete failed (${r.status})`);
+  },
 
   // ---- projects -----------------------------------------------------------
   projects: (s?: AbortSignal) => getJSON<ProjectsResp>("/api/projects", s),
@@ -72,7 +141,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...params }),
     });
-    const data = (await r.json()) as { id?: number; error?: string };
+    // A proxy error (e.g. 413 on a large uv.lock upload) returns an HTML page, not
+    // JSON — surface it as a clear status message instead of a JSON.parse crash.
+    const data = (await r.json().catch(() => ({}))) as { id?: number; error?: string };
     if (!r.ok || data.error) throw new Error(data.error || `job failed (${r.status})`);
     return data.id as number;
   },
