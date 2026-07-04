@@ -42,6 +42,8 @@ export default function App() {
 
   // A bump to force the slower polls to refetch right after a job settles.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Inline surface for project create/delete errors (replaces blocking window.alert).
+  const [projectError, setProjectError] = useState<string | null>(null);
   const { job, busy, start: rawStart, close } = useJob(() => setRefreshKey((k) => k + 1));
 
   // Every cache op runs against the selected project (mode is instance-wide; the
@@ -80,10 +82,11 @@ export default function App() {
     async (name: string) => {
       try {
         await api.createProject(name);
+        setProjectError(null);
         setProject(name);
         setRefreshKey((k) => k + 1);
       } catch (e) {
-        window.alert((e as Error).message);
+        setProjectError((e as Error).message);
       }
     },
     [setProject],
@@ -92,10 +95,11 @@ export default function App() {
     async (name: string) => {
       try {
         await api.deleteProject(name);
+        setProjectError(null);
         if (project === name) setProject(GLOBAL_PROJECT);
         setRefreshKey((k) => k + 1);
       } catch (e) {
-        window.alert((e as Error).message);
+        setProjectError((e as Error).message);
       }
     },
     [project, setProject],
@@ -247,6 +251,32 @@ export default function App() {
         onCreateProject={createProject}
         onDeleteProject={deleteProject}
       />
+
+      {projectError && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            margin: "0.5rem 1rem 0",
+            padding: "0.5rem 0.75rem",
+            borderRadius: "6px",
+            color: "var(--bad)",
+            background: "var(--bad-bg)",
+            fontSize: "0.85rem",
+          }}
+        >
+          <span style={{ flex: 1 }}>{projectError}</span>
+          <button
+            className="copy-btn"
+            style={{ color: "var(--bad)" }}
+            onClick={() => setProjectError(null)}
+          >
+            dismiss
+          </button>
+        </div>
+      )}
 
       {view === "overview" ? (
         <>
