@@ -1,8 +1,9 @@
-# Four pull-through caching proxies (OCI / npm / PyPI / apt+apk) as ONE Python
-# container (./pkgcache) running all four roles in a single process — each on its
-# own port (the protocols can't share a port: OCI owns /v2/ at the root, apt is a
-# forward proxy). The HTTPS roles terminate TLS in-process from ./certs, so there
-# is no separate TLS proxy. Everything is written into ./caches/<eco> (DVC-tracked).
+# Six pull-through caching roles (OCI / npm / PyPI / apt+apk / git / files) as ONE
+# Python container (./pkgcache) running one process on TWO ports: the unified HTTPS
+# port :8443 carries docker (/v2/…) plus npm/pypi/git/files (/<project>/<role>/…),
+# and :3142 is the apt/apk plain-HTTP forward proxy (proxy clients can't speak TLS,
+# so it can't share the unified port). TLS terminates in-process from ./certs — no
+# separate TLS proxy. Everything is written into ./caches/<eco> (DVC-tracked).
 #
 # Bring up online side:     docker compose --profile online up -d
 # Bring up air-gapped side: OFFLINE=1 docker compose --profile offline up -d
@@ -25,8 +26,8 @@ services:
     environment:
       OFFLINE: "${OFFLINE:-0}"
       PKGCACHE_CACHE_ROOT: /caches
-      # The project registry the control UI manages. Extra projects each get their
-      # own four ports (from the pool below) + their own cache tree under
+      # The project registry the control UI manages. A project is a name (routed by
+      # URL prefix on the shared ports) + its own cache tree under
       # /caches/projects/<name>. Read-only here; the webui is the only writer.
       PKGCACHE_PROJECTS: /config/projects.json
       PKGCACHE_TLS_CERT: /certs/server.crt
@@ -37,15 +38,16 @@ services:
       USER: pkgcache
       LOGNAME: pkgcache
     ports:
-      - "5000:5000"   # OCI  (HTTPS)  pull <host>:5000/{dockerhub,ghcr,quay}/<image>  [global]
-      - "4873:4873"   # npm  (HTTPS)                                                  [global]
-      - "3141:3141"   # pip  (HTTPS)                                                  [global]
-      - "3142:3142"   # apt + apk (HTTP forward proxy)                                [global]
-      - "3143:3143"   # git  (HTTPS)  clone <host>:3143/<upstream-host>/<repo>.git    [global]
-      - "3144:3144"   # files (HTTPS) wget <host>:3144/<path>; PUT with write token   [global]
-      # Projects are NOT separate ports: every project shares the six ports above and
+      # THE port: docker pull <host>:8443/[<project>/]{dockerhub,ghcr,quay}/<image>;
+      # npm/pypi/git/files at https://<host>:8443/<project>/<role>/… ("global" is the
+      # default project). Publish "443:8443" instead for port-less docker URLs (the
+      # container binds >1024 because it runs as a non-root host uid).
+      - "8443:8443"
+      # apt + apk (HTTP forward proxy; project = proxy username <project>@host)
+      - "3142:3142"
+      # Projects are NOT separate ports: every project shares the two ports above and
       # is reached by a URL prefix (/<project>/<role>/… ; the OCI project rides the
-      # image name, the apt project the proxy username). See pkgcache/router.py.
+      # image name, the apt project the proxy username). See pkgcache/unified.py.
     volumes:
       - ./caches:/caches        # global → /caches/<eco>; projects → /caches/projects/<name>/<eco>
       - ./config:/config:ro     # the project registry (config/projects.json), webui-managed
@@ -81,6 +83,13 @@ services:
       HOME: /tmp           # writable home for git/dvc config under an arbitrary uid
       USER: pkgcache       # uid has no /etc/passwd entry; dvc's getpass.getuser() needs this
       LOGNAME: pkgcache
+      # Break-glass superuser (from .env). Setting these turns ON control-plane auth:
+      # login + account/ownership enforcement. Leave unset to keep the API open.
+      UI_ROOT_USER: "${UI_ROOT_USER:-}"
+      UI_ROOT_PASSWORD: "${UI_ROOT_PASSWORD:-}"
+      # Shuttle staging dir (from .env). Forwarded into the process env so the backend's
+      # os.environ.get("PKGCACHE_SHUTTLE") sees it; empty falls back to ./shuttle.
+      PKGCACHE_SHUTTLE: "${PKGCACHE_SHUTTLE:-}"
     working_dir: ${PWD}
     volumes:
       - .:${PWD}                              # repo at its own path (includes ./shuttle)
