@@ -1,19 +1,24 @@
 import { Segmented } from "./ui";
 import type { Theme, Mode } from "../lib/uiState";
-import { GLOBAL_PROJECT, type Commit, type ProjectInfo } from "../lib/types";
+import { GLOBAL_PROJECT, type Commit, type ProjectInfo, type User } from "../lib/types";
 import type { View } from "../hooks/useRoute";
 
 // Pick + manage which project the console is viewing. The global project is always
-// present and can't be deleted; named projects can be created/removed here.
+// present and can't be deleted; creating and deleting are gated by role/ownership
+// (the backend enforces too — this just hides what the caller can't do).
 function ProjectSwitcher({
   projects,
   project,
+  canCreate,
+  canDelete,
   onSelect,
   onCreate,
   onDelete,
 }: {
   projects: ProjectInfo[];
   project: string;
+  canCreate: boolean;
+  canDelete: boolean;
   onSelect: (p: string) => void;
   onCreate: (name: string) => void;
   onDelete: (name: string) => void;
@@ -26,20 +31,23 @@ function ProjectSwitcher({
         {names.map((p) => (
           <option key={p.name} value={p.name}>
             {p.name}
+            {p.offline ? " ⦸" : ""}
           </option>
         ))}
       </select>
-      <button
-        className="ps-btn"
-        title="new project"
-        onClick={() => {
-          const n = window.prompt("New project name (lowercase letters, digits, dashes):");
-          if (n && n.trim()) onCreate(n.trim());
-        }}
-      >
-        + new
-      </button>
-      {project !== GLOBAL_PROJECT && (
+      {canCreate && (
+        <button
+          className="ps-btn"
+          title="new project"
+          onClick={() => {
+            const n = window.prompt("New project name (lowercase letters, digits, dashes):");
+            if (n && n.trim()) onCreate(n.trim());
+          }}
+        >
+          + new
+        </button>
+      )}
+      {project !== GLOBAL_PROJECT && canDelete && (
         <button
           className="ps-btn ps-del"
           title="delete this project (cached files stay on disk)"
@@ -62,11 +70,18 @@ export function TopBar({
   onView,
   mode,
   onMode,
+  modeLocked,
+  modeLockReason,
   proxyLabel,
   proxyColor,
   headShort,
   projects,
   project,
+  canCreateProject,
+  canDeleteProject,
+  canManageAccounts,
+  user,
+  onLogout,
   onSelectProject,
   onCreateProject,
   onDeleteProject,
@@ -77,15 +92,31 @@ export function TopBar({
   onView: (v: View) => void;
   mode: Mode;
   onMode: (m: Mode) => void;
+  // The per-project mode toggle is locked either because the instance is hard-offline
+  // (OFFLINE=1) or the caller doesn't own the project; modeLockReason explains which.
+  modeLocked?: boolean;
+  modeLockReason?: string;
   proxyLabel: string;
   proxyColor: string;
   headShort: string;
   projects: ProjectInfo[];
   project: string;
+  canCreateProject: boolean;
+  canDeleteProject: boolean;
+  canManageAccounts: boolean;
+  // The signed-in account (null in open mode, where auth is off) + logout.
+  user: User | null;
+  onLogout: () => void;
   onSelectProject: (p: string) => void;
   onCreateProject: (name: string) => void;
   onDeleteProject: (name: string) => void;
 }) {
+  const viewOptions: { value: View; label: string }[] = [
+    { value: "overview", label: "overview" },
+    { value: "statistics", label: "statistics" },
+    { value: "packages", label: "packages" },
+    ...(canManageAccounts ? [{ value: "accounts" as View, label: "accounts" }] : []),
+  ];
   return (
     <header className="topbar">
       <div className="brand">
@@ -101,26 +132,27 @@ export function TopBar({
       <ProjectSwitcher
         projects={projects}
         project={project}
+        canCreate={canCreateProject}
+        canDelete={canDeleteProject}
         onSelect={onSelectProject}
         onCreate={onCreateProject}
         onDelete={onDeleteProject}
       />
 
-      <Segmented<View>
-        value={view}
-        onChange={onView}
-        options={[
-          { value: "overview", label: "overview" },
-          { value: "statistics", label: "statistics" },
-          { value: "packages", label: "packages" },
-        ]}
-      />
+      <Segmented<View> value={view} onChange={onView} options={viewOptions} />
 
       <Segmented<Mode>
         variant="mode"
         modeKind={(v) => (v === "online" ? "on" : "off")}
         value={mode}
         onChange={onMode}
+        disabled={modeLocked}
+        title={
+          modeLocked
+            ? modeLockReason ??
+              "instance is hard-offline (OFFLINE=1) — the per-project toggle has no effect"
+            : `this project's mode (soft — applies within ~5s, other projects untouched)`
+        }
         options={[
           { value: "online", label: "● online" },
           { value: "offline", label: "⦸ offline" },
@@ -140,6 +172,16 @@ export function TopBar({
       </span>
 
       <span className="spacer" />
+
+      {user && (
+        <span className="user-pill" title={`signed in as ${user.username}`}>
+          {user.username}
+          <span className="role">{user.role}</span>
+          <button className="logout-btn" onClick={onLogout}>
+            sign out
+          </button>
+        </span>
+      )}
 
       <button className="theme-btn" title="toggle theme" onClick={onToggleTheme}>
         {theme === "dark" ? "☀ light" : "☾ dark"}

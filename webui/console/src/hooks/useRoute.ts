@@ -5,18 +5,20 @@ import { useEffect, useState } from "react";
 // overview, `/statistics` the stats tab, `/packages` the packages table. nginx +
 // the Vite dev server both fall back to index.html, so deep-linking and refresh
 // on any of these work.
-export type View = "overview" | "statistics" | "packages";
+export type View = "overview" | "statistics" | "packages" | "accounts";
 
 const PATHS: Record<View, string> = {
   overview: "/",
   statistics: "/statistics",
   packages: "/packages",
+  accounts: "/accounts",
 };
 
 function viewFromPath(path: string): View {
   const p = path.replace(/\/+$/, "");
   if (p === "/statistics") return "statistics";
   if (p === "/packages") return "packages";
+  if (p === "/accounts") return "accounts";
   return "overview";
 }
 
@@ -25,7 +27,7 @@ function initialView(): View {
   if (fromPath !== "overview") return fromPath; // the URL wins on load
   try {
     const saved = localStorage.getItem("pcc_view");
-    if (saved === "statistics" || saved === "packages") return saved;
+    if (saved === "statistics" || saved === "packages" || saved === "accounts") return saved;
   } catch {
     /* ignore */
   }

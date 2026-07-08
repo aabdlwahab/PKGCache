@@ -10,12 +10,15 @@ import {
 } from "./lib/types";
 import { fmtBytes } from "./lib/format";
 import type { Mode, Theme } from "./lib/uiState";
+import { useAuth, type Auth } from "./hooks/useAuth";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useClock } from "./hooks/useClock";
 import { usePolling } from "./hooks/usePolling";
 import { useJob } from "./hooks/useJob";
 import { useRoute } from "./hooks/useRoute";
 import { TopBar, OfflineBanner, Footer } from "./components/Chrome";
+import { LoginView } from "./components/LoginView";
+import { AccountsPanel } from "./components/AccountsPanel";
 import { HealthStrip, type Kpi } from "./components/HealthStrip";
 import { PackagesPanel } from "./components/PackagesPanel";
 import { ArtifactsPanel } from "./components/ArtifactsPanel";
@@ -28,7 +31,17 @@ import { LockwarmPanel } from "./components/LockwarmPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { EndpointsPanel } from "./components/EndpointsPanel";
 
+// Auth gate: while bootstrapping show nothing; if auth is on and there is no
+// session show the login screen; otherwise render the console. Keeping the polling
+// hooks inside Console means they never fire on the login screen.
 export default function App() {
+  const auth = useAuth();
+  if (auth.loading) return <div className="login-screen" />;
+  if (auth.authEnabled && !auth.user) return <LoginView onLogin={auth.login} />;
+  return <Console auth={auth} />;
+}
+
+function Console({ auth }: { auth: Auth }) {
   const [theme, setTheme] = useLocalStorage<Theme>("pcc_theme", "dark");
   const [mode, setMode] = useLocalStorage<Mode>("pcc_mode", "online");
   const [project, setProject] = useLocalStorage<string>("pcc_project", GLOBAL_PROJECT);
@@ -57,6 +70,33 @@ export default function App() {
   // The project list drives the switcher; refetch after a create/delete (refreshKey).
   const projects = usePolling(api.projects, 10000, [refreshKey]);
   const projectList = projects.data?.projects ?? [];
+
+  // Role/ownership gating. In open mode (auth off) everything is permitted, matching
+  // the backend; when auth is on we mirror its rules so the UI hides what would 403.
+  const { authEnabled, user } = auth;
+  const role = user?.role;
+  const isSuper = role === "superuser";
+  const canManageAccounts = authEnabled && (role === "admin" || role === "superuser");
+  const canCreateProject = !authEnabled || role === "admin" || role === "superuser";
+  const selectedProject = projectList.find((p) => p.name === project);
+  // Owner-level rights on the SELECTED project (checkpoint, mode, delete, token…).
+  const canOperate =
+    !authEnabled || isSuper || (!!user && !!selectedProject && selectedProject.owner === user.username);
+
+  // A plain user can't reach the accounts tab even by deep-link; bounce to overview.
+  useEffect(() => {
+    if (view === "accounts" && !canManageAccounts) setView("overview");
+  }, [view, canManageAccounts, setView]);
+
+  // If the remembered project isn't one this caller can see (e.g. a fresh user whose
+  // localStorage still points at `global`), fall back to their first visible project
+  // so they never land on a view that 403s.
+  useEffect(() => {
+    const first = projectList[0];
+    if (authEnabled && first && !projectList.some((p) => p.name === project)) {
+      setProject(first.name);
+    }
+  }, [authEnabled, projectList, project, setProject]);
 
   // All cache views are per-project; re-poll whenever the selection changes.
   const manifests = usePolling((s) => api.manifests(project, s), 5000, [refreshKey, project]);
@@ -142,26 +182,48 @@ export default function App() {
 
   // Real per-role health from /api/proxies. When at least one role is reachable we
   // trust the server's up-count and offline state; while the cache is restarting
-  // (no roles up / unknown) we fall back to the optimistic localStorage mode.
+  // (no roles up / unknown) we fall back to the optimistic localStorage mode. A
+  // just-flipped soft toggle shows its target until health confirms it (the cache
+  // process applies the registry flag on its next poll, ≤5s + a health poll).
   const roleUp = proxies.data?.up;
   const serverKnown = (roleUp ?? 0) > 0;
-  const effectiveMode: Mode = serverKnown
+  const serverMode: Mode | null = serverKnown
     ? proxies.data?.offline
       ? "offline"
       : "online"
-    : mode;
+    : null;
+  const [pendingMode, setPendingMode] = useState<Mode | null>(null);
+  useEffect(() => {
+    if (pendingMode && serverMode === pendingMode) setPendingMode(null);
+  }, [pendingMode, serverMode]);
+  useEffect(() => setPendingMode(null), [project]);
+  const effectiveMode: Mode = pendingMode ?? serverMode ?? mode;
   const online = effectiveMode === "online";
   const proxiesUp =
     roleUp ?? Object.values(downloads.data?.sources ?? {}).filter((v) => v != null).length;
   const proxyColor = online ? "var(--ok)" : "var(--warn)";
   const proxyLabel = `${proxiesUp} ${proxiesUp === 1 ? "proxy" : "proxies"} up · ${effectiveMode}`;
 
-  // Toggling mode recreates the pkgcache container under the other profile (a real
-  // restart), streamed in the job console; the indicator confirms via health polls.
-  const switchMode = (m: Mode) => {
-    if (m === effectiveMode || busy) return;
-    setMode(m); // optimistic until the health poll confirms
-    start("mode", { target: m });
+  // The instance runs the offline compose profile (OFFLINE=1, the air-gap hard
+  // mode): every project is offline regardless of its soft flag, so lock the
+  // per-project toggle rather than offer a switch that can't take effect.
+  const hardOffline = proxies.data?.profile === "offline";
+
+  // The top-bar toggle flips the SELECTED project's soft offline flag — a registry
+  // write the cache process applies on its next poll, scoped to this one project.
+  // The instance-wide hard switch (container recreate) lives in the Actions panel.
+  const switchMode = async (m: Mode) => {
+    if (m === effectiveMode || hardOffline || !canOperate) return;
+    setPendingMode(m);
+    setMode(m); // the no-health fallback stays in sync
+    try {
+      await api.setProjectMode(project, m);
+      setProjectError(null);
+      setRefreshKey((k) => k + 1); // pick up the project list's offline flags
+    } catch (e) {
+      setPendingMode(null);
+      setProjectError((e as Error).message);
+    }
   };
 
   const commits: Commit[] = history.data?.commits ?? [];
@@ -242,11 +304,20 @@ export default function App() {
         onView={setView}
         mode={effectiveMode}
         onMode={switchMode}
+        modeLocked={hardOffline || !canOperate}
+        modeLockReason={
+          !canOperate ? "only the project owner or a superuser can change its mode" : undefined
+        }
         proxyLabel={proxyLabel}
         proxyColor={proxyColor}
         headShort={headShort}
         projects={projectList}
         project={project}
+        canCreateProject={canCreateProject}
+        canDeleteProject={canOperate}
+        canManageAccounts={canManageAccounts}
+        user={user}
+        onLogout={auth.logout}
         onSelectProject={selectProject}
         onCreateProject={createProject}
         onDeleteProject={deleteProject}
@@ -310,6 +381,9 @@ export default function App() {
               pendingNew={pendingNew}
               headShort={headShort}
               headDate={headCommit?.date ?? ""}
+              instanceMode={proxies.data?.profile ?? null}
+              canOperate={canOperate}
+              canInstanceMode={!authEnabled || isSuper}
               onStart={start}
               onCloseJob={close}
             />
@@ -322,7 +396,12 @@ export default function App() {
                 onStart={start}
                 onCloseJob={close}
               />
-              <HistoryPanel commits={commits} busy={busy} onRollback={rollback} />
+              <HistoryPanel
+                commits={commits}
+                busy={busy}
+                canOperate={canOperate}
+                onRollback={rollback}
+              />
               <StoragePanel fs={usage?.fs} cacheBytes={usage?.disk_total ?? 0} />
               <EndpointsPanel endpoints={endpoints.data ?? {}} theme={theme} />
             </div>
@@ -334,11 +413,14 @@ export default function App() {
         <div className="page-stats">
           <StatisticsPanel data={stats.data ?? undefined} theme={theme} now={now} />
         </div>
+      ) : view === "accounts" && canManageAccounts && user ? (
+        <AccountsPanel me={user} onChanged={() => setRefreshKey((k) => k + 1)} />
       ) : (
         <div className="page-packages">
           <ArtifactsPanel
             project={project}
             online={online}
+            canOperate={canOperate}
             filesEndpoint={endpoints.data?.files?.url ?? ""}
             onChanged={() => setRefreshKey((k) => k + 1)}
           />

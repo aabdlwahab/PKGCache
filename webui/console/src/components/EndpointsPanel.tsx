@@ -4,17 +4,21 @@ import { ecoColors } from "../lib/format";
 import { ECOS, type Endpoints, type Eco } from "../lib/types";
 import type { Theme } from "../lib/uiState";
 
-export function EndpointsPanel({ endpoints, theme }: { endpoints: Endpoints; theme: Theme }) {
-  const [copied, setCopied] = useState<Eco | "">("");
+// The backend sends "<host>" as a placeholder; the console knows the real host.
+const substHost = (s: string) => s.replace(/<host>/g, window.location.hostname);
 
-  const copy = (eco: Eco, cmd: string) => {
+export function EndpointsPanel({ endpoints, theme }: { endpoints: Endpoints; theme: Theme }) {
+  const [copied, setCopied] = useState<string>("");
+  const [open, setOpen] = useState<Eco | "">("");
+
+  const copy = (key: string, text: string) => {
     try {
-      navigator.clipboard?.writeText(cmd);
+      navigator.clipboard?.writeText(text);
     } catch {
       /* clipboard may be unavailable on http origins */
     }
-    setCopied(eco);
-    setTimeout(() => setCopied((c) => (c === eco ? "" : c)), 1400);
+    setCopied(key);
+    setTimeout(() => setCopied((c) => (c === key ? "" : c)), 1400);
   };
 
   const rows = ECOS.filter((eco) => endpoints[eco]);
@@ -25,25 +29,51 @@ export function EndpointsPanel({ endpoints, theme }: { endpoints: Endpoints; the
         {rows.map((eco) => {
           const ep = endpoints[eco]!; // rows is filtered to defined entries
           const c = ecoColors(eco, theme);
-          const isCopied = copied === eco;
-          // Show the url plus its note inline (as before), but copy only the clean url.
-          const shown = ep.note ? `${ep.url}   (${ep.note})` : ep.url;
+          const url = substHost(ep.url);
+          const setup = (ep.setup ?? []).map(substHost);
+          const isOpen = open === eco;
           return (
-            <div className="ep-row" key={eco}>
-              <span className="ep-eco" style={{ color: c.color }}>
-                <span className="eco-square" style={{ background: c.color }} />
-                {eco}
-              </span>
-              <code className="ep-cmd" title={shown}>
-                {shown}
-              </code>
-              <button
-                className="copy-btn"
-                style={{ color: isCopied ? "var(--ok)" : "var(--muted)" }}
-                onClick={() => copy(eco, ep.url)}
-              >
-                {isCopied ? "✓ copied" : "copy"}
-              </button>
+            <div key={eco}>
+              <div className="ep-row">
+                <span className="ep-eco" style={{ color: c.color }}>
+                  <span className="eco-square" style={{ background: c.color }} />
+                  {eco}
+                </span>
+                <code className="ep-cmd" title={ep.note ? `${url}   (${ep.note})` : url}>
+                  {url}
+                </code>
+                <button
+                  className="copy-btn"
+                  style={{ color: copied === eco ? "var(--ok)" : "var(--muted)" }}
+                  onClick={() => copy(eco, url)}
+                >
+                  {copied === eco ? "✓ copied" : "copy"}
+                </button>
+                {setup.length > 0 && (
+                  <button
+                    className="copy-btn"
+                    style={{ color: isOpen ? "var(--fg2)" : "var(--muted)" }}
+                    onClick={() => setOpen(isOpen ? "" : eco)}
+                  >
+                    {isOpen ? "hide" : "setup"}
+                  </button>
+                )}
+              </div>
+              {isOpen && (
+                <div className="ep-setup">
+                  {ep.note && <div className="ep-setup-note">{ep.note}</div>}
+                  <pre className="ep-setup-cmds">{setup.join("\n")}</pre>
+                  <button
+                    className="copy-btn"
+                    style={{ color: copied === `${eco}-setup` ? "var(--ok)" : "var(--muted)" }}
+                    onClick={() =>
+                      copy(`${eco}-setup`, setup.filter((l) => !l.trimStart().startsWith("#")).join("\n"))
+                    }
+                  >
+                    {copied === `${eco}-setup` ? "✓ copied" : "copy commands"}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

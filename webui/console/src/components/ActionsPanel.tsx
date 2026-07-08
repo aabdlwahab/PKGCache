@@ -120,6 +120,9 @@ export function ActionsPanel({
   pendingNew,
   headShort,
   headDate,
+  instanceMode,
+  canOperate = true,
+  canInstanceMode = true,
   onStart,
   onCloseJob,
 }: {
@@ -130,6 +133,12 @@ export function ActionsPanel({
   pendingNew: number;
   headShort: string;
   headDate: string;
+  // The compose profile the cache container runs under (null while unknown) — the
+  // instance-wide HARD mode, distinct from the top bar's per-project soft toggle.
+  instanceMode?: "online" | "offline" | null;
+  // Owner-level project ops (checkpoint/export/import); superuser-only instance mode.
+  canOperate?: boolean;
+  canInstanceMode?: boolean;
   onStart: (action: JobAction, params: Record<string, string>) => void;
   onCloseJob: () => void;
 }) {
@@ -224,7 +233,12 @@ export function ActionsPanel({
               onChange={(e) => setCkmsg(e.target.value)}
               placeholder={'message, e.g. "added torch 2.3 + curl"'}
             />
-            <button className="btn btn-primary" disabled={busy} onClick={checkpoint}>
+            <button
+              className="btn btn-primary"
+              disabled={busy || !canOperate}
+              title={canOperate ? undefined : "only the project owner or a superuser can checkpoint"}
+              onClick={checkpoint}
+            >
               ⎘ Checkpoint
             </button>
           </div>
@@ -280,7 +294,7 @@ export function ActionsPanel({
             <span className="spacer" />
             <button
               className="btn btn-ghost"
-              disabled={busy || (exportMode === "delta" && !rangeValid)}
+              disabled={busy || !canOperate || (exportMode === "delta" && !rangeValid)}
               onClick={doExport}
             >
               {exportMode === "full" ? "↥ Export everything" : `↥ Export ${baseShort} → ${targetShort}`}
@@ -335,7 +349,11 @@ export function ActionsPanel({
                   {importCkpts.length} checkpoint{importCkpts.length === 1 ? "" : "s"} staged
                 </span>
                 <span className="spacer" />
-                <button className="btn btn-primary" disabled={busy} onClick={() => !busy && onStart("import", {})}>
+                <button
+                  className="btn btn-primary"
+                  disabled={busy || !canOperate}
+                  onClick={() => !busy && canOperate && onStart("import", {})}
+                >
                   ↧ Import
                 </button>
               </div>
@@ -344,6 +362,47 @@ export function ActionsPanel({
             <div className="empty">nothing staged in {importDir} — copy your media there first.</div>
           )}
         </div>
+        </div>
+
+        {/* ---- Instance mode card (the HARD switch) ---- */}
+        <div className="xfer-card">
+          <div className="xfer-card-head">
+            <span className="xfer-card-title">⏻ Instance mode</span>
+            <span className="xfer-card-cap">recreates the cache container — affects ALL projects</span>
+            <span className="spacer" />
+            <span
+              className="state-pill"
+              style={
+                instanceMode === "offline"
+                  ? { color: "var(--warn)", background: "var(--warn-bg)" }
+                  : { color: "var(--ok)", background: "var(--ok-bg)" }
+              }
+            >
+              {instanceMode ?? "unknown"}
+            </span>
+          </div>
+          <div className="row-inline">
+            <span className="note">
+              {canInstanceMode
+                ? "the air-gap hard switch — for one project, use the top-bar toggle instead"
+                : "superuser only — the air-gap hard switch affects every project"}
+            </span>
+            <span className="spacer" />
+            <button
+              className="btn btn-ghost"
+              disabled={busy || !canInstanceMode || instanceMode === "online"}
+              onClick={() => canInstanceMode && onStart("mode", { target: "online" })}
+            >
+              ● online
+            </button>
+            <button
+              className="btn btn-ghost"
+              disabled={busy || !canInstanceMode || instanceMode === "offline"}
+              onClick={() => canInstanceMode && onStart("mode", { target: "offline" })}
+            >
+              ⦸ offline
+            </button>
+          </div>
         </div>
 
         {/* lockwarm jobs render under their own panel; everything else here. */}

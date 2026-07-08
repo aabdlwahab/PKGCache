@@ -10,12 +10,16 @@ import { fmtBytes } from "../lib/format";
 export function ArtifactsPanel({
   project,
   online,
+  canOperate = true,
   filesEndpoint,
   onChanged,
 }: {
   project: string;
   online: boolean;
-  filesEndpoint: string; // the endpoints.files hint: "https://<host>:3144/<path>  (…)"
+  // Rotating the write token is owner-level; uploading is view-level (the webui
+  // proxy injects the token, so a viewer never handles it) and stays available.
+  canOperate?: boolean;
+  filesEndpoint: string; // the endpoints.files url: "https://<host>:8443/<project>/files/<path>"
   onChanged: () => void;
 }) {
   const [tokenSet, setTokenSet] = useState<boolean | null>(null);
@@ -92,7 +96,7 @@ export function ArtifactsPanel({
   };
 
   const wgetCmd = (p: string) => {
-    const tmpl = (filesEndpoint || "https://<host>:3144/<path>").split(/\s+/)[0] ?? "";
+    const tmpl = (filesEndpoint || "https://<host>:8443/global/files/<path>").split(/\s+/)[0] ?? "";
     const url = tmpl.replace("<host>", window.location.hostname).replace("<path>", p);
     return `wget --ca-certificate=ca.crt ${url}`;
   };
@@ -117,7 +121,12 @@ export function ArtifactsPanel({
           <span className={`badge ${tokenSet ? "ok" : "muted"}`}>
             {tokenSet === null ? "…" : tokenSet ? "set" : "not set"}
           </span>
-          <button className="btn" onClick={rotate} disabled={!online}>
+          <button
+            className="btn"
+            onClick={rotate}
+            disabled={!online || !canOperate}
+            title={canOperate ? undefined : "only the project owner or a superuser can rotate the token"}
+          >
             {tokenSet ? "Rotate" : "Generate"}
           </button>
           <span className="note">CI sends <code>Authorization: Bearer &lt;token&gt;</code></span>

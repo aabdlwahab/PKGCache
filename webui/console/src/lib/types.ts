@@ -7,16 +7,46 @@ export const ECOS: Eco[] = ["docker", "npm", "pip", "apt", "apk", "git", "files"
 export const GLOBAL_PROJECT = "global";
 
 // One project served by the central instance. `default: true` marks the global
-// project (default ports); named projects carry their allocated ports.
+// project. All projects share the same ports (unified + apt) and differ by URL
+// prefix; `offline` is the project's soft flag (the webui-controlled registry
+// value — the instance-wide OFFLINE env is separate and always wins). `owner` is
+// the username that owns it, or null for superuser-owned (global, pre-auth).
 export interface ProjectInfo {
   name: string;
-  ports: Record<string, number>; // role (oci/npm/pypi/apt) → port
+  ports: Record<string, number>; // role (oci/npm/pypi/apt/git/files) → port
   repo: string;
   default: boolean;
+  offline: boolean;
+  owner: string | null;
 }
 
 export interface ProjectsResp {
   projects: ProjectInfo[];
+}
+
+// ---- auth (accounts + sessions) -----------------------------------------
+export type Role = "user" | "admin" | "superuser";
+
+export interface User {
+  username: string;
+  role: Role;
+  reports_to: string | null;
+  builtin?: boolean; // the env-superuser: shown but not editable
+}
+
+// GET /api/me — the console bootstraps its role-gated UI from this. When
+// `auth_enabled` is false the deployment has not opted into auth (open mode); when
+// it is true but `authenticated` is false the caller must log in.
+export interface MeResp {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  username?: string;
+  role?: Role;
+  reports_to?: string | null;
+}
+
+export interface UsersResp {
+  users: User[];
 }
 
 export interface Artifact {
@@ -141,10 +171,12 @@ export interface RecentResp {
 }
 
 // A client pull endpoint as data (the backend no longer preformats a display string):
-// `url` is the copy-able target (carries the "<host>" placeholder), `note` a usage hint.
+// `url` is the copy-able target (carries the "<host>" placeholder), `note` a usage
+// hint, and `setup` the copy-paste command lines to go from zero to pulling.
 export interface Endpoint {
   url: string;
   note: string;
+  setup?: string[];
 }
 export type Endpoints = Partial<Record<Eco, Endpoint>>;
 

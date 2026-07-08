@@ -53,15 +53,19 @@ export function Segmented<T extends string>({
   onChange,
   variant,
   modeKind,
+  disabled,
+  title,
 }: {
   options: SegOption<T>[];
   value: T;
   onChange: (v: T) => void;
   variant?: "mode";
   modeKind?: (v: T) => "on" | "off";
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
-    <div className="seg">
+    <div className="seg" title={title}>
       {options.map((o) => {
         const active = o.value === value;
         const kind = variant === "mode" && modeKind ? ` ${modeKind(o.value)}` : "";
@@ -69,6 +73,7 @@ export function Segmented<T extends string>({
           <button
             key={o.value}
             className={`seg-btn ${variant === "mode" ? "mode" : ""} ${active ? "active" : ""}${active ? kind : ""}`}
+            disabled={disabled}
             onClick={() => onChange(o.value)}
           >
             {o.label}

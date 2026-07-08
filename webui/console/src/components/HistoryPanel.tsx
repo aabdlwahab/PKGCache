@@ -4,10 +4,13 @@ import type { Commit } from "../lib/types";
 export function HistoryPanel({
   commits,
   busy,
+  canOperate = true,
   onRollback,
 }: {
   commits: Commit[];
   busy: boolean;
+  // Rollback is an owner-level op; a non-owner viewer sees history but can't roll back.
+  canOperate?: boolean;
   onRollback: (commit: Commit) => void;
 }) {
   return (
@@ -16,7 +19,9 @@ export function HistoryPanel({
       headRight={
         <>
           <span className="spacer" />
-          <span className="note">click a checkpoint to roll back</span>
+          <span className="note">
+            {canOperate ? "click a checkpoint to roll back" : "read-only — not the owner"}
+          </span>
         </>
       }
     >
@@ -46,7 +51,7 @@ export function HistoryPanel({
               </span>
               <span className="commit-date">{c.date}</span>
               {c.is_head && <span className="head-badge">HEAD</span>}
-              {canRoll && (
+              {canRoll && canOperate && (
                 <button className="roll-btn" disabled={busy} onClick={() => onRollback(c)}>
                   roll back
                 </button>

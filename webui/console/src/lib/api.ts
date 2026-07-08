@@ -8,18 +8,48 @@ import {
   type JobAction,
   type JobResp,
   type ManifestsResp,
+  type MeResp,
   type ProjectInfo,
   type ProjectsResp,
   type ProxiesResp,
   type RecentResp,
+  type Role,
   type ShuttleResp,
   type StatsResp,
+  type User,
+  type UsersResp,
 } from "./types";
+
+// A 401 from any polling request means the session expired (or was never there);
+// useAuth registers a handler here to drop the app back to the login screen. Kept
+// module-level so the thin fetch helpers can signal it without threading a callback
+// through every call site.
+let _onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  _onUnauthorized = fn;
+}
 
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const r = await fetch(path, { headers: { Accept: "application/json" }, signal });
-  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  if (!r.ok) {
+    if (r.status === 401) _onUnauthorized?.();
+    throw new Error(`${path} → ${r.status}`);
+  }
   return (await r.json()) as T;
+}
+
+// A JSON mutation (POST/PATCH/DELETE) that surfaces the server's {error} message and
+// routes a 401 through the session-expiry handler.
+async function mutate<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (r.status === 401) _onUnauthorized?.();
+  const data = (await r.json().catch(() => ({}))) as T & { error?: string };
+  if (!r.ok || data.error) throw new Error(data.error || `${path} → ${r.status}`);
+  return data;
 }
 
 // All the cache views are per-project; the global project takes no query param so
@@ -139,6 +169,27 @@ export const api = {
     if (!r.ok || data.error) throw new Error(data.error || `delete failed (${r.status})`);
   },
 
+  // Flip ONE project's soft offline flag (global included). A registry write the
+  // cache process applies on its next poll (~5s) — scoped to this project, no
+  // restart. The instance-wide hard switch is the separate `mode` job.
+  async setProjectMode(
+    name: string,
+    target: "online" | "offline",
+  ): Promise<{ name: string; offline: boolean }> {
+    const r = await fetch(`/api/projects/${encodeURIComponent(name)}/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    });
+    const data = (await r.json().catch(() => ({}))) as {
+      name?: string;
+      offline?: boolean;
+      error?: string;
+    };
+    if (!r.ok || data.error) throw new Error(data.error || `mode change failed (${r.status})`);
+    return data as { name: string; offline: boolean };
+  },
+
   async startJob(action: JobAction, params: Record<string, string>): Promise<number> {
     const r = await fetch("/api/jobs", {
       method: "POST",
@@ -151,4 +202,45 @@ export const api = {
     if (!r.ok || data.error) throw new Error(data.error || `job failed (${r.status})`);
     return data.id as number;
   },
+
+  // Reassign a project's owner (superuser only). The new owner must be an existing
+  // admin or superuser.
+  setProjectOwner: (name: string, owner: string) =>
+    mutate<{ name: string; owner: string }>(
+      "POST",
+      `/api/projects/${encodeURIComponent(name)}/owner`,
+      { owner },
+    ),
+
+  // ---- auth: session + accounts -------------------------------------------
+  // Bootstrap the auth state. 401 (enabled but no session) is normalized to a
+  // "must log in" answer rather than an error, so the caller has one shape to read.
+  async me(): Promise<MeResp> {
+    const r = await fetch("/api/me", { headers: { Accept: "application/json" } });
+    if (r.status === 401) return { auth_enabled: true, authenticated: false };
+    if (!r.ok) throw new Error(`/api/me → ${r.status}`);
+    return (await r.json()) as MeResp;
+  },
+
+  login: (username: string, password: string) =>
+    mutate<{ username: string; role: Role }>("POST", "/api/login", { username, password }),
+
+  logout: () => mutate<{ ok: boolean }>("POST", "/api/logout"),
+
+  users: (s?: AbortSignal) => getJSON<UsersResp>("/api/users", s),
+
+  createUser: (body: {
+    username: string;
+    password: string;
+    role: Role;
+    reports_to?: string | null;
+  }) => mutate<User>("POST", "/api/users", body),
+
+  updateUser: (
+    name: string,
+    changes: { role?: Role; reports_to?: string | null; password?: string },
+  ) => mutate<User>("PATCH", `/api/users/${encodeURIComponent(name)}`, changes),
+
+  deleteUser: (name: string) =>
+    mutate<{ deleted: string }>("DELETE", `/api/users/${encodeURIComponent(name)}`),
 };
