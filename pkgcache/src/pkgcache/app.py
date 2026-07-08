@@ -56,7 +56,7 @@ def build_app(config: Config | None = None, *, manage_lifecycle: bool = True) ->
 
     routes = [
         Route(repo.progress_path, _progress_endpoint(core), methods=["GET"]),
-        Route("/healthz", _healthz(config), methods=["GET"]),
+        Route("/healthz", _healthz(core), methods=["GET"]),
         # Ledger admin surface for the control UI — registered BEFORE the handler
         # routes so the apt catch-all / npm's /{pkg} can't shadow them. The webui
         # reads these instead of opening ledger.db directly.
@@ -109,6 +109,8 @@ async def _speedtest_loop(core: Core) -> None:
     'time saved' estimate stays fresh even when no cache misses are sampling it."""
     while True:
         await asyncio.sleep(_SPEEDTEST_SECONDS)
+        if core.config.offline:  # soft-offline flips live; never touch upstream then
+            continue
         try:
             t0 = time.monotonic()
             got = 0
@@ -124,8 +126,12 @@ async def _speedtest_loop(core: Core) -> None:
             pass  # a failed probe just means no fresh active sample this round
 
 
-def _healthz(config: Config):
+def _healthz(core: Core):
+    # Reads through the core (not a captured Config): the supervisor live-swaps
+    # core.config when the registry's per-project offline flag changes, and health
+    # must report the mode actually being served.
     async def healthz(request: Request) -> JSONResponse:
+        config = core.config
         return JSONResponse({
             "status": "ok",
             "role": config.role,

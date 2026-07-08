@@ -39,7 +39,7 @@ def build_core(config: Config) -> Core:
     storage = Storage(config.cache_root, cas_root=config.cas_root)
     storage.gc_parts()  # clear interrupted-download leftovers on startup
     ledger = Ledger(config.cache_root / "ledger.db")
-    upstream = Upstream(timeout=config.request_timeout, offline=config.offline)
+    upstream = Upstream(timeout=config.request_timeout)
     progress = Progress()
     stats = Stats()
     cache = Cache(storage, InflightRegistry(), progress, ledger, stats)

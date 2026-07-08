@@ -2,21 +2,23 @@
 
 Two modes:
   * PKGCACHE_ROLE set   → serve that one role (dev / one-role-per-process).
-  * PKGCACHE_ROLE unset → serve ALL roles in ONE process, each on its own port
-    (the protocols can't share a port: OCI owns /v2/ at the root and apt is a
-    forward proxy). The HTTPS roles terminate TLS in-process from the cert, so no
-    separate TLS proxy is needed — one container.
+  * PKGCACHE_ROLE unset → serve everything on TWO ports:
+      - the unified HTTPS port (PKGCACHE_UNIFIED_PORT, default 8443) carries oci,
+        npm, pypi, git and files — /v2/… for docker, /<project>/<role>/… for the
+        rest (see unified.py). TLS terminates in-process from the cert.
+      - the apt/apk forward proxy stays on ITS own plain-HTTP port (default 3142):
+        proxy clients (busybox wget, apt < 1.6) can't speak to a TLS proxy, so it
+        can't ride the unified port.
 
-A single event loop runs every uvicorn server, so the in-process progress registry
+A single event loop runs both uvicorn servers, so the in-process progress registry
 and single-flight dedup keep their (per-role) single-worker semantics.
 
-Multi-project: there is exactly ONE server per role (six total), each on the role's
-default port. Projects are NOT separate ports — a RoleServer (see router.py)
-dispatches each request to the right project's sub-app by path/name/proxy-user, and
-falls back to global. A lightweight supervisor re-reads the registry on an interval
-and tells each RoleServer to add/drop project sub-apps live, WITHOUT restarting the
-process or binding any new port, so creating a project from the control UI never
-disturbs in-flight downloads.
+Multi-project: projects are NOT ports — a RoleServer per role (router.py)
+dispatches each request to the right project's sub-app by path/name/proxy-user.
+A lightweight supervisor re-reads the registry on an interval and tells each
+RoleServer to add/drop project sub-apps live, WITHOUT restarting the process or
+binding any port, so creating a project from the control UI never disturbs
+in-flight downloads.
 """
 from __future__ import annotations
 
@@ -27,32 +29,28 @@ import signal
 import uvicorn
 
 from .app import build_app
-from .core.config import GLOBAL, Config, load, load_roles
+from .core.config import load, load_roles
 from .router import RoleServer
+from .unified import UnifiedServer
 
 # How often the supervisor re-reads the project registry to pick up new/removed
 # projects. Small enough that "create project" feels live; large enough to be cheap.
 _POLL = float(os.environ.get("PKGCACHE_PROJECT_POLL", "5"))
 
+# The single client-facing HTTPS port (>1024 so the non-root container user can
+# bind it; publish 443→this on the host for port-less docker URLs).
+_UNIFIED_PORT = int(os.environ.get("PKGCACHE_UNIFIED_PORT", "8443"))
+_APT_PORT = 3142
 
-def _server(app, cfg: Config) -> uvicorn.Server:
-    ucfg = uvicorn.Config(
-        app,
-        host=cfg.host,
-        port=cfg.port,
-        log_level="info",
-        ssl_certfile=cfg.tls_cert,
-        ssl_keyfile=cfg.tls_key,
-    )
+
+def _uv_server(app, *, host: str, port: int, cert: str | None, key: str | None) -> uvicorn.Server:
+    ucfg = uvicorn.Config(app, host=host, port=port, log_level="info",
+                          ssl_certfile=cert, ssl_keyfile=key)
     server = uvicorn.Server(ucfg)
-    # We manage signals centrally (one handler for all servers), so stop each
+    # We manage signals centrally (one handler for both servers), so stop each
     # server from installing its own competing handlers.
     server.install_signal_handlers = lambda: None
     return server
-
-
-def _label(cfg: Config) -> str:
-    return f"{cfg.role}:{cfg.port}{'(tls)' if cfg.tls_cert else ''}"
 
 
 async def _serve_all() -> None:
@@ -67,33 +65,42 @@ async def _serve_all() -> None:
         await rs.reconcile(projects)
         role_servers[role] = rs
 
-    servers: list[tuple[str, Config, uvicorn.Server]] = []
-    for role, rs in role_servers.items():
-        g = role_cfgs[role][GLOBAL]
-        try:
-            servers.append((role, g, _server(rs, g)))
-        except Exception as exc:  # noqa: BLE001 - one bad port must not kill the rest
-            print(f"pkgcache: could not build server {_label(g)}: {exc}")
+    host = os.environ.get("PKGCACHE_HOST", "0.0.0.0")
+    cert = os.environ.get("PKGCACHE_TLS_CERT") or None
+    key = os.environ.get("PKGCACHE_TLS_KEY") or None
+
+    unified = UnifiedServer(role_servers)
+    listeners = [
+        (f"unified:{_UNIFIED_PORT}{'(tls)' if cert else ''}",
+         _uv_server(unified, host=host, port=_UNIFIED_PORT, cert=cert, key=key)),
+        (f"apt:{_APT_PORT}",
+         _uv_server(role_servers["apt"], host=host, port=_APT_PORT, cert=None, key=None)),
+    ]
 
     stopping = False
 
     def stop_all() -> None:
         nonlocal stopping
         stopping = True
-        for _, _, s in servers:
+        for _, s in listeners:
             s.should_exit = True
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop_all)
 
-    async def run(server: uvicorn.Server, cfg: Config) -> None:
+    async def run(label: str, server: uvicorn.Server) -> None:
         try:
             await server.serve()
-        except Exception as exc:  # noqa: BLE001 - one bad port must not kill the rest
-            print(f"pkgcache: server {_label(cfg)} exited with error: {exc}")
+        except SystemExit as exc:
+            # uvicorn signals a startup failure (e.g. the port is already bound) with
+            # sys.exit(), which is a BaseException — without this clause it would
+            # escape the Exception guard below and take BOTH listeners down.
+            print(f"pkgcache: server {label} failed to start (exit {exc.code})")
+        except Exception as exc:  # noqa: BLE001 - one bad port must not kill the other
+            print(f"pkgcache: server {label} exited with error: {exc}")
 
-    tasks = [asyncio.create_task(run(s, g)) for _, g, s in servers]
-    print("pkgcache serving → " + ", ".join(_label(g) for _, g, _ in servers))
+    tasks = [asyncio.create_task(run(label, s)) for label, s in listeners]
+    print("pkgcache serving → " + ", ".join(label for label, _ in listeners))
 
     # Supervisor: re-read the registry and reconcile each role's project set.
     while not stopping:

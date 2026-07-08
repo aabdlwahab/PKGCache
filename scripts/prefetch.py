@@ -24,6 +24,15 @@ import yaml
 
 HOST = os.environ.get("CACHE_HOST", "localhost")
 CA = os.environ.get("CA_CERT", "certs/ca.crt")
+# The unified HTTPS port (docker + npm/pypi/git/files) and the apt/apk proxy port.
+PORT = os.environ.get("CACHE_PORT", "8443")
+APT_PORT = os.environ.get("CACHE_APT_PORT", "3142")
+# Which project's cache to warm; "global" is the default project.
+PROJECT = os.environ.get("CACHE_PROJECT", "global")
+# Docker carries the project in the image name; global images are unprefixed.
+_IMG = "" if PROJECT == "global" else f"{PROJECT}/"
+# apt/apk carry the project as the proxy username; global has none.
+_AT = "" if PROJECT == "global" else f"{PROJECT}@"
 # Images are pulled concurrently across the seed list (each `docker pull` already
 # parallelises its own layers). Bounded because Docker Hub anonymous pulls are
 # rate-limited; shared base layers across images coalesce in the proxy's inflight
@@ -40,7 +49,7 @@ def do_docker(refs: list[str]) -> None:
     if not refs:
         return
     with ThreadPoolExecutor(max_workers=min(DOCKER_JOBS, len(refs))) as pool:
-        list(pool.map(lambda ref: run(["docker", "pull", f"{HOST}:5000/{ref}"]), refs))
+        list(pool.map(lambda ref: run(["docker", "pull", f"{HOST}:{PORT}/{_IMG}{ref}"]), refs))
 
 
 def do_pip(specs: list[str]) -> None:
@@ -53,14 +62,14 @@ def do_pip(specs: list[str]) -> None:
             run([
                 "pip", "download", "--no-deps", "--disable-pip-version-check",
                 "--no-cache-dir", "--cert", CA, "--dest", d,
-                "--index-url", f"https://{HOST}:3141/{index}/+simple/", req,
+                "--index-url", f"https://{HOST}:{PORT}/{PROJECT}/pypi/{index}/+simple/", req,
             ])
 
 
 def do_npm(pkgs: list[str]) -> None:
     with tempfile.TemporaryDirectory() as d:
         for pkg in pkgs:
-            run(["npm", "pack", pkg, "--registry", f"https://{HOST}:4873/",
+            run(["npm", "pack", pkg, "--registry", f"https://{HOST}:{PORT}/{PROJECT}/npm/",
                  "--cafile", CA], cwd=d)
 
 
@@ -68,7 +77,7 @@ def do_apt(pkgs: list[str]) -> None:
     if not pkgs:
         return
     script = (
-        f'echo "Acquire::http::Proxy \\"http://{HOST}:3142\\";" > /etc/apt/apt.conf.d/01proxy && '
+        f'echo "Acquire::http::Proxy \\"http://{_AT}{HOST}:{APT_PORT}\\";" > /etc/apt/apt.conf.d/01proxy && '
         "apt-get update && apt-get install -d -y " + " ".join(map(shlex.quote, pkgs))
     )
     run(["docker", "run", "--rm", "--add-host", f"{HOST}:host-gateway",
@@ -78,7 +87,7 @@ def do_apt(pkgs: list[str]) -> None:
 def do_apk(pkgs: list[str]) -> None:
     if not pkgs:
         return
-    script = f"http_proxy=http://{HOST}:3142 apk fetch --no-cache " + " ".join(map(shlex.quote, pkgs))
+    script = f"http_proxy=http://{_AT}{HOST}:{APT_PORT} apk fetch --no-cache " + " ".join(map(shlex.quote, pkgs))
     run(["docker", "run", "--rm", "--add-host", f"{HOST}:host-gateway",
          "alpine:3.20", "sh", "-c", script])
 
@@ -89,7 +98,7 @@ def do_git(repos: list[str]) -> None:
     <repo>`, e.g. github.com/octocat/Hello-World."""
     env = dict(os.environ, GIT_SSL_CAINFO=CA)
     for repo in repos:
-        run(["git", "ls-remote", f"https://{HOST}:3143/{repo}.git"], env=env)
+        run(["git", "ls-remote", f"https://{HOST}:{PORT}/{PROJECT}/git/{repo}.git"], env=env)
 
 
 def main(argv: list[str]) -> int:

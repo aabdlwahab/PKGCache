@@ -126,6 +126,19 @@ def test_oci_project_progress_path():
     assert scope["path"] == "/v2/_progress"
 
 
+def test_oci_uniform_admin_path_form():
+    # /<project>/oci/… is the uniform internal admin form (healthz, +ledger);
+    # the prefix is stripped and lands in root_path like the path roles.
+    rs = _server("oci", "gamma")
+    proj, scope = rs._select(_scope("/gamma/oci/healthz"))
+    assert proj == "gamma"
+    assert scope["path"] == "/healthz"
+    assert scope["root_path"] == "/gamma/oci"
+    proj, scope = rs._select(_scope("/global/oci/v2/_progress"))
+    assert proj == "global"
+    assert scope["path"] == "/v2/_progress"
+
+
 # ---- apt ------------------------------------------------------------------
 
 def _basic(user, pw=""):
@@ -213,6 +226,86 @@ async def test_healthz_routes_to_the_right_project(tmp_path, monkeypatch):
             # An unknown project falls through to global (no such route there → 404).
             u = await c.get("/ghost/pypi/healthz")
             assert u.status_code == 404
+    finally:
+        await rs.aclose_all()
+
+
+# ---- per-project offline ---------------------------------------------------
+
+def test_offline_flag_scopes_to_one_project(tmp_path, monkeypatch):
+    from pkgcache.core.config import load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text('{"projects": {"gamma": {}, "delta": {}}, "offline": {"gamma": true}}')
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+    monkeypatch.setenv("OFFLINE", "0")
+
+    cfgs = load_roles()["pypi"]
+    assert cfgs["gamma"].offline is True
+    assert cfgs["delta"].offline is False
+    assert cfgs["global"].offline is False
+
+
+def test_env_offline_wins_over_soft_flags(tmp_path, monkeypatch):
+    # OFFLINE=1 is the air-gap hard mode: a project with no soft flag (or an
+    # explicit false) must still be offline.
+    from pkgcache.core.config import load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text('{"projects": {"gamma": {}}, "offline": {"gamma": false}}')
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+    monkeypatch.setenv("OFFLINE", "1")
+
+    cfgs = load_roles()["pypi"]
+    assert cfgs["gamma"].offline is True
+    assert cfgs["global"].offline is True
+
+
+def test_global_soft_flag_applies_to_global_only(tmp_path, monkeypatch):
+    from pkgcache.core.config import load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text('{"projects": {"gamma": {}}, "offline": {"global": true}}')
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+    monkeypatch.setenv("OFFLINE", "0")
+
+    cfgs = load_roles()["pypi"]
+    assert cfgs["global"].offline is True
+    assert cfgs["gamma"].offline is False
+
+
+@pytest.mark.asyncio
+async def test_reconcile_applies_offline_flip_live(tmp_path, monkeypatch):
+    """Flipping a project's registry offline flag between polls changes what its
+    healthz reports WITHOUT rebuilding the sub-app (in-flight state survives)."""
+    from pkgcache.core.config import load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text('{"projects": {"gamma": {}}}')
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+    monkeypatch.setenv("OFFLINE", "0")
+
+    rs = RoleServer("pypi")
+    await rs.reconcile(load_roles()["pypi"])
+    app_before = rs._apps["gamma"]
+    try:
+        transport = httpx.ASGITransport(app=rs)
+        async with httpx.AsyncClient(transport=transport, base_url="https://pkgcache:3141") as c:
+            h = await c.get("/gamma/pypi/healthz")
+            assert h.json()["offline"] is False
+
+            reg.write_text('{"projects": {"gamma": {}}, "offline": {"gamma": true}}')
+            await rs.reconcile(load_roles()["pypi"])
+
+            h = await c.get("/gamma/pypi/healthz")
+            assert h.json()["offline"] is True
+            g = await c.get("/healthz")
+            assert g.json()["offline"] is False  # global untouched
+            assert rs._apps["gamma"] is app_before  # live swap, not a rebuild
     finally:
         await rs.aclose_all()
 

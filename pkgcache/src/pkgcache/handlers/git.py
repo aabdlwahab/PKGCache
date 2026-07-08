@@ -58,7 +58,7 @@ class GitRepo:
         cfg = core.config
         self._mirror = MirrorManager(
             storage=core.storage, ledger=core.ledger, progress=core.progress,
-            stats=core.stats, offline=cfg.offline,
+            stats=core.stats, is_offline=lambda: core.config.offline,
             refs_ttl=cfg.refs_ttl, max_upload_packs=cfg.max_upload_packs,
         )
         self._lfs: dict[str, dict] = {}  # oid -> {href, header} from the last batch (P2)

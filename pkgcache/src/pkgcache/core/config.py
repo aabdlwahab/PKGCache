@@ -2,7 +2,8 @@
 
 Two run modes share this:
   * single role  — PKGCACHE_ROLE=<role>      → load()       (dev / one role per proc)
-  * all roles    — PKGCACHE_ROLE unset       → load_roles() (one container, 6 ports)
+  * all roles    — PKGCACHE_ROLE unset       → load_roles() (one container, 2 ports:
+                   the unified HTTPS port + the apt proxy port — see unified.py)
 
 In all-roles mode each role caches under PKGCACHE_CACHE_ROOT/<subdir> (compose
 mounts ./caches there), and the HTTPS roles terminate TLS in-process using the
@@ -132,16 +133,16 @@ def load() -> Config:
 
 
 def _registry() -> dict:
-    """The project registry the control UI manages (PKGCACHE_PROJECTS, JSON).
-    Missing/unreadable → no projects (just global). Read fresh on each call so the
-    supervisor in __main__ picks up projects created at runtime."""
+    """The parsed project registry the control UI manages (PKGCACHE_PROJECTS, JSON):
+    the "projects" name map plus the webui-owned side maps we consume ("offline").
+    Missing/unreadable → empty (just global, online). Read fresh on each call so the
+    supervisor in __main__ picks up changes made at runtime."""
     path = os.environ.get("PKGCACHE_PROJECTS")
     if path and Path(path).is_file():
         try:
-            data = json.loads(Path(path).read_text()) or {}
+            return json.loads(Path(path).read_text()) or {}
         except (OSError, ValueError):
             return {}
-        return data.get("projects", {}) or {}
     return {}
 
 
@@ -187,10 +188,15 @@ def load_roles() -> dict[str, dict[str, Config]]:
     running role servers and add/drop projects without a restart or rebind."""
     data = _read()
     base = Path(os.environ.get("PKGCACHE_CACHE_ROOT", "/caches"))
-    offline = _as_bool(os.environ.get("OFFLINE", "0"))
     cert = os.environ.get("PKGCACHE_TLS_CERT") or None
     key = os.environ.get("PKGCACHE_TLS_KEY") or None
-    names = sorted(_registry())
+    registry = _registry()
+    names = sorted(registry.get("projects", {}) or {})
+    # A project is offline when the instance is (the OFFLINE env — the air-gap hard
+    # mode) OR its registry soft flag is set; the webui flips the flag per project
+    # (global included) and the supervisor applies it on its next poll.
+    env_offline = _as_bool(os.environ.get("OFFLINE", "0"))
+    soft = registry.get("offline", {}) or {}
     # ONE content store for the whole instance (all projects + roles), so identical
     # bytes are held once regardless of which project or ecosystem fetched them.
     cas_root = (base / _CAS_SUBDIR) if _cas_enabled() else None
@@ -200,12 +206,14 @@ def load_roles() -> dict[str, dict[str, Config]]:
         port = _DEFAULT_PORTS[role]
         projects = {
             GLOBAL: _build(role, data, cache_root=base / _ROLE_SUBDIR[role],
-                           offline=offline, cert=cert, key=key, port=port, cas_root=cas_root),
+                           offline=env_offline or bool(soft.get(GLOBAL)),
+                           cert=cert, key=key, port=port, cas_root=cas_root),
         }
         for name in names:
             projects[name] = _build(
                 role, data, cache_root=base / _PROJECTS_SUBDIR / name / _ROLE_SUBDIR[role],
-                offline=offline, cert=cert, key=key, project=name, port=port, cas_root=cas_root,
+                offline=env_offline or bool(soft.get(name)),
+                cert=cert, key=key, project=name, port=port, cas_root=cas_root,
             )
         out[role] = projects
     return out

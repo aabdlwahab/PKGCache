@@ -1,23 +1,27 @@
 """Per-role request routing to per-project sub-apps.
 
-Historically each (project, role) got its own port; a project was a set of six
-ports carved from a pool. This module replaces that: ONE server per role listens
-on the role's default port, and every project is reached on that same port,
-distinguished by the request itself:
+A RoleServer is the ASGI app for one role. The five HTTPS roles all sit behind the
+single unified port (see unified.py); apt has its own plain-HTTP port. Every project
+is reached through the same listener, distinguished by the request itself:
 
-  * npm / pypi / git / files — a `/<project>/<role>/…` PATH prefix. The prefix is
-    stripped and stashed in scope["root_path"] so the sub-app matches its normal
-    routes and external_base() re-emits project-scoped links.
-  * oci — the project rides the image NAME: `/v2/<project>/<dest>/<image>/…`
-    (Docker can't be given a base path, so the segment lives inside the repo name).
-    The segment is stripped back to `/v2/<dest>/<image>/…` for the sub-app; the
-    project is stashed so tags/list can re-prefix the echoed `name`.
+  * npm / pypi / git / files — a `/<project>/<role>/…` PATH prefix (global included:
+    `/global/<role>/…`). The prefix is stripped and stashed in scope["root_path"] so
+    the sub-app matches its normal routes and external_base() re-emits
+    project-scoped links.
+  * oci — Docker can't be given a base path, so client pulls keep `/v2/` at the
+    listener root and the project rides the image NAME:
+    `/v2/<project>/<dest>/<image>/…`. The segment is stripped back to
+    `/v2/<dest>/<image>/…` for the sub-app; the project is stashed so tags/list can
+    re-prefix the echoed `name`. The uniform `/<project>/oci/…` path form is ALSO
+    accepted so internal admin URLs (healthz, +ledger, progress) look the same for
+    every role.
   * apt — a forward proxy with no room in the URL for a project, so the project
     rides the proxy username: `http_proxy=http://<project>@host:3142`. Read from
-    Proxy-Authorization; the password is ignored (it's a label, not auth).
+    Proxy-Authorization; the password is ignored (it's a label, not auth). The
+    uniform `/<project>/apt/…` path form is also accepted for internal pollers.
 
 Anything that doesn't match a registered project (or names `global`) is served by
-the global sub-app unchanged, so every original URL keeps working.
+the global sub-app unchanged.
 
 A RoleServer owns the Core lifecycle for all its projects (mounted sub-apps do NOT
 receive Starlette lifespan events), adding/removing projects live as the registry
@@ -81,14 +85,25 @@ class RoleServer:
                 await send({"type": "lifespan.shutdown.complete"})
                 return
 
+    def serves(self, project: str) -> bool:
+        """Whether this role currently has a sub-app for `project` (incl. global).
+        The unified dispatcher uses this to 404 unknown projects with a clear
+        message instead of letting them fall through to a confusing global route."""
+        return project in self._apps
+
     # ---- project reconciliation ---------------------------------------------
     async def reconcile(self, cfgs: dict[str, Config]) -> None:
         """Make the running project set match `cfgs` (which always includes global):
-        build+start cores for new projects, close+drop cores for removed ones."""
+        build+start cores for new projects, close+drop cores for removed ones, and
+        live-swap a changed Config (e.g. the per-project offline flag) onto the
+        running core — handlers read core.config per request, so the change applies
+        without rebuilding the sub-app or disturbing in-flight downloads."""
         async with self._lock:
             for name, cfg in cfgs.items():
                 if name not in self._apps:
                     self._add(name, cfg)
+                elif cfg != self._cores[name].config:
+                    self._cores[name].config = cfg
             for name in list(self._apps):
                 if name not in cfgs:
                     await self._remove(name)
@@ -131,7 +146,13 @@ class RoleServer:
     def _select_oci(self, scope) -> tuple[str, dict]:
         path = scope.get("path", "/")
         if not path.startswith("/v2/"):
-            return GLOBAL, scope  # /v2/ ping, /v2/_progress, /healthz
+            # The uniform `/<project>/oci/…` path form, used by internal admin URLs
+            # (healthz, +ledger, progress) so they look the same for every role.
+            # Docker itself never sends it — client pulls always start with /v2/.
+            segs = path.lstrip("/").split("/", 2)
+            if len(segs) >= 2 and segs[1] == "oci" and segs[0] in self._apps:
+                return self._strip_prefix(scope, f"/{segs[0]}/oci", segs[0])
+            return GLOBAL, scope  # /v2/ ping, /healthz on the bare listener
         seg, sep, tail = path[len("/v2/"):].partition("/")
         if sep and seg in self._apps and seg != GLOBAL:
             new = self._replace_path(scope, "/v2/" + seg, "/v2")

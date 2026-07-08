@@ -16,8 +16,7 @@ _WWW_AUTH_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
 class Upstream:
-    def __init__(self, *, timeout: float, offline: bool) -> None:
-        self.offline = offline
+    def __init__(self, *, timeout: float) -> None:
         # Generous read timeout so a slow multi-GB fetch finishes; verify TLS.
         # Accept-Encoding: identity — we are a byte-faithful cache. If we let httpx
         # transparently decompress, the body bytes would differ from the upstream

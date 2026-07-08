@@ -40,13 +40,16 @@ class NotCached(Exception):
 
 
 class MirrorManager:
-    def __init__(self, *, storage, ledger, progress, stats, offline: bool,
+    def __init__(self, *, storage, ledger, progress, stats, is_offline,
                  refs_ttl: float, max_upload_packs: int) -> None:
         self._storage = storage
         self._ledger = ledger
         self._progress = progress
         self._stats = stats
-        self._offline = offline
+        # A callable, not a snapshot: the supervisor live-swaps the owning core's
+        # config when the per-project offline flag changes, and the mirror must
+        # follow the mode actually being served.
+        self._is_offline = is_offline
         self._refs_ttl = refs_ttl
         self._locks: dict[str, asyncio.Lock] = {}
         self._fresh: dict[str, float] = {}   # repo -> monotonic ts of last revalidate/clone
@@ -70,7 +73,7 @@ class MirrorManager:
         'offline'. Raises NotCached / MirrorError."""
         async with self._lock(repo):
             exists = (mirror_dir / "HEAD").exists()
-            if self._offline:
+            if self._is_offline():
                 if not exists:
                     raise NotCached(repo)
                 return "offline"
