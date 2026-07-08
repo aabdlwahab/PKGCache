@@ -12,6 +12,11 @@
 # (re)created as projects are created.
 /config/projects.json
 
+# Control-plane auth state, not source: the accounts store (usernames + password
+# hashes/salts) and the legacy htpasswd file are created/managed at runtime.
+/config/users.json
+/config/htpasswd
+
 # Shuttle staging area (fixed export/import dirs) — local transfer artifacts.
 /shuttle/
 # Rewritten uv.locks produced by the lock-warm op — downloadable artifacts, not source.
@@ -30,7 +35,9 @@ __pycache__/
 .pytest_cache/
 
 # TLS material (scripts/gen-certs.sh). Private keys never leave this host; the
-# CA cert is shareable (carry it across the gap, install on build hosts).
+# CA cert is shareable (carry it across the gap, install on build hosts). The
+# server cert is host-specific generated material — regenerate, never commit.
 /certs/*.key
 /certs/*.srl
+/certs/server.crt
 !/certs/ca.crt
