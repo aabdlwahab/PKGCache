@@ -1,0 +1,24 @@
+storage: /verdaccio/storage
+auth:
+  htpasswd:
+    file: ./htpasswd
+    max_users: -1            # set to 0 to lock down on the air-gapped side
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    # Long cache + tolerant timeouts so that on the air-gapped side, where the
+    # uplink is unreachable, cached tarballs are still served on miss-to-uplink.
+    cache: true
+    maxage: 8760h
+    timeout: 5s
+    max_fails: 1
+packages:
+  '@*/*':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+  '**':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+log: { type: stdout, format: pretty, level: warn }

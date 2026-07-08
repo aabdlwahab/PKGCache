@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  @keyframes pcc-pulse { 0%,100%{opacity:1} 50%{opacity:.28} }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(0.185 0.012 250); --panel: oklch(0.215 0.013 250); --panel2: oklch(0.255 0.014 250);
+    --inset: oklch(0.155 0.012 252); --line: oklch(0.315 0.012 252); --line2: oklch(0.40 0.012 252);
+    --fg: oklch(0.93 0.006 250); --fg2: oklch(0.80 0.008 250); --muted: oklch(0.66 0.012 252);
+    --ok: oklch(0.78 0.15 152); --bad: oklch(0.70 0.18 28); --warn: oklch(0.82 0.13 82);
+    --ok-bg: oklch(0.78 0.15 152 / .14); --bad-bg: oklch(0.70 0.18 28 / .16); --warn-bg: oklch(0.82 0.13 82 / .14);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.22);
+  }
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg: oklch(0.955 0.004 250); --panel: oklch(0.995 0.001 250); --panel2: oklch(0.975 0.003 250);
+    --inset: oklch(0.965 0.004 250); --line: oklch(0.895 0.005 252); --line2: oklch(0.82 0.008 252);
+    --fg: oklch(0.27 0.012 252); --fg2: oklch(0.40 0.012 252); --muted: oklch(0.52 0.014 252);
+    --ok: oklch(0.52 0.15 152); --bad: oklch(0.55 0.20 28); --warn: oklch(0.58 0.13 70);
+    --ok-bg: oklch(0.52 0.15 152 / .12); --bad-bg: oklch(0.55 0.20 28 / .12); --warn-bg: oklch(0.58 0.13 70 / .14);
+    --shadow: 0 1px 2px rgba(20,30,45,.08), 0 8px 22px rgba(20,30,45,.06);
+  }
+  [data-skin="dashboard"] {
+    --ui: 'IBM Plex Sans', system-ui, sans-serif; --title: 'IBM Plex Sans', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace; --radius: 10px; --radius-sm: 7px;
+    --tspace: .02em; --titlecase: none; --accent: oklch(0.62 0.17 248); --accent-ink: #ffffff;
+  }
+  [data-skin="console"] {
+    --ui: 'IBM Plex Mono', ui-monospace, monospace; --title: 'IBM Plex Mono', ui-monospace, monospace;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace; --radius: 3px; --radius-sm: 2px;
+    --tspace: .1em; --titlecase: uppercase; --accent: oklch(0.78 0.16 154); --accent-ink: #06160c;
+  }
+</style>
+</helmet>
+<div data-theme="{{ theme }}" data-skin="{{ skin }}" style="min-height:100vh; background:var(--bg); color:var(--fg); font-family:var(--ui); font-size:13.5px; line-height:1.5; padding:24px; display:flex; align-items:flex-start; justify-content:center; -webkit-font-smoothing:antialiased;">
+
+  <section style="width:100%; max-width:480px; display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;">
+    <div style="display:flex; align-items:center; gap:9px; padding:10px 14px; border-bottom:1px solid var(--line);">
+      <h2 style="margin:0; font-family:var(--title); font-size:12px; font-weight:600; letter-spacing:var(--tspace); text-transform:var(--titlecase); color:var(--fg2);">Checkpoint &amp; transfer</h2>
+      <span style="flex:1;"></span>
+      <span style="font-size:11px; color:var(--muted); font-family:var(--mono);">{{ jobHint }}</span>
+    </div>
+    <div style="padding:14px; display:flex; flex-direction:column; gap:14px;">
+
+      <!-- checkpoint card -->
+      <div style="background:var(--inset); border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 14px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:11px; flex-wrap:wrap;">
+          <span style="display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--accent);"><span style="font-size:13px;">⎘</span>Checkpoint</span>
+          <span style="font-size:11px; color:var(--muted);">quiesce · hash · commit the cache tree</span>
+          <span style="flex:1;"></span>
+          <span style="font-family:var(--mono); font-size:11px; font-weight:600; white-space:nowrap; color:{{ ckStateColor }}; background:{{ ckStateBg }}; padding:2px 9px; border-radius:999px;">{{ ckStateLabel }}</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input value="{{ ckmsg }}" onInput="{{ onCkmsg }}" placeholder='message, e.g. "added torch 2.3 + curl"' style="flex:1; min-width:0; padding:8px 11px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm); color:var(--fg); font-family:var(--mono); font-size:12.5px; outline:none;">
+          <button onClick="{{ doCheckpoint }}" disabled="{{ busy }}" style="{{ primaryBtn }}">⎘ Checkpoint</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:7px; margin-top:9px; font-family:var(--mono); font-size:10.5px; color:var(--muted);">
+          <span style="width:7px; height:7px; border-radius:50%; background:var(--ok);"></span>last: <span style="color:var(--fg2);">{{ ckHeadLabel }}</span> · {{ ckHeadDate }} ago
+        </div>
+      </div>
+
+      <!-- shuttle transfer card -->
+      <div style="background:var(--inset); border:1px solid var(--line); border-radius:var(--radius-sm); padding:13px 14px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:13px; flex-wrap:wrap;">
+          <span style="display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--fg2);"><span style="font-size:13px;">⇄</span>Shuttle transfer</span>
+          <span style="font-size:11px; color:var(--muted);">move artifacts across the air gap</span>
+        </div>
+
+        <!-- air-gap diagram -->
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <div style="flex:1; text-align:center; padding:10px 8px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm);">
+            <div style="font-family:var(--mono); font-size:12px; color:var(--fg);">▣ pkgcache</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:3px;">this cache</div>
+          </div>
+          <div style="flex:none; display:flex; flex-direction:column; align-items:center; width:84px;">
+            <span style="font-size:9.5px; color:var(--muted); font-family:var(--mono); letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; margin-bottom:4px;">air gap</span>
+            <div style="width:100%; border-top:2px dashed var(--line2);"></div>
+            <span style="font-size:15px; line-height:1; color:{{ shuttleArrowColor }}; margin-top:4px;">{{ shuttleArrow }}</span>
+          </div>
+          <div style="flex:1; text-align:center; padding:10px 8px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm);">
+            <div style="font-family:var(--mono); font-size:12px; color:var(--fg);">▤ shuttle</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:3px;">removable drive</div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px; padding:0 10px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-sm); height:34px; margin-bottom:9px;">
+          <span style="font-family:var(--mono); font-size:11px; color:var(--muted);">drive</span>
+          <input value="{{ exdrive }}" onInput="{{ onExdrive }}" placeholder="/media/shuttle" style="flex:1; min-width:0; background:transparent; border:0; outline:none; color:var(--fg); font-family:var(--mono); font-size:12.5px;">
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onClick="{{ doExport }}" disabled="{{ busy }}" style="{{ transferBtn }}">↥ Export delta</button>
+          <button onClick="{{ doImport }}" disabled="{{ busy }}" style="{{ transferBtn }}">↧ Import</button>
+        </div>
+      </div>
+
+      <!-- job console -->
+      <sc-if value="{{ jobVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="background:var(--inset); border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden;">
+          <div style="display:flex; align-items:center; gap:9px; padding:8px 12px; border-bottom:1px solid var(--line);">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ jobDotColor }}; animation:{{ jobDotAnim }};"></span>
+            <span style="font-family:var(--mono); font-size:12px; color:var(--fg);">$ pkgcache {{ jobTitle }}</span>
+            <span style="font-family:var(--mono); font-size:10.5px; font-weight:600; text-transform:uppercase; padding:1px 8px; border-radius:999px; color:{{ jobStatusColor }}; background:{{ jobStatusBg }};">{{ jobStatus }}</span>
+            <span style="flex:1;"></span>
+            <button onClick="{{ closeConsole }}" style="background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:var(--radius-sm); font-size:11px; padding:2px 8px; cursor:pointer; font-family:var(--ui);">close</button>
+          </div>
+          <pre style="margin:0; padding:11px 12px; max-height:200px; overflow:auto; font-family:var(--mono); font-size:11.5px; line-height:1.55; white-space:pre-wrap; color:var(--fg2);">{{ jobLog }}<span style="color:var(--accent);">{{ jobCursor }}</span></pre>
+        </div>
+      </sc-if>
+
+      <!-- demo controls (NOT part of the widget — strip on integration) -->
+      <div style="display:flex; gap:8px; align-items:center; padding-top:2px; border-top:1px dashed var(--line);">
+        <span style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted);">harness</span>
+        <span style="flex:1;"></span>
+        <button onClick="{{ toggleTheme }}" style="font-family:var(--ui); font-size:11px; padding:3px 10px; background:var(--inset); border:1px solid var(--line); color:var(--fg2); border-radius:var(--radius-sm); cursor:pointer;">{{ themeLabel }}</button>
+        <button onClick="{{ toggleSkin }}" style="font-family:var(--ui); font-size:11px; padding:3px 10px; background:var(--inset); border:1px solid var(--line); color:var(--fg2); border-radius:var(--radius-sm); cursor:pointer;">{{ skinLabel }}</button>
+        <button onClick="{{ addUncommitted }}" style="font-family:var(--ui); font-size:11px; padding:3px 10px; background:var(--inset); border:1px solid var(--line); color:var(--fg2); border-radius:var(--radius-sm); cursor:pointer;">+1 uncommitted</button>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 528, &quot;height&quot;: 600}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const rnd = () => Math.random();
+    this.state = {
+      theme: 'dark', skin: 'console',
+      // pendingNew = artifacts cached since the last checkpoint (drives the state pill)
+      pendingNew: 4,
+      head: this.hex(7),
+      headDate: '2m',
+      ckmsg: '', exdrive: '/media/shuttle',
+      job: null
+    };
+  }
+
+  hex(n) { let s = ''; const c = '0123456789abcdef'; for (let i = 0; i < n; i++) s += c[Math.floor(Math.random() * 16)]; return s; }
+  componentWillUnmount() { clearInterval(this._job); }
+
+  // ---- the four job scripts (swap for real streamed output from POST /api/jobs) ----
+  jobScript(action, p) {
+    const m = p.message || '', drive = p.drive || '/media/shuttle';
+    if (action === 'checkpoint') return ['$ pkgcache checkpoint -m "' + m + '"', '› quiescing proxy services (5000,4873,3141,8080)…', '› scanning cache tree … 41 artifacts', '› dvc add cache/ … computing hashes', '  100% |████████████████████| 6.4 GB', '› git add cache.dvc .gitignore', '› git commit -m "checkpoint: ' + m + '"', '✓ checkpoint created — HEAD advanced', '› resuming proxy services', '✓ done in 4.2s'];
+    if (action === 'export') return ['$ pkgcache export --to ' + drive, '› resolving delta against last shuttle marker', '› 7 new objects, 318 MB to copy', '› dvc push --remote shuttle ' + drive, '  100% |████████████████████| 318 MB', '› writing manifest + git bundle', '✓ delta exported to ' + drive, '✓ done in 9.8s'];
+    if (action === 'import') return ['$ pkgcache import --from ' + drive, '› reading shuttle manifest at ' + drive, '› verifying signatures … ok', '› git fetch bundle && git merge --ff-only', '› dvc pull --remote shuttle', '  100% |████████████████████| 512 MB', '✓ imported 11 new artifacts', '✓ done in 12.1s'];
+    return ['done'];
+  }
+
+  // streams a job line-by-line; on completion mutates the relevant state
+  runJob(action, title, params) {
+    if (this.state.job && this.state.job.status === 'running') return;
+    const lines = this.jobScript(action, params);
+    this.setState({ job: { action, title, status: 'running', log: '', params } });
+    let i = 0; clearInterval(this._job);
+    this._job = setInterval(() => {
+      this.setState((s) => {
+        if (!s.job) return {};
+        if (i >= lines.length) {
+          clearInterval(this._job);
+          const extra = {};
+          if (action === 'checkpoint') { extra.pendingNew = 0; extra.head = this.hex(7); extra.headDate = 'now'; }
+          if (action === 'import') { extra.pendingNew = s.pendingNew + 11; }
+          return { job: { ...s.job, status: 'done' }, ...extra };
+        }
+        const log = s.job.log + (s.job.log ? '\n' : '') + lines[i]; i++;
+        return { job: { ...s.job, log } };
+      });
+    }, 340);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const busy = !!(s.job && s.job.status === 'running');
+
+    // ---- checkpoint state pill ----
+    const ckStateLabel = s.pendingNew ? ('+' + s.pendingNew + ' uncommitted') : 'all committed';
+
+    // ---- shuttle arrow direction (animates during a transfer job) ----
+    let shuttleArrow = '⇄', shuttleArrowColor = 'var(--muted)';
+    if (busy && s.job.action === 'export') { shuttleArrow = '↦'; shuttleArrowColor = 'var(--accent)'; }
+    else if (busy && s.job.action === 'import') { shuttleArrow = '↤'; shuttleArrowColor = 'var(--accent)'; }
+
+    // ---- job console ----
+    const job = s.job, jstatus = job ? job.status : 'running';
+    const jcolor = jstatus === 'done' ? 'var(--ok)' : (jstatus === 'failed' ? 'var(--bad)' : 'var(--warn)');
+    const jbg = jstatus === 'done' ? 'var(--ok-bg)' : (jstatus === 'failed' ? 'var(--bad-bg)' : 'var(--warn-bg)');
+
+    const primaryBtn = `font-family:var(--ui); font-weight:600; font-size:12.5px; padding:7px 14px; background:var(--accent); color:var(--accent-ink); border:0; border-radius:var(--radius-sm); cursor:${busy ? 'not-allowed' : 'pointer'}; opacity:${busy ? '.5' : '1'}; white-space:nowrap;`;
+    const ghostBtn = `font-family:var(--ui); font-weight:500; font-size:12.5px; padding:7px 13px; background:transparent; color:var(--fg2); border:1px solid var(--line2); border-radius:var(--radius-sm); cursor:${busy ? 'not-allowed' : 'pointer'}; opacity:${busy ? '.5' : '1'}; white-space:nowrap;`;
+
+    return {
+      theme: s.theme, skin: s.skin,
+      jobHint: busy ? 'job running…' : 'one job at a time',
+      busy, primaryBtn,
+      transferBtn: ghostBtn + ' flex:1; display:flex; align-items:center; justify-content:center; gap:6px;',
+
+      ckmsg: s.ckmsg, onCkmsg: (e) => this.setState({ ckmsg: e.target.value }),
+      ckStateLabel,
+      ckStateColor: s.pendingNew ? 'var(--warn)' : 'var(--ok)',
+      ckStateBg: s.pendingNew ? 'var(--warn-bg)' : 'var(--ok-bg)',
+      ckHeadLabel: 'HEAD ' + s.head, ckHeadDate: s.headDate,
+
+      exdrive: s.exdrive, onExdrive: (e) => this.setState({ exdrive: e.target.value }),
+      shuttleArrow, shuttleArrowColor,
+
+      // empty checkpoint message → an inline failed job, never submit
+      doCheckpoint: () => { if (busy) return; if (!s.ckmsg.trim()) { this.setState({ job: { action: 'checkpoint', title: 'checkpoint', status: 'failed', log: '✗ a checkpoint message is required' } }); return; } this.runJob('checkpoint', 'checkpoint', { message: s.ckmsg.trim() }); this.setState({ ckmsg: '' }); },
+      doExport: () => { if (busy) return; if (!s.exdrive.trim()) return; this.runJob('export', 'export', { drive: s.exdrive.trim() }); },
+      doImport: () => { if (busy) return; if (!s.exdrive.trim()) return; this.runJob('import', 'import', { drive: s.exdrive.trim() }); },
+
+      jobVisible: !!job, jobTitle: job ? job.title : '', jobStatus: jstatus, jobLog: job ? job.log : '',
+      jobStatusColor: jcolor, jobStatusBg: jbg, jobDotColor: jcolor,
+      jobDotAnim: jstatus === 'running' ? 'pcc-pulse 1s ease-in-out infinite' : 'none',
+      jobCursor: jstatus === 'running' ? ' ▋' : '',
+      closeConsole: () => this.setState({ job: null }),
+
+      // harness only
+      themeLabel: s.theme === 'dark' ? '☀ light' : '☾ dark',
+      toggleTheme: () => this.setState({ theme: s.theme === 'dark' ? 'light' : 'dark' }),
+      skinLabel: s.skin === 'console' ? 'dashboard' : 'console',
+      toggleSkin: () => this.setState({ skin: s.skin === 'console' ? 'dashboard' : 'console' }),
+      addUncommitted: () => this.setState({ pendingNew: s.pendingNew + 1 })
+    };
+  }
+}
+</script>
+</body>
+</html>

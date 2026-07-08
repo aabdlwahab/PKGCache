@@ -1,0 +1,42 @@
+# TLS-terminating reverse proxy for the cache's registry/index services.
+#
+# Each block listens on the SAME port the service used to expose, now over HTTPS
+# with the cert minted by scripts/gen-certs.sh, and forwards to the backend over
+# the internal compose network (plaintext, never leaves the host). Client URLs
+# only change http:// -> https://.
+#
+# apt-cacher-ng (:3142) is deliberately NOT here: it's a forward proxy, not a
+# server clients connect to, and apt/apk can't reach a proxy over TLS. It stays
+# plain HTTP — see docs/docker-builds.md.
+
+{
+	# We supply our own cert; don't let Caddy try ACME or HTTP->HTTPS redirects.
+	auto_https off
+	admin off
+}
+
+# ---- container images (zot) -------------------------------------------------
+# docker-registry is a network alias shared by docker-cache (online) and
+# docker-cache-offline (offline); whichever profile is up answers here.
+:5000 {
+	tls /certs/server.crt /certs/server.key
+	reverse_proxy docker-registry:5000
+}
+
+# ---- npm (Verdaccio) --------------------------------------------------------
+# Verdaccio builds tarball URLs from the request; Caddy's default
+# X-Forwarded-Proto/Host make those come out https.
+:4873 {
+	tls /certs/server.crt /certs/server.key
+	reverse_proxy npm-cache:4873
+}
+
+# ---- pip (devpi) ------------------------------------------------------------
+# devpi embeds its base URL in the simple index; X-outside-url (reflecting the
+# client's Host) makes the links it returns use https on the right host.
+:3141 {
+	tls /certs/server.crt /certs/server.key
+	reverse_proxy pip-cache:3141 {
+		header_up X-outside-url https://{http.request.hostport}
+	}
+}
