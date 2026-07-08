@@ -44,6 +44,8 @@ def load():
             ) from exc
     data.setdefault("projects", {})
     data.setdefault("tokens", {})   # {project: write-token} for the files role
+    data.setdefault("offline", {})  # {project: true} soft offline flags (global incl.)
+    data.setdefault("owners", {})   # {project: username} — absent = superuser-owned
     return data
 
 

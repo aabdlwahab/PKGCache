@@ -585,11 +585,14 @@ class Operations:
             )
 
             yield _echo("done. Point air-gapped clients at (install certs/ca.crt to trust these):")
+            uni = projects.UNIFIED_PORT
             for line in (
-                "    pip   ->  https://<host>:3141/root/pypi/+simple/",
-                "    npm   ->  https://<host>:4873/",
-                "    docker->  <host>:5000   (zot: pull <host>:5000/dockerhub/library/<img>, /ghcr/<org>/<img>, /quay/<org>/<img>)",
-                "    apt   ->  http://<host>:3142/   (plain HTTP proxy; apk too)",
+                f"    pip   ->  https://<host>:{uni}/global/pypi/root/pypi/+simple/",
+                f"    npm   ->  https://<host>:{uni}/global/npm/",
+                f"    docker->  <host>:{uni}   (pull <host>:{uni}/dockerhub/library/<img>, /ghcr/<org>/<img>, /quay/<org>/<img>)",
+                f"    git   ->  https://<host>:{uni}/global/git/<upstream-host>/<owner>/<repo>.git",
+                f"    files ->  https://<host>:{uni}/global/files/<path>",
+                f"    apt   ->  http://<host>:{projects.APT_PORT}/   (plain HTTP proxy; apk too)",
             ):
                 yield line + "\n"
             return

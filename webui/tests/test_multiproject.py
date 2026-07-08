@@ -11,6 +11,7 @@ Env is pointed at a throwaway registry + cache root before importing the modules
 so nothing touches the real config/ or caches/.
 """
 import io
+import json
 import os
 import subprocess
 import sys
@@ -20,9 +21,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # webui/ → `app` importable
 
-# Throwaway registry must be set BEFORE importing the modules (they read it on import).
+# Throwaway registry + users store must be set BEFORE importing the modules (they
+# read the paths on demand). An empty users store with no root = auth disabled, so
+# these config/reads/ops tests exercise the routes with enforcement OFF (its own
+# suite in test_ownership covers enforcement ON).
 _TMP = tempfile.mkdtemp()
 os.environ["PKGCACHE_PROJECTS"] = str(Path(_TMP) / "projects.json")
+os.environ["UI_USERS"] = str(Path(_TMP) / "users.json")
 
 from app.services import projects  # noqa: E402
 
@@ -42,32 +47,41 @@ class MultiProjectTests(unittest.TestCase):
         self.rec = projects.create("proja")
         self.repo = projects.repo_dir("proja")
 
-    def test_endpoints_use_project_prefix_on_shared_ports(self):
+    def test_endpoints_use_project_prefix_on_the_unified_port(self):
         ep = config.endpoints("proja")
-        # Endpoints are {url, note} data now (the console renders them). Projects share
-        # the default ports; the project rides a URL prefix (or the proxy username for
-        # apt). Global keeps its bare root URLs.
-        self.assertIn(":4873/proja/npm/", ep["npm"]["url"])
-        self.assertIn("/proja/pypi/root/pypi/+simple/", ep["pip"]["url"])
-        self.assertIn("/proja/git/", ep["git"]["url"])
-        self.assertIn("proja@", ep["apt"]["url"])               # proxy username
-        self.assertIn(":5000/proja", ep["docker"]["url"])       # project in image name
-        self.assertIn(":4873/", config.endpoints("global")["npm"]["url"])
-        self.assertNotIn("/proja/", config.endpoints("global")["npm"]["url"])
+        # Endpoints are {url, note, setup} data (the console renders them). Everything
+        # HTTPS shares the ONE unified port; the project rides a URL prefix (the image
+        # name for docker, the proxy username for apt). Global is the literal project
+        # `global`, fully qualified like any other.
+        self.assertIn(":8443/proja/npm/", ep["npm"]["url"])
+        self.assertIn(":8443/proja/pypi/root/pypi/+simple/", ep["pip"]["url"])
+        self.assertIn(":8443/proja/git/", ep["git"]["url"])
+        self.assertIn("proja@", ep["apt"]["url"])                 # proxy username
+        self.assertIn(":3142", ep["apt"]["url"])                  # apt keeps its own port
+        self.assertIn(":8443/proja/dockerhub", ep["docker"]["url"])  # project in image name
+        g = config.endpoints("global")
+        self.assertIn(":8443/global/npm/", g["npm"]["url"])
+        self.assertIn(":8443/dockerhub", g["docker"]["url"])      # no image-name prefix
+        self.assertNotIn("@", g["apt"]["url"])                    # no proxy username
+        # Every eco ships copy-paste setup instructions.
+        for eco, entry in ep.items():
+            self.assertTrue(entry.get("setup"), f"{eco} has no setup lines")
 
     def test_progress_and_health_sources_scoped(self):
         ps = config.progress_sources("proja")
         hs = config.health_sources("proja")
-        # Progress is per-project (per-core), reached by prefix on the shared port.
-        self.assertEqual(ps["npm"], "https://pkgcache:4873/proja/npm/-/progress")
-        self.assertEqual(ps["docker"], "https://pkgcache:5000/v2/proja/_progress")
+        # Progress is per-project (per-core), via the uniform admin prefix on the
+        # unified port (apt on its own plain-HTTP port).
+        self.assertEqual(ps["npm"], "https://pkgcache:8443/proja/npm/-/progress")
+        self.assertEqual(ps["docker"], "https://pkgcache:8443/proja/oci/v2/_progress")
         self.assertEqual(ps["apt"], "http://pkgcache:3142/proja/apt/acng-progress")
         self.assertTrue(ps["docker"].startswith("https://"))
         self.assertTrue(ps["apt"].startswith("http://"))
-        # Health is per-SERVER now (projects share one process per role): the global
-        # endpoints answer for every project.
-        self.assertEqual(hs, config.health_sources("global"))
-        self.assertEqual(hs["apt"], "http://pkgcache:3142/healthz")
+        # Health probes the same uniform admin form, per project.
+        self.assertEqual(hs["apt"], "http://pkgcache:3142/proja/apt/healthz")
+        self.assertEqual(hs["npm"], "https://pkgcache:8443/proja/npm/healthz")
+        self.assertEqual(config.health_sources("global")["npm"],
+                         "https://pkgcache:8443/global/npm/healthz")
 
     def test_packages_read_through_the_ledger_gateway_scoped(self):
         # reads.packages now fetches pkgcache's /+ledger/artifacts (per project+eco)
@@ -107,14 +121,14 @@ class MultiProjectTests(unittest.TestCase):
         try:
             pkgcache.ledger_artifacts("proja", "npm")
             self.assertEqual(
-                seen["url"].split("?")[0], "https://pkgcache:4873/proja/npm/+ledger/artifacts")
+                seen["url"].split("?")[0], "https://pkgcache:8443/proja/npm/+ledger/artifacts")
             pkgcache.ledger_artifacts("proja", "apk")
             base, query = seen["url"].split("?")
             self.assertEqual(base, "http://pkgcache:3142/proja/apt/+ledger/artifacts")
             self.assertIn("eco=apk", query)
             pkgcache.ledger_artifacts("global", "docker")
             self.assertEqual(
-                seen["url"].split("?")[0], "https://pkgcache:5000/+ledger/artifacts")
+                seen["url"].split("?")[0], "https://pkgcache:8443/global/oci/+ledger/artifacts")
         finally:
             pkgcache._fetch_ledger = orig
 
@@ -340,24 +354,26 @@ class PrefixRoutingFixTests(unittest.TestCase):
 
     def test_files_proxy_target_carries_project_prefix(self):
         from app.gateways import pkgcache
-        # Global keeps the bare root path; a named project is prefixed — without
-        # this, a console upload for proja lands in the GLOBAL files tree.
-        self.assertEqual(pkgcache.files_target("global", "a/b.txt"), "/a/b.txt")
+        # Every project INCLUDING global is fully qualified on the unified port —
+        # without the prefix, a console upload for proja lands in the GLOBAL tree.
+        self.assertEqual(pkgcache.files_target("global", "a/b.txt"), "/global/files/a/b.txt")
         self.assertEqual(pkgcache.files_target("proja", "a/b.txt"), "/proja/files/a/b.txt")
         self.assertEqual(
             pkgcache.files_target("proja", "a/b.txt", overwrite=True),
             "/proja/files/a/b.txt?overwrite=1",
         )
         # Path segments are quoted; the separator survives.
-        self.assertEqual(pkgcache.files_target("global", "dir/a b.txt"), "/dir/a%20b.txt")
+        self.assertEqual(pkgcache.files_target("global", "dir/a b.txt"),
+                         "/global/files/dir/a%20b.txt")
         with self.assertRaises(projects.ProjectError):
             pkgcache.files_target("ghost", "a.txt")
 
     def test_git_maintain_url_carries_project_prefix(self):
         # Checkpoint's mirror repack must hit THIS project's git sub-app, not global's.
-        self.assertEqual(ops._git_maintain_url("global"), "https://pkgcache:3143/+maintain")
+        self.assertEqual(ops._git_maintain_url("global"),
+                         "https://pkgcache:8443/global/git/+maintain")
         self.assertEqual(ops._git_maintain_url("proja"),
-                         "https://pkgcache:3143/proja/git/+maintain")
+                         "https://pkgcache:8443/proja/git/+maintain")
         with self.assertRaises(projects.ProjectError):
             ops._git_maintain_url("ghost")
 
@@ -376,16 +392,25 @@ class PrefixRoutingFixTests(unittest.TestCase):
 
 class _FakeHandler:
     """Stand-in for the BaseHTTPRequestHandler so dispatch() can be driven without a
-    socket: captures the response, feeds a JSON body, and carries the wired services."""
+    socket: captures the response, feeds a JSON body, and carries the wired services.
+    Auth is disabled here (no root, empty store), so the authorization guards are no-
+    ops and these tests see the pre-auth behaviour."""
 
     def __init__(self, body=b"", jobs=None, live=None, reads=None):
+        from app.gateways import users
+        from app.services.accounts import Accounts
+        from app.services.passwords import PasswordHasher
+        from app.services.sessions import Sessions
         self.jobs, self.live, self.reads = jobs, live, reads
+        self.accounts = Accounts(users, PasswordHasher(), None, None)  # disabled
+        self.sessions = Sessions(ttl=100)
+        self.client_address = ("127.0.0.1", 0)
         self.headers = {"Content-Length": str(len(body))}
         self.rfile = io.BytesIO(body)
         self.sent = None       # (code, obj) from send_json
         self.downloaded = None  # (path, filename) from send_download
 
-    def send_json(self, obj, code=200):
+    def send_json(self, obj, code=200, headers=None):
         self.sent = (code, obj)
 
     def send_download(self, path, filename):
@@ -433,6 +458,77 @@ class DispatchContractTests(unittest.TestCase):
         self.assertTrue(routes.dispatch(h, "DELETE", "/api/projects/keeper"))
         self.assertEqual(h.sent[0], 200)
         self.assertFalse(projects.exists("keeper"))
+
+
+class ProjectModeTests(unittest.TestCase):
+    """POST /api/projects/<name>/mode flips ONE project's soft offline flag in the
+    registry — the pkgcache supervisor picks it up on its next poll. Distinct from
+    the instance-wide `mode` job (container recreate)."""
+
+    def setUp(self):
+        projects.save_registry({"projects": {}, "tokens": {}})
+
+    def _post(self, name, target):
+        h = _FakeHandler(body=json.dumps({"target": target}).encode())
+        self.assertTrue(routes.dispatch(h, "POST", f"/api/projects/{name}/mode"))
+        return h.sent
+
+    def test_offline_then_online_round_trip(self):
+        projects.create("proja")
+        code, obj = self._post("proja", "offline")
+        self.assertEqual((code, obj), (200, {"name": "proja", "offline": True}))
+        self.assertTrue(projects.is_offline("proja"))
+        code, obj = self._post("proja", "online")
+        self.assertEqual((code, obj), (200, {"name": "proja", "offline": False}))
+        self.assertFalse(projects.is_offline("proja"))
+
+    def test_global_is_a_valid_target(self):
+        code, obj = self._post("global", "offline")
+        self.assertEqual((code, obj), (200, {"name": "global", "offline": True}))
+
+    def test_bad_target_is_a_400(self):
+        projects.create("proja")
+        code, obj = self._post("proja", "sideways")
+        self.assertEqual(code, 400)
+        self.assertIn("error", obj)
+        self.assertFalse(projects.is_offline("proja"))
+
+    def test_unknown_project_is_a_400(self):
+        code, obj = self._post("ghost", "offline")
+        self.assertEqual(code, 400)
+        self.assertIn("error", obj)
+
+
+class OriginGuardTests(unittest.TestCase):
+    """The CSRF Origin check on mutating requests compares HOSTNAMES, so a reverse
+    proxy that rewrites the Host (nginx `$host` drops the port while the browser's
+    Origin keeps it) doesn't wrongly reject same-site requests — but a genuinely
+    cross-site Origin is still refused."""
+
+    def _post(self, origin=None, host=None):
+        h = _FakeHandler(body=b'{"username":"x","password":"y"}')
+        if origin is not None:
+            h.headers["Origin"] = origin
+        if host is not None:
+            h.headers["Host"] = host
+        routes.dispatch(h, "POST", "/api/login")
+        return h.sent
+
+    def test_absent_origin_allowed(self):
+        # A non-browser client (curl) sends no Origin — no CSRF vector, so allow it.
+        code, _ = self._post(host="cache:8088")
+        self.assertNotEqual(code, 403)
+
+    def test_same_hostname_different_port_allowed(self):
+        # The real bug: browser Origin carries :8088, nginx forwarded Host without it.
+        code, obj = self._post(origin="http://cache:8088", host="cache")
+        self.assertNotEqual(code, 403)
+        self.assertNotIn("cross-origin", obj.get("error", ""))
+
+    def test_cross_host_refused(self):
+        code, obj = self._post(origin="http://evil.example", host="cache:8088")
+        self.assertEqual(code, 403)
+        self.assertIn("cross-origin", obj["error"])
 
 
 if __name__ == "__main__":

@@ -43,11 +43,15 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(p.ProjectError):
             p.create(p.GLOBAL)
 
-    def test_all_projects_share_the_default_ports(self):
+    def test_all_projects_share_the_two_ports(self):
         p = self.projects
         rec = p.create("proja")
         self.assertEqual(rec["ports"], p.ROLE_PORT)
         self.assertEqual(p.ports("proja"), p.ROLE_PORT)
+        # Everything HTTPS is the ONE unified port; apt keeps its plain-HTTP port.
+        self.assertEqual({p.ROLE_PORT[r] for r in ("oci", "npm", "pypi", "git", "files")},
+                         {p.UNIFIED_PORT})
+        self.assertEqual(p.ROLE_PORT["apt"], p.APT_PORT)
 
     def test_create_persists_name_only_entry(self):
         p = self.projects
@@ -58,12 +62,14 @@ class RegistryTests(unittest.TestCase):
 
     def test_role_prefix_scheme(self):
         p = self.projects
-        # Global has no prefix; named projects take a per-role path prefix, except
-        # OCI (project rides the image name under the fixed /v2 root).
-        self.assertEqual(p.role_prefix(p.GLOBAL, "npm"), "")
+        # Uniform for every role and project, global included: /<project>/<role>.
+        # (For oci/apt this is the internal admin surface; their client protocols
+        # carry the project in the image name / proxy username instead.)
+        self.assertEqual(p.role_prefix(p.GLOBAL, "npm"), "/global/npm")
         self.assertEqual(p.role_prefix("proja", "npm"), "/proja/npm")
         self.assertEqual(p.role_prefix("proja", "pypi"), "/proja/pypi")
-        self.assertEqual(p.role_prefix("proja", "oci"), "/v2/proja")
+        self.assertEqual(p.role_prefix("proja", "oci"), "/proja/oci")
+        self.assertEqual(p.role_prefix(None, "files"), "/global/files")
 
     def test_write_tokens_rotate_persist_and_clean_up(self):
         p = self.projects
@@ -86,6 +92,47 @@ class RegistryTests(unittest.TestCase):
         self.assertTrue(p.has_write_token("proja"))
         p.delete("proja")
         self.assertFalse(p.has_write_token("proja"))
+
+    def test_offline_flag_set_clear_and_persist(self):
+        p = self.projects
+        p.create("proja")
+        self.assertFalse(p.is_offline("proja"))
+        self.assertEqual(p.set_offline("proja", True), {"name": "proja", "offline": True})
+        self.assertTrue(p.is_offline("proja"))
+        stored = json.loads(Path(os.environ["PKGCACHE_PROJECTS"]).read_text())
+        self.assertEqual(stored["offline"], {"proja": True})
+        # Stored sparsely: clearing removes the entry rather than writing false.
+        p.set_offline("proja", False)
+        self.assertFalse(p.is_offline("proja"))
+        stored = json.loads(Path(os.environ["PKGCACHE_PROJECTS"]).read_text())
+        self.assertEqual(stored["offline"], {})
+
+    def test_offline_flag_scopes_to_one_project(self):
+        p = self.projects
+        p.create("proja")
+        p.create("projb")
+        p.set_offline("proja", True)
+        by_name = {rec["name"]: rec["offline"] for rec in p.list_projects()}
+        self.assertEqual(by_name, {"global": False, "proja": True, "projb": False})
+
+    def test_offline_flag_for_global(self):
+        p = self.projects
+        p.set_offline(p.GLOBAL, True)
+        self.assertTrue(p.is_offline(p.GLOBAL))
+        self.assertTrue(p.list_projects()[0]["offline"])
+
+    def test_offline_unknown_project_rejected(self):
+        p = self.projects
+        with self.assertRaises(p.ProjectError):
+            p.set_offline("ghost", True)
+
+    def test_delete_clears_offline_flag(self):
+        p = self.projects
+        p.create("proja")
+        p.set_offline("proja", True)
+        p.delete("proja")
+        stored = json.loads(Path(os.environ["PKGCACHE_PROJECTS"]).read_text())
+        self.assertEqual(stored.get("offline", {}), {})
 
     def test_create_makes_cache_subdirs(self):
         p = self.projects

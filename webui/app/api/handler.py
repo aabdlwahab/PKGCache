@@ -11,13 +11,15 @@ from http.server import BaseHTTPRequestHandler
 from app.api import routes
 
 
-def configure(jobs, live, reads):
+def configure(jobs, live, reads, sessions, accounts):
     """Wire the stateful services the controllers dispatch to (called once at startup
     by app.main). They live as class attributes so every request handler instance —
     and thus every Request — sees them, with no module-level singletons."""
     Handler.jobs = jobs
     Handler.live = live
     Handler.reads = reads
+    Handler.sessions = sessions
+    Handler.accounts = accounts
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -25,15 +27,19 @@ class Handler(BaseHTTPRequestHandler):
     jobs = None
     live = None
     reads = None
+    sessions = None
+    accounts = None
 
     def log_message(self, *_):  # quiet
         pass
 
-    def send_json(self, obj, code=200):
+    def send_json(self, obj, code=200, headers=None):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for name, value in headers or ():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -56,6 +62,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not routes.dispatch(self, "POST", self.path):
+            self.send_error(404)
+
+    def do_PATCH(self):
+        if not routes.dispatch(self, "PATCH", self.path):
             self.send_error(404)
 
     def do_DELETE(self):

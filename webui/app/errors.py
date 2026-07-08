@@ -27,3 +27,17 @@ class ApiError(Exception):
 class OpError(ApiError):
     """A bad request (failed validation) or a failed step in a cache operation.
     Maps to 400. The operator CLI (scripts/pkgops.py) also catches this by type."""
+
+
+class AuthError(ApiError):
+    """The caller is not authenticated (no/invalid session) — a 401. Also carries the
+    login-throttle rejection (pass status=429)."""
+
+    status = 401
+
+
+class ForbiddenError(ApiError):
+    """The caller is authenticated but not allowed to perform this action (wrong role
+    or not the target's manager) — a 403."""
+
+    status = 403

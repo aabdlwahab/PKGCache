@@ -19,6 +19,24 @@ MANIFESTS = CACHE_REPO / "manifests"
 HOST = os.environ.get("UI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("UI_PORT", "8088"))
 
+# ---- auth (Phase 2) ------------------------------------------------------
+# The break-glass superuser: verified from the environment at login and NEVER
+# written to the users store. Account management creates ordinary stored accounts;
+# this one is the always-present root that can't be demoted, deleted, or shadowed.
+# Unset → no root (auth is effectively unconfigured until a superuser exists).
+ROOT_USER = os.environ.get("UI_ROOT_USER") or None
+ROOT_PASSWORD = os.environ.get("UI_ROOT_PASSWORD") or None
+
+# Opaque server-side session: an HttpOnly cookie carrying a random token the webui
+# maps to a username in memory (a restart logs everyone out — acceptable for an ops
+# console, and it keeps sessions instantly revocable with no signing-key handling).
+SESSION_COOKIE = "pkgcache_session"
+SESSION_TTL = int(os.environ.get("UI_SESSION_TTL", str(12 * 3600)))  # seconds
+
+# Mark the session cookie Secure once the console terminates TLS (Phase 5). Off by
+# default so the cookie survives today's plain-HTTP console hop.
+COOKIE_SECURE = os.environ.get("UI_COOKIE_SECURE", "0").strip().lower() in {"1", "true", "yes", "on"}
+
 # The seven UI ecosystem labels (apt + apk share the apt subdir/ledger). The
 # canonical eco→(subdir, ecosystem) mapping is app.manifest.ECOS.
 ECOS = ("docker", "npm", "pip", "apt", "apk", "git", "files")
