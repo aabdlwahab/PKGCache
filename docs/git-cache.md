@@ -1,6 +1,7 @@
 # Caching git repositories
 
-The `git` role is a **mirror-and-serve** smart-HTTP git server (port `3143`, HTTPS).
+The `git` role is a **mirror-and-serve** smart-HTTP git server (on the unified
+HTTPS port `8443`, under `/<project>/git/…`).
 Unlike the other ecosystems it can't byte-cache responses — a git fetch is a
 negotiation — so it keeps a real bare mirror on disk (`git clone --mirror`),
 revalidates it online, and serves `git upload-pack` from it. Offline it serves the
@@ -14,12 +15,12 @@ CPM/FetchContent, vcpkg ports, submodules, ansible roles.
 Put the **real upstream host** in the path:
 
 ```
-https://<cache-host>:3143/<upstream-host>/<owner>/<repo>.git
+https://<cache-host>:8443/<project>/git/<upstream-host>/<owner>/<repo>.git
 ```
 
 ```bash
-git clone https://cache.local:3143/github.com/pallets/click.git
-git clone https://cache.local:3143/gitlab.com/group/project.git
+git clone https://cache.local:8443/global/git/github.com/pallets/click.git
+git clone https://cache.local:8443/global/git/gitlab.com/group/project.git
 ```
 
 ## Transparent adoption (recommended)
@@ -29,8 +30,8 @@ including submodules, `pip`'s `git+https` deps, and CPM — routes through the c
 with no per-project changes:
 
 ```bash
-git config --global url."https://cache.local:3143/github.com/".insteadOf "https://github.com/"
-git config --global url."https://cache.local:3143/gitlab.com/".insteadOf  "https://gitlab.com/"
+git config --global url."https://cache.local:8443/global/git/github.com/".insteadOf "https://github.com/"
+git config --global url."https://cache.local:8443/global/git/gitlab.com/".insteadOf  "https://gitlab.com/"
 ```
 
 ## Trusting the cache CA
@@ -39,12 +40,12 @@ The cache serves HTTPS with the private CA from `scripts/gen-certs.sh`. Point gi
 
 ```bash
 # per user (covers all repos):
-git config --global http."https://cache.local:3143/".sslCAInfo /path/to/certs/ca.crt
+git config --global http."https://cache.local:8443/".sslCAInfo /path/to/certs/ca.crt
 # or install certs/ca.crt into the system trust store (update-ca-certificates /
 # update-ca-trust) and no git config is needed.
 ```
 
-CI one-liner: `GIT_SSL_CAINFO=certs/ca.crt git clone https://cache.local:3143/github.com/…`.
+CI one-liner: `GIT_SSL_CAINFO=certs/ca.crt git clone https://cache.local:8443/global/git/github.com/…`.
 
 ## Behavior
 

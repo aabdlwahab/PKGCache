@@ -13,36 +13,36 @@ Unlike the old Docker-Hub-only registry mirror, zot caches **any** registry — 
 trade-off is that you reference images **through** zot by prefixing a per-upstream
 destination, so there's no transparent `daemon.json` `registry-mirrors` mode.
 
-All client URLs are **HTTPS**: a Caddy reverse proxy (the `tls-proxy` service)
-terminates TLS on `:5000` / `:4873` / `:3141` using the cert from
-`scripts/gen-certs.sh`, then forwards to the backends internally. So clients get a
-trusted connection with no per-tool insecure flags — after a one-time CA install,
-see [Trusting the cache](#trusting-the-cache). (apt-cacher-ng on `:3142` stays
-plain HTTP — it's a proxy, not a server; details in its section below.)
+All client URLs are **HTTPS** on the ONE unified port `:8443` — docker at `/v2/…`,
+pip/npm/git/files at `/<project>/<role>/…` (`global` is the default project) — with
+TLS terminated in-process using the cert from `scripts/gen-certs.sh`. So clients get
+a trusted connection with no per-tool insecure flags — after a one-time CA install,
+see [Trusting the cache](#trusting-the-cache). (The apt/apk forward proxy on `:3142`
+stays plain HTTP — it's a proxy, not a server; details in its section below.)
 
 Throughout, `CACHE_HOST` = the machine running the cache (`localhost` if it's the
 same box, otherwise its IP/hostname).
 
 ## How to reference an image
 
-Pull `CACHE_HOST:5000/<destination>/<upstream-repo>:<tag>`, where `<destination>`
+Pull `CACHE_HOST:8443/<destination>/<upstream-repo>:<tag>`, where `<destination>`
 selects the upstream:
 
 | Upstream registry | Pull through zot as                          |
 | ----------------- | -------------------------------------------- |
-| `docker.io`       | `CACHE_HOST:5000/dockerhub/<repo>`           |
-| `ghcr.io`         | `CACHE_HOST:5000/ghcr/<repo>`                |
-| `quay.io`         | `CACHE_HOST:5000/quay/<repo>`                |
+| `docker.io`       | `CACHE_HOST:8443/dockerhub/<repo>`           |
+| `ghcr.io`         | `CACHE_HOST:8443/ghcr/<repo>`                |
+| `quay.io`         | `CACHE_HOST:8443/quay/<repo>`                |
 
 ```dockerfile
 # docker.io/library/ubuntu:22.04
-FROM CACHE_HOST:5000/dockerhub/library/ubuntu:22.04
+FROM CACHE_HOST:8443/dockerhub/library/ubuntu:22.04
 
 # docker.io/verdaccio/verdaccio:6   (user/org images keep their namespace)
-FROM CACHE_HOST:5000/dockerhub/verdaccio/verdaccio:6
+FROM CACHE_HOST:8443/dockerhub/verdaccio/verdaccio:6
 
 # ghcr.io/astral-sh/uv:python3.12-bookworm-slim
-FROM CACHE_HOST:5000/ghcr/astral-sh/uv:python3.12-bookworm-slim
+FROM CACHE_HOST:8443/ghcr/astral-sh/uv:python3.12-bookworm-slim
 ```
 
 Official Docker Hub images live under `library/`, so Hub's `ubuntu` is
@@ -70,13 +70,13 @@ across the air gap; the `.key` files never leave the cache host.
   ```
 
   Docker reads the system store; restart the daemon after installing. (No-restart
-  alternative: drop the CA at `/etc/docker/certs.d/CACHE_HOST:5000/ca.crt`.)
+  alternative: drop the CA at `/etc/docker/certs.d/CACHE_HOST:8443/ca.crt`.)
 
 - **`docker buildx` with a `docker-container` driver** (its own BuildKit, ignores
   the host store) — point it at the CA in `buildkitd.toml`:
 
   ```toml
-  [registry."CACHE_HOST:5000"]
+  [registry."CACHE_HOST:8443"]
     ca = ["/etc/buildkit/ca.crt"]
   ```
 
@@ -98,13 +98,13 @@ serving from storage), so nothing changes across the gap. To keep upstream refs
 swappable, parameterize the prefix:
 
 ```dockerfile
-ARG REGISTRY=CACHE_HOST:5000/dockerhub
+ARG REGISTRY=CACHE_HOST:8443/dockerhub
 FROM ${REGISTRY}/library/ubuntu:22.04
 ```
 
 ```bash
 # through the cache:
-docker build --build-arg REGISTRY=CACHE_HOST:5000/dockerhub -t myapp .
+docker build --build-arg REGISTRY=CACHE_HOST:8443/dockerhub -t myapp .
 # straight from Docker Hub (no cache):
 docker build --build-arg REGISTRY=docker.io -t myapp .
 ```
@@ -113,10 +113,10 @@ docker build --build-arg REGISTRY=docker.io -t myapp .
 
 ```bash
 # Repos zot has stored (namespaced by destination):
-curl -s --cacert certs/ca.crt https://CACHE_HOST:5000/v2/_catalog
+curl -s --cacert certs/ca.crt https://CACHE_HOST:8443/v2/_catalog
 
 # Tags cached for one repo:
-curl -s --cacert certs/ca.crt https://CACHE_HOST:5000/v2/dockerhub/library/ubuntu/tags/list
+curl -s --cacert certs/ca.crt https://CACHE_HOST:8443/v2/dockerhub/library/ubuntu/tags/list
 ```
 
 On the online side, pull an image once, then re-run with upstream blocked — it
@@ -133,10 +133,10 @@ the other three proxies:
 
 | Ecosystem      | Proxy endpoint                                          |
 | -------------- | ------------------------------------------------------- |
-| pip (PyPI)     | `https://CACHE_HOST:3141/root/pypi/+simple/`            |
-| pip (PyTorch)  | `https://CACHE_HOST:3141/root/pytorch-cu124/+simple/`   |
-|                | `https://CACHE_HOST:3141/root/pytorch-cpu/+simple/`     |
-| npm            | `https://CACHE_HOST:4873/`                              |
+| pip (PyPI)     | `https://CACHE_HOST:8443/global/pypi/root/pypi/+simple/`            |
+| pip (PyTorch)  | `https://CACHE_HOST:8443/global/pypi/root/pytorch-cu124/+simple/`   |
+|                | `https://CACHE_HOST:8443/global/pypi/root/pytorch-cpu/+simple/`     |
+| npm            | `https://CACHE_HOST:8443/global/npm/`                              |
 | apt            | `http://CACHE_HOST:3142/`                               |
 | apk            | `http://CACHE_HOST:3142/` (via apt-cacher-ng)           |
 
@@ -186,7 +186,7 @@ as env vars apply to every `pip install` in the build:
 ```dockerfile
 ARG CACHE_HOST=localhost
 COPY ca.crt /usr/local/share/ca-certificates/package-cache.crt
-ENV PIP_INDEX_URL=https://${CACHE_HOST}:3141/root/pypi/+simple/ \
+ENV PIP_INDEX_URL=https://${CACHE_HOST}:8443/global/pypi/root/pypi/+simple/ \
     PIP_CERT=/usr/local/share/ca-certificates/package-cache.crt
 
 RUN pip install --no-cache-dir requests numpy
@@ -199,7 +199,7 @@ docker build --network=host --build-arg CACHE_HOST=localhost -t myapp .
 
 `PIP_CERT` points pip at the private CA so it *trusts* the HTTPS index (replaces
 the old `--trusted-host`, which instead disabled the check). Per-command form:
-`pip install --index-url https://CACHE_HOST:3141/root/pypi/+simple/ --cert ca.crt ...`.
+`pip install --index-url https://CACHE_HOST:8443/global/pypi/root/pypi/+simple/ --cert ca.crt ...`.
 
 ### uv (lockfile-aware)
 
@@ -207,10 +207,10 @@ the old `--trusted-host`, which instead disabled the check). Per-command form:
 and a `uv.lock` adds a sharp edge worth knowing.
 
 ```dockerfile
-FROM CACHE_HOST:5000/ghcr/astral-sh/uv:python3.12-bookworm-slim
+FROM CACHE_HOST:8443/ghcr/astral-sh/uv:python3.12-bookworm-slim
 ARG CACHE_HOST=localhost
 COPY ca.crt /usr/local/share/ca-certificates/package-cache.crt
-ENV UV_INDEX_URL=https://${CACHE_HOST}:3141/root/pypi/+simple/ \
+ENV UV_INDEX_URL=https://${CACHE_HOST}:8443/global/pypi/root/pypi/+simple/ \
     SSL_CERT_FILE=/usr/local/share/ca-certificates/package-cache.crt
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked          # NOT --frozen (see below)
@@ -263,7 +263,7 @@ tarnish either way:
 
 ```bash
 # the lock must never reference the mirror:
-! grep -qE ':3141|CACHE_HOST|/root/pypi/' uv.lock
+! grep -qE ':8443|CACHE_HOST|/root/pypi/' uv.lock
 # a sync must not have modified the lock:
 uv sync --locked && git diff --exit-code uv.lock
 ```
@@ -316,14 +316,14 @@ whereas `UV_INDEX_URL`'s effect on the `--locked` freshness check has shifted
 across uv versions (see the caveat above). One unified, consistent block:
 
 ```dockerfile
-FROM CACHE_HOST:5000/ghcr/astral-sh/uv:python3.12-bookworm-slim
+FROM CACHE_HOST:8443/ghcr/astral-sh/uv:python3.12-bookworm-slim
 ARG CACHE_HOST=localhost
 COPY ca.crt /usr/local/share/ca-certificates/package-cache.crt
 RUN update-ca-certificates
 ENV UV_NATIVE_TLS=true \
-    UV_INDEX="pypi=https://${CACHE_HOST}:3141/root/pypi/+simple/ \
-pytorch-cpu=https://${CACHE_HOST}:3141/root/pytorch-cpu/+simple/ \
-pytorch-cuda=https://${CACHE_HOST}:3141/root/pytorch-cu124/+simple/"
+    UV_INDEX="pypi=https://${CACHE_HOST}:8443/global/pypi/root/pypi/+simple/ \
+pytorch-cpu=https://${CACHE_HOST}:8443/global/pypi/root/pytorch-cpu/+simple/ \
+pytorch-cuda=https://${CACHE_HOST}:8443/global/pypi/root/pytorch-cu124/+simple/"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --extra gpu --locked       # NOT --frozen
 ```
@@ -343,7 +343,7 @@ RUN uv sync --extra gpu --locked       # NOT --frozen
   tarnishes the lock, same as adding devpi there). Keep the override in the
   environment. The CI guards above also catch a `download.pytorch.org` → mirror
   rewrite if you extend the grep:
-  `! grep -qE ':3141|CACHE_HOST|/root/(pypi|pytorch)' uv.lock`.
+  `! grep -qE ':8443|CACHE_HOST|/root/(pypi|pytorch)' uv.lock`.
 
 > First online `uv sync` of a CUDA build pulls multi-GB wheels (torch + the full
 > `nvidia-*` set) through devpi — expect `caches/pip` to grow accordingly, and give
@@ -357,7 +357,7 @@ Point npm at Verdaccio over HTTPS and give it the CA via `NODE_EXTRA_CA_CERTS`
 ```dockerfile
 ARG CACHE_HOST=localhost
 COPY ca.crt /usr/local/share/ca-certificates/package-cache.crt
-ENV NPM_CONFIG_REGISTRY=https://${CACHE_HOST}:4873/
+ENV NPM_CONFIG_REGISTRY=https://${CACHE_HOST}:8443/global/npm/
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/package-cache.crt
 RUN npm install
 ```

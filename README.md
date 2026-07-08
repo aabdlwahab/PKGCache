@@ -13,10 +13,11 @@ fetched once is stored under `caches/`, versioned in its **own git + DVC repo**,
 shuttled across an air gap as **deltas only**, with a per-ecosystem **SQLite ledger**
 recording exactly what each checkpoint contains.
 
-The same instance can serve **one or many isolated projects** — each with its own
-URLs (a project prefix on the shared role ports, not a port per project), its own
-cache tree, and its own git + DVC repo — from a single always-on process, with no
-container-per-project sprawl.
+Everything HTTPS lives on **one port** (`:8443`): docker at `/v2/…`, the rest at
+`/<project>/<role>/…` — plus the apt/apk plain-HTTP proxy on `:3142`. The same
+instance serves **one or many isolated projects** — each with its own URL prefix,
+its own cache tree, and its own git + DVC repo — from a single always-on process,
+with no container-per-project sprawl and no per-project ports.
 
 An operator **console** (React + TypeScript) sits on top: browse cache contents,
 watch live downloads, see usage **statistics** (per-ecosystem leaderboards, hit
@@ -41,18 +42,18 @@ Air-gapped host: `OFFLINE=1 docker compose --profile offline --profile ui up -d`
 
 ```bash
 # docker  (dockerhub | ghcr | quay; official images are under library/)
-sudo openssl s_client -showcerts -connect 172.17.21.107:5000 </dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /etc/docker/certs.d/172.17.21.107:5000/ca.crt > /dev/null
+sudo openssl s_client -showcerts -connect 172.17.21.107:8443 </dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /etc/docker/certs.d/172.17.21.107:8443/ca.crt > /dev/null
 
-docker pull HOST:5000/dockerhub/library/python:3.12-slim
+docker pull HOST:8443/dockerhub/library/python:3.12-slim
 
 # pip     (root/pypi, or root/pytorch-cu124 etc. for PyTorch wheels)
-pip install --index-url https://HOST:3141/root/pypi/+simple/ --trusted-host HOST numpy
+pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --trusted-host HOST numpy
 
 # uv
-UV_INDEX_URL=https://HOST:3141/root/pypi/+simple/ uv pip install  --trusted-host Host numpy
+UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ uv pip install  --trusted-host Host numpy
 
 # npm
-npm install --registry https://HOST:4873/ --strict-ssl=false left-pad
+npm install --registry https://HOST:8443/global/npm/ --strict-ssl=false left-pad
 
 # apt     (forward proxy — keep http mirror lines)
 echo 'Acquire::http::Proxy "http://HOST:3142";' | sudo tee /etc/apt/apt.conf.d/01proxy
@@ -61,17 +62,17 @@ echo 'Acquire::http::Proxy "http://HOST:3142";' | sudo tee /etc/apt/apt.conf.d/0
 http_proxy=http://HOST:3142 apk add --no-cache curl
 
 # git     (mirror-and-serve; real upstream host in the path — read-only)
-git clone https://HOST:3143/github.com/pallets/click.git
-#   transparent: git config --global url."https://HOST:3143/github.com/".insteadOf "https://github.com/"
+git clone https://HOST:8443/global/git/github.com/pallets/click.git
+#   transparent: git config --global url."https://HOST:8443/global/git/github.com/".insteadOf "https://github.com/"
 
 # files   (generic artifacts — wget to download; PUT with the write token to upload)
-wget --ca-certificate=certs/ca.crt https://HOST:3144/builds/v1.2/app.tar.gz
-curl --cacert certs/ca.crt -T app.tar.gz -H "Authorization: Bearer $TOKEN" https://HOST:3144/builds/v1.2/app.tar.gz
+wget --ca-certificate=certs/ca.crt https://HOST:8443/global/files/builds/v1.2/app.tar.gz
+curl --cacert certs/ca.crt -T app.tar.gz -H "Authorization: Bearer $TOKEN" https://HOST:8443/global/files/builds/v1.2/app.tar.gz
 ```
 
 For a **named project**, keep the same port and add the project prefix — for
 npm/pip/git/files a `/<project>/<role>/…` path segment, for Docker the project is
-the first segment of the image name (`HOST:5000/<project>/dockerhub/…`), and for
+the first segment of the image name (`HOST:8443/<project>/dockerhub/…`), and for
 apt/apk the project is the proxy username (`http://<project>@HOST:3142`). The exact
 per-project URLs are shown in the console. Full client recipes:
 [Pulling from the cache](#pulling-from-the-cache-per-ecosystem). Versioning + air-gap
@@ -98,12 +99,12 @@ docker compose --profile online --profile ui up -d  # cache (one process, 6 role
 
 | Tool | Point it at |
 |---|---|
-| docker | `<host>:5000/{dockerhub,ghcr,quay}/<image>` |
-| pip / uv | `--index-url https://<host>:3141/root/pypi/+simple/` |
-| npm | `--registry https://<host>:4873/` |
+| docker | `<host>:8443/{dockerhub,ghcr,quay}/<image>` |
+| pip / uv | `--index-url https://<host>:8443/global/pypi/root/pypi/+simple/` |
+| npm | `--registry https://<host>:8443/global/npm/` |
 | apt / apk | HTTP proxy `http://<host>:3142/` |
-| git | `https://<host>:3143/<upstream-host>/<owner>/<repo>.git` |
-| files | `wget https://<host>:3144/<path>` · upload `curl -T … -H "Authorization: Bearer <token>"` |
+| git | `https://<host>:8443/global/git/<upstream-host>/<owner>/<repo>.git` |
+| files | `wget https://<host>:8443/global/files/<path>` · upload `curl -T … -H "Authorization: Bearer <token>"` |
 
 The cache fills automatically on the first request for each package, and the
 console at **http://&lt;host&gt;:8088** shows it live (downloads, hit/miss feed, disk).
@@ -132,6 +133,20 @@ simply fails. Point the air-gapped build hosts at the same URLs.
 > Prefer the UI? The console drives checkpoint / export / import / rollback and the
 > online↔offline switch with a streaming job log — and creates/switches projects.
 > Everything the CLI does, it does too.
+
+A single project can also be taken offline on its own (the console's top-bar
+toggle, per selected project): a soft registry flag the cache process applies
+within ~5s, serving that one project cache-only while the others keep fetching.
+The instance-wide `OFFLINE=1` hard mode always wins while set. See
+[docs/multi-project.md](docs/multi-project.md#per-project-offline-soft-mode).
+
+**Accounts & ownership.** Set `UI_ROOT_USER`/`UI_ROOT_PASSWORD` on the webui to turn
+on the control-plane auth: a superuser/admin/user model where projects belong to an
+admin, only the owner (or a superuser) operates them, and a user sees their admin's
+projects. Enforcement is opt-in — until a root superuser is configured the console
+API stays open. This gates the *console API* only; the pkgcache pull ports remain
+open on a trusted network. See
+[docs/multi-project.md](docs/multi-project.md#auth--ownership).
 
 ---
 
@@ -184,7 +199,7 @@ Layered on top of that rewrite, the more recent changes are:
   console (see [docs/multi-project.md](docs/multi-project.md)).
 - **Live, no-downtime checkpoints.** Atomic writes let DVC hash the cache while the
   proxies keep serving — no quiesce, no stop/start.
-- **A git ecosystem** (5th role, port `3143`). Unlike the byte-cached ecosystems a
+- **A git ecosystem** (5th role, `/<project>/git/…` on the unified port). Unlike the byte-cached ecosystems a
   git fetch is a *negotiation*, so the git role is a **mirror-and-serve** smart-HTTP
   server: it keeps a local bare mirror (`git clone --mirror`), revalidates it online
   and serves `git upload-pack` from it offline — read-only, with Git LFS support and
@@ -216,10 +231,10 @@ flowchart LR
     gt["git clone / fetch"]
   end
 
-  subgraph image["pkgcache — ONE image, ONE process"]
+  subgraph image["pkgcache — ONE image, ONE process, TWO ports"]
     direction TB
-    g["global project\noci :5000 · npm :4873 · pypi :3141 · git :3143 · files :3144 (HTTPS)\napt :3142 (HTTP forward proxy)"]
-    p["project &lt;name&gt;\nSAME ports — reached by prefix:\n/&lt;name&gt;/&lt;role&gt;/… · /v2/&lt;name&gt;/… (oci) · &lt;name&gt;@ proxy user (apt)"]
+    g[":8443 unified (HTTPS)\n/v2/… (docker) · /&lt;project&gt;/{npm,pypi,git,files}/…\n(default project = global)"]
+    p[":3142 apt + apk (HTTP forward proxy)\nproject = proxy username"]
   end
 
   subgraph core["shared core (every role, every project)"]
@@ -239,11 +254,11 @@ flowchart LR
 
   dvc[("caches/  (global, its own git+DVC repo)\ncaches/projects/&lt;name&gt;/ (one repo each)\nblobs + ledger.db per eco")]
 
-  dk --> g & p
-  np --> g & p
-  pp --> g & p
-  at --> g & p
-  gt --> g & p
+  dk --> g
+  np --> g
+  pp --> g
+  at --> p
+  gt --> g
   g & p --> core
   core -->|"miss, online only"| ups
   st --> dvc
@@ -253,37 +268,39 @@ flowchart LR
   webui -->|"git · dvc · docker compose"| dvc
 ```
 
-TLS for the three HTTPS roles is **terminated in-process** from `./certs` (minted
-by `gen-certs.sh`) — there is no separate TLS proxy. apt/apk is a plain-HTTP
-forward proxy, so it is never TLS. Every project is reached on the **same** ports as
-global (distinguished by a URL prefix, not a port), so the one server cert covers
-them all — a new project needs no cert change and no new Docker `certs.d` entry.
+TLS is **terminated in-process** on the unified port from `./certs` (minted by
+`gen-certs.sh`) — there is no separate TLS proxy. apt/apk is a plain-HTTP forward
+proxy, so it is never TLS (proxy clients like busybox wget can't speak to a TLS
+proxy — that's why it keeps its own port). Every project shares the same two ports,
+so the one server cert and one Docker `certs.d/<host>:8443` entry cover global and
+every project — a new project needs no cert, port, or firewall change. Publish
+`443:8443` in compose for port-less docker URLs.
 
 ---
 
 ## Multi-project on one instance
 
-One central process serves a reserved **global** project on the default ports
-*plus* any number of named projects, each fully isolated. Projects are **not**
-separate ports — every project shares the six role ports and is distinguished by a
-URL prefix. Full design notes: [docs/multi-project.md](docs/multi-project.md).
+One central process serves any number of fully isolated projects on the same **two
+ports**; **global** is simply the reserved default project, addressed like any
+other. Full design notes: [docs/multi-project.md](docs/multi-project.md).
 
 | Aspect | Global project | Named project |
 |---|---|---|
-| npm / pip / git / files | root URLs on `4873 / 3141 / 3143 / 3144` | same ports, `/<name>/<role>/…` path prefix |
-| Docker (oci `5000`) | `5000/dockerhub/<image>` | `5000/<name>/dockerhub/<image>` (project in the image name) |
-| apt / apk (`3142`) | `http://HOST:3142` proxy | `http://<name>@HOST:3142` (project = proxy username) |
+| npm / pip / git / files | `:8443/global/<role>/…` | `:8443/<name>/<role>/…` |
+| Docker (`:8443`, at `/v2`) | `:8443/dockerhub/<image>` | `:8443/<name>/dockerhub/<image>` (project in the image name) |
+| apt / apk (`:3142`) | `http://HOST:3142` proxy | `http://<name>@HOST:3142` (project = proxy username) |
 | Cache tree | `caches/<eco>/` | `caches/projects/<name>/<eco>/` |
 | Version control | `caches/.git` + `.dvc` | `caches/projects/<name>/.git` + `.dvc` (its own repo) |
 | Shuttle | `shuttle/{out,in}/` | `shuttle/{out,in}/projects/<name>/` |
 | Registry entry | implicit (never stored) | `config/projects.json` |
 
-- **One process, one set of ports.** The instance never forks a process or container
-  per project, and a new project binds **no new socket** — a `RoleServer` per role
-  (`pkgcache/router.py`) dispatches each request to the right project's sub-app by
-  path / image-name / proxy-user, falling back to global. A supervisor in
-  `pkgcache/__main__.py` polls the registry and adds/drops project sub-apps live, so
-  creating a project needs no restart, rebind, or container recreate.
+- **One process, two ports.** The instance never forks a process or container per
+  project, and a new project binds **no new socket** — the unified listener
+  (`pkgcache/unified.py`) hands each request to the right role's `RoleServer`
+  (`pkgcache/router.py`), which dispatches to the project's sub-app by
+  path / image-name / proxy-user. A supervisor in `pkgcache/__main__.py` polls the
+  registry and adds/drops project sub-apps live, so creating a project needs no
+  restart, rebind, or container recreate.
 - **Stable, self-describing URLs.** A project's URL is just its name in the path, so
   it never drifts (nothing to allocate or recompute) and a rewritten `uv.lock` or a
   `FROM` line reads as `…/<name>/…`. Reserved names (`global`, the role names,
@@ -324,7 +341,8 @@ package-registry/
 │   ├── Dockerfile  pyproject.toml  pkgcache.yaml  seed.example.yaml  usage.md
 │   └── src/pkgcache/
 │       ├── app.py             # builds the ASGI app for a (project, role); mounts /healthz + progress
-│       ├── router.py          # RoleServer: one per role port; routes a request to a project sub-app
+│       ├── unified.py         # UnifiedServer: the ONE HTTPS port; dispatches /v2 + /<project>/<role>
+│       ├── router.py          # RoleServer: one per role; routes a request to a project sub-app
 │       ├── __main__.py        # uvicorn entrypoint + supervisor that adds/drops project sub-apps live
 │       ├── repositories.py    # registry {role: Repository} — the one place ecosystems are listed
 │       ├── core/
@@ -376,17 +394,21 @@ package-registry/
 
 ## Components & design choices
 
-### 1. One image, one process, six roles, many projects
+### 1. One image, one process, six roles, TWO ports, many projects
 
 `pkgcache` is a single installable package built into one image. In the default
-mode (env unset) **one container runs all six roles in one process**, each bound to
-its own port: **5000 / 4873 / 3141 / 3143 / 3144 (HTTPS), 3142 (HTTP)**. (A single
-role can still be run alone via `PKGCACHE_ROLE` for dev.) The protocols can't share
-a port — OCI owns `/v2/` at the root and apt is a forward proxy. Named projects add
-**no** ports: each role's server is a `RoleServer` (`pkgcache/router.py`) that
-routes a request to the right project's sub-app by URL prefix (`/<name>/<role>/…`),
-image name (`/v2/<name>/…`) or apt proxy-username, and a supervisor adds/drops those
-sub-apps live as the registry changes — no rebind, no recreate.
+mode (env unset) **one container runs all six roles in one process on two ports**:
+the unified HTTPS port (**8443**, `PKGCACHE_UNIFIED_PORT`) carries docker at `/v2/…`
+plus npm/pypi/git/files at the fully qualified `/<project>/<role>/…`, and the
+apt/apk forward proxy keeps its own plain-HTTP port (**3142**) because proxy
+clients (busybox wget, apt < 1.6) can't speak to a TLS proxy. (A single role can
+still be run alone via `PKGCACHE_ROLE` for dev.) The five HTTPS protocols coexist
+on one port because their namespaces can't collide: `/v2` is protocol-pinned (and a
+reserved project name), and everything else starts with `/<project>/<role>/`. A
+`UnifiedServer` (`pkgcache/unified.py`) picks the role; each role's `RoleServer`
+(`pkgcache/router.py`) picks the project — by path prefix, image name
+(`/v2/<name>/…`), or apt proxy-username — and a supervisor adds/drops project
+sub-apps live as the registry changes, no rebind, no recreate.
 
 > **Why:** the cache is identical across ecosystems and projects; only the
 > *protocol wrapper* and the *cache root* differ. One image + one process is the
@@ -522,7 +544,7 @@ header semantics, and quirks are ported from the component it replaces.
   **mirror-and-serve**: it keeps a local **bare mirror** (`caches/git/<host>/<repo>.git`,
   heads + tags, `gc.auto=0`), revalidates it on a short TTL online, and streams
   `git upload-pack` from it — serving the mirror as-is offline. Clients put the real
-  upstream host in the path (`https://<cache>:3143/github.com/<owner>/<repo>.git`) or
+  upstream host in the path (`https://<cache>:8443/global/git/github.com/<owner>/<repo>.git`) or
   use a one-time `insteadOf` rewrite so submodules, `pip git+https` deps and CPM all
   route through the cache. **Read-only** (push refused); protocol **v0 + v2**, shallow,
   partial, and SHA-pinned fetches all work; a `git_refs` ledger table records ref→commit
@@ -645,7 +667,7 @@ flowchart LR
   api --> reads & live & jobs & usage & proj
   jobs --> ops
   reads -->|"read-only"| ledgers[("caches/**/ledger.db")]
-  live -.-> roles["pkgcache role ports (per-project via prefix)"]
+  live -.-> roles["pkgcache :8443 + :3142 (per-project via prefix)"]
   ops -->|"git · dvc · docker compose"| host["host (mounted socket + repo)"]
 ```
 
@@ -757,25 +779,26 @@ python3 scripts/pkgops.py --project projA export        # → shuttle/out/projec
 
 | Ecosystem | Client points at |
 |---|---|
-| Docker / OCI | `<host>:5000/{dockerhub,ghcr,quay}/<image>` (HTTPS) |
-| npm | `https://<host>:4873/` |
-| pip / uv | `https://<host>:3141/root/pypi/+simple/` (and `root/pytorch-*` indexes) |
+| Docker / OCI | `<host>:8443/{dockerhub,ghcr,quay}/<image>` (HTTPS) |
+| npm | `https://<host>:8443/global/npm/` |
+| pip / uv | `https://<host>:8443/global/pypi/root/pypi/+simple/` (and `root/pytorch-*` indexes) |
 | apt / apk | HTTP forward proxy at `http://<host>:3142/` |
-| git | `https://<host>:3143/<upstream-host>/<owner>/<repo>.git` (HTTPS, read-only) |
-| files | `https://<host>:3144/<path>` (HTTPS; wget to download, PUT with the write token) |
+| git | `https://<host>:8443/global/git/<upstream-host>/<owner>/<repo>.git` (HTTPS, read-only) |
+| files | `https://<host>:8443/global/files/<path>` (HTTPS; wget to download, PUT with the write token) |
 | Console UI | `http://<host>:8088` |
 
-A named project serves the same shapes on the **same ports** with a project prefix
-(shown in the console's Endpoints panel):
+A named project serves the same shapes on the **same two ports**, with `global`
+swapped for the project name (shown in the console's Endpoints panel — each entry
+there also carries copy-paste setup instructions):
 
 | Ecosystem | Named project `<p>` |
 |---|---|
-| Docker / OCI | `<host>:5000/<p>/{dockerhub,ghcr,quay}/<image>` (project in the image name) |
-| npm | `https://<host>:4873/<p>/npm/` |
-| pip / uv | `https://<host>:3141/<p>/pypi/root/pypi/+simple/` |
+| Docker / OCI | `<host>:8443/<p>/{dockerhub,ghcr,quay}/<image>` (project in the image name) |
+| npm | `https://<host>:8443/<p>/npm/` |
+| pip / uv | `https://<host>:8443/<p>/pypi/root/pypi/+simple/` |
 | apt / apk | `http://<p>@<host>:3142/` (project = proxy username) |
-| git | `https://<host>:3143/<p>/git/<upstream-host>/<owner>/<repo>.git` |
-| files | `https://<host>:3144/<p>/files/<path>` |
+| git | `https://<host>:8443/<p>/git/<upstream-host>/<owner>/<repo>.git` |
+| files | `https://<host>:8443/<p>/files/<path>` |
 
 The recipes below are written for global; for a project, insert the prefix as
 above and use the rest of each recipe verbatim.
@@ -790,61 +813,61 @@ the same port and add the project prefix (path segment, image-name segment, or a
 proxy-username — see the per-project table above; shown in the console's Endpoints
 panel).
 
-#### Docker / OCI — port 5000 (HTTPS)
+#### Docker / OCI — unified port 8443, at /v2 (HTTPS)
 
 The first path segment picks the upstream: `dockerhub` → Docker Hub, `ghcr` →
 ghcr.io, `quay` → quay.io. Official Docker Hub images live under `library/`.
 
 ```bash
 # official Docker Hub images are under library/:
-docker pull HOST:5000/dockerhub/library/alpine:3.20
-docker pull HOST:5000/dockerhub/library/python:3.12-slim
+docker pull HOST:8443/dockerhub/library/alpine:3.20
+docker pull HOST:8443/dockerhub/library/python:3.12-slim
 # user/org images keep their namespace:
-docker pull HOST:5000/dockerhub/grafana/grafana:11.0.0
+docker pull HOST:8443/dockerhub/grafana/grafana:11.0.0
 # other registries:
-docker pull HOST:5000/ghcr/astral-sh/uv:python3.12-bookworm-slim
-docker pull HOST:5000/quay/prometheus/prometheus:v2.53.0
+docker pull HOST:8443/ghcr/astral-sh/uv:python3.12-bookworm-slim
+docker pull HOST:8443/quay/prometheus/prometheus:v2.53.0
 ```
 
 In a Dockerfile, parameterize the registry so images come through the cache:
 
 ```dockerfile
-ARG REGISTRY=HOST:5000/dockerhub
+ARG REGISTRY=HOST:8443/dockerhub
 FROM ${REGISTRY}/library/python:3.12-slim
 ```
 
 > Docker trusts a registry CA **per `host:port`** — add `certs/ca.crt` under
-> `/etc/docker/certs.d/HOST:5000/`. Projects share this port (the project is in the
+> `/etc/docker/certs.d/HOST:8443/`. Projects share this port (the project is in the
 > image name), so one entry covers global and every project.
 
-#### pip / uv — port 3141 (HTTPS)
+#### pip / uv — unified port 8443, /<project>/pypi (HTTPS)
 
 `<index>` selects the upstream: `root/pypi` → PyPI, `root/pytorch-cu124` →
 PyTorch CUDA 12.4 wheels, `root/pytorch-cpu` → CPU wheels, etc.
 
 ```bash
 # pip (one-off):
-pip install --index-url https://HOST:3141/root/pypi/+simple/ --cert ca.crt numpy
+pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --cert ca.crt numpy
 # PyTorch CUDA wheels (off PyPI):
-pip install --index-url https://HOST:3141/root/pytorch-cu124/+simple/ --cert ca.crt torch
+pip install --index-url https://HOST:8443/global/pypi/root/pytorch-cu124/+simple/ --cert ca.crt torch
 # uv:
-UV_INDEX_URL=https://HOST:3141/root/pypi/+simple/ SSL_CERT_FILE=ca.crt uv pip install numpy
+UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ SSL_CERT_FILE=ca.crt uv pip install numpy
 ```
 
 Persist it in `~/.config/pip/pip.conf` (`PIP_CERT` covers the cert):
 
 ```ini
 [global]
-index-url = https://HOST:3141/root/pypi/+simple/
+index-url = https://HOST:8443/global/pypi/root/pypi/+simple/
 cert = /path/to/ca.crt
 ```
 
-#### npm — port 4873 (HTTPS)
+#### npm — unified port 8443, /<project>/npm (HTTPS)
 
 ```bash
-npm install --registry https://HOST:4873/ --cafile ca.crt <pkg>
+npm install --registry https://HOST:8443/global/npm/ --cafile ca.crt <pkg>
 # or persist it:
-npm config set registry https://HOST:4873/
+npm config set registry https://HOST:8443/global/npm/
 npm config set cafile /path/to/ca.crt        # or: export NODE_EXTRA_CA_CERTS=/path/to/ca.crt
 ```
 
@@ -874,7 +897,7 @@ RUN sed -i 's/https/http/' /etc/apk/repositories \
  && http_proxy=http://HOST:3142 apk add --no-cache ca-certificates curl
 ```
 
-#### git — port 3143 (HTTPS, read-only)
+#### git — unified port 8443, /<project>/git (HTTPS, read-only)
 
 Put the real upstream host in the path. The cache mirrors the repo server-side on
 first request and serves clones/fetches from the mirror (offline too). No CA is
@@ -882,11 +905,11 @@ needed if `certs/ca.crt` is in the system store; otherwise point git at it.
 
 ```bash
 # one-off:
-GIT_SSL_CAINFO=/path/to/ca.crt git clone https://HOST:3143/github.com/pallets/click.git
+GIT_SSL_CAINFO=/path/to/ca.crt git clone https://HOST:8443/global/git/github.com/pallets/click.git
 # transparent (once per machine/CI image — covers submodules, pip git+https, CPM, …):
-git config --global http."https://HOST:3143/".sslCAInfo /path/to/ca.crt
-git config --global url."https://HOST:3143/github.com/".insteadOf "https://github.com/"
-git config --global url."https://HOST:3143/gitlab.com/".insteadOf  "https://gitlab.com/"
+git config --global http."https://HOST:8443/".sslCAInfo /path/to/ca.crt
+git config --global url."https://HOST:8443/global/git/github.com/".insteadOf "https://github.com/"
+git config --global url."https://HOST:8443/global/git/gitlab.com/".insteadOf  "https://gitlab.com/"
 ```
 
 Push is refused (read-only mirror); shallow / partial / SHA-pinned fetches and Git
@@ -904,19 +927,19 @@ connection, e.g.:
 
 ```
 Error response from daemon: failed to resolve reference
-"172.17.21.107:5000/projA/dockerhub/pgvector/pgvector:pg17": ... tls: failed to
+"172.17.21.107:8443/projA/dockerhub/pgvector/pgvector:pg17": ... tls: failed to
 verify certificate: x509: certificate signed by unknown authority
 ```
 
 Copy `certs/ca.crt` to the build host, then trust it. **Docker trusts a registry CA
-per `host:port`** — and since every project now shares the one OCI port (`5000`,
+per `host:port`** — and since every project now shares the one unified port (`8443`,
 with the project in the image name), a **single** entry covers global and all
 projects:
 
 ```bash
 # Docker — one entry for the shared OCI port (no daemon restart needed):
-sudo mkdir -p /etc/docker/certs.d/172.17.21.107:5000
-sudo cp ca.crt /etc/docker/certs.d/172.17.21.107:5000/ca.crt
+sudo mkdir -p /etc/docker/certs.d/172.17.21.107:8443
+sudo cp ca.crt /etc/docker/certs.d/172.17.21.107:8443/ca.crt
 ```
 
 For everything else, install the CA into the **system trust store** (covers the
@@ -943,8 +966,8 @@ verifying its certificate — the TLS-level equivalent of Docker's
 is shared across projects, so `--trusted-host` is per host:port, not per project):
 
 ```bash
-pip install --index-url https://172.17.21.107:3141/projA/pypi/root/pypi/+simple/ \
-            --trusted-host 172.17.21.107:3141  <pkg>
+pip install --index-url https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/ \
+            --trusted-host 172.17.21.107:8443  <pkg>
 ```
 
 Or make it permanent in `pip.conf` (`~/.config/pip/pip.conf`, or `pip.ini` on
@@ -952,8 +975,8 @@ Windows):
 
 ```ini
 [global]
-index-url = https://172.17.21.107:3141/projA/pypi/root/pypi/+simple/
-trusted-host = 172.17.21.107:3141
+index-url = https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/
+trusted-host = 172.17.21.107:8443
 ```
 
 The npm equivalent is `npm config set strict-ssl false` (global, not per-host —
@@ -1004,9 +1027,10 @@ cd pkgcache && pip install -e '.[test]' && python -m pytest -q
 
 - **Single worker per role.** Progress and single-flight state are in-process; each
   role runs one uvicorn worker (don't replicate a role).
-- **One process, six ports, many projects.** Projects share the role ports and are
-  routed by URL prefix; a registry-polling supervisor adds/drops project sub-apps
-  live, so creating one needs no new port, rebind, or container recreate.
+- **One process, two ports, many projects.** Everything HTTPS on the unified port,
+  the apt/apk proxy on its own; projects are routed by URL prefix, and a
+  registry-polling supervisor adds/drops project sub-apps live, so creating one
+  needs no new port, rebind, or container recreate.
 - **No cross-project dedup.** Each project has its own tree and repo — isolation over
   sharing. (A shared DVC remote could be layered later without changing topology.)
 - **No garbage collection, by design.** Caches grow unbounded; size is managed by

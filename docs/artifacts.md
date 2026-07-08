@@ -1,8 +1,8 @@
 # Generic artifacts (the `files` ecosystem)
 
-The `files` role (port `3144`, HTTPS) is a **generic artifact store** — a home for
-things with no package protocol: build outputs, datasets, installers, tarballs.
-It's the system's only **write** path.
+The `files` role (on the unified HTTPS port, `8443`) is a **generic artifact
+store** — a home for things with no package protocol: build outputs, datasets,
+installers, tarballs. It's the system's only **write** path.
 
 - **Download**: plain `wget`/`curl`, anonymous, Range/resume supported.
 - **Upload**: `PUT` with a per-project **write token**, or drag-drop in the console.
@@ -13,8 +13,7 @@ It's the system's only **write** path.
 Path-addressed under the role, one repository per project:
 
 ```
-https://<host>:3144/<path>                         # global project
-https://<host>:3144/<project>/files/<path>          # a named project (prefix on the shared port)
+https://<host>:8443/<project>/files/<path>          # e.g. /global/files/… for the default project
 ```
 
 `<path>` is any nested path, e.g. `builds/v1.2/app.tar.gz`.
@@ -22,10 +21,10 @@ https://<host>:3144/<project>/files/<path>          # a named project (prefix on
 ## Download (anonymous)
 
 ```bash
-wget --ca-certificate=certs/ca.crt https://HOST:3144/builds/v1.2/app.tar.gz
-curl --cacert certs/ca.crt -O https://HOST:3144/builds/v1.2/app.tar.gz
-wget -c  --ca-certificate=certs/ca.crt https://HOST:3144/big.iso          # resume (HTTP 206)
-wget -r -np --ca-certificate=certs/ca.crt https://HOST:3144/builds/       # mirror a folder
+wget --ca-certificate=certs/ca.crt https://HOST:8443/global/files/builds/v1.2/app.tar.gz
+curl --cacert certs/ca.crt -O https://HOST:8443/global/files/builds/v1.2/app.tar.gz
+wget -c  --ca-certificate=certs/ca.crt https://HOST:8443/global/files/big.iso          # resume (HTTP 206)
+wget -r -np --ca-certificate=certs/ca.crt https://HOST:8443/global/files/builds/       # mirror a folder
 ```
 
 A directory URL returns an HTML index (browsable; `wget -r` walks it). If
@@ -40,7 +39,7 @@ API. Then `PUT` the raw bytes:
 export TOKEN=…                 # from the console; shown once
 curl --cacert certs/ca.crt -T app.tar.gz \
      -H "Authorization: Bearer $TOKEN" \
-     https://HOST:3144/builds/v1.2/app.tar.gz
+     https://HOST:8443/global/files/builds/v1.2/app.tar.gz
 ```
 
 - **Write-once**: re-`PUT`ting an existing path → `409`. Add `?overwrite=1` to replace.
@@ -55,7 +54,7 @@ curl --cacert certs/ca.crt -T app.tar.gz \
 ```bash
 # delete (token required):
 curl --cacert certs/ca.crt -X DELETE -H "Authorization: Bearer $TOKEN" \
-     https://HOST:3144/builds/v1.2/app.tar.gz        # → 204
+     https://HOST:8443/global/files/builds/v1.2/app.tar.gz        # → 204
 ```
 
 `X-Auth-Token: <token>` is accepted as an alternative to the `Authorization: Bearer`

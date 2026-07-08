@@ -5,60 +5,68 @@
 Let the **single** central pkgcache instance serve multiple isolated *projects*,
 each with:
 
-- its **own set of URLs** (a per-project prefix on the shared role ports),
+- its **own set of URLs** (a per-project prefix on the two shared ports),
 - its **own cache content** (separate on-disk trees),
 - its **own version control** (a dedicated git + DVC repo) — checkpoint, rollback
   and history controlled independently from the web UI,
 - its **own shuttle** (export/import carries only that project's blobs).
 
-The existing **global** cache is unchanged: it keeps today's default root URLs
-(`5000/4873/3141/3142/3143/3144`) and its existing repo at `caches/`, and behaves
-exactly as it does now. Everything below is purely additive.
+The **global** cache is simply the reserved project named `global` — same URL
+shapes as any other project, same repo at `caches/`.
 
 ## Locked decisions
 
-1. **One process, one set of ports.** The central instance runs six role servers on
-   the six default ports and never forks a process, container, **or extra socket**
-   per project. Projects are distinguished by the request, not by a port.
+1. **One process, TWO ports.** Everything HTTPS lives on the ONE unified port
+   (default `8443`; see `pkgcache/unified.py`); the apt/apk forward proxy keeps its
+   own plain-HTTP port (`3142`) because proxy clients (busybox wget, apt < 1.6)
+   can't speak to a TLS proxy. No process, container, or socket per project.
 2. **Project rides a URL prefix, not a port.** How the project is carried is dictated
-   by each protocol (see *Routing* below): a path prefix where the protocol allows
-   it, the image name for Docker, the proxy username for apt.
+   by each protocol (see *Routing* below): a fully qualified path prefix where the
+   protocol allows it, the image name for Docker, the proxy username for apt.
 3. **One git + DVC repo per project.** Separate cache trees per project — this is
    what makes a per-project shuttle fall out for free.
 4. **The registry is just names.** Creating a project is a name written to
    `config/projects.json`; there is nothing to allocate, probe, or persist beyond the
    name (+ its files write token). A supervisor picks it up on its next poll.
-5. **Global project is implicit and reserved** — never stored, never prefixed.
+5. **Global is a reserved name, not a special case.** It is never stored in the
+   registry, but on the wire it is addressed exactly like any project
+   (`/global/<role>/…`); only docker (no image-name prefix) and apt (no proxy
+   username) treat it as the unprefixed default.
 
 ## Routing — how the project is carried per protocol
 
 Docker can't be given a base path (the registry API is pinned to `/v2/` at the
-root), and apt is a *forward proxy* (the client sends absolute upstream URLs, so
-there's no path to prefix). The other four take a clean path prefix. So:
+listener root), and apt is a *forward proxy* (the client sends absolute upstream
+URLs, so there's no path to prefix). The other four take a clean path prefix — and
+because every one of their URLs starts with `/<project>/<role>/`, the five HTTPS
+roles coexist on one port with no ambiguity:
 
 | Role | Global | Named project `<p>` | Mechanism |
 |---|---|---|---|
-| npm / pypi / git / files | root URL | `/<p>/<role>/…` | leading path segment |
-| oci | `/v2/dockerhub/…` | `/v2/<p>/dockerhub/…` | first segment of the **image name** |
+| npm / pypi / git / files | `:8443/global/<role>/…` | `:8443/<p>/<role>/…` | leading path segments |
+| oci | `:8443/dockerhub/…` (image name) | `:8443/<p>/dockerhub/…` | first segment of the **image name** under `/v2` |
 | apt / apk | `http://HOST:3142` | `http://<p>@HOST:3142` | **proxy username** (password ignored) |
 
-A `RoleServer` (`pkgcache/router.py`), one per role port, inspects each request,
-selects the project (falling back to **global**), strips the marker, and hands the
+A `UnifiedServer` (`pkgcache/unified.py`) owns the HTTPS port: `/v2/…` goes to the
+oci RoleServer, `/<project>/<role>/…` to that role's RoleServer, and anything else
+is a helpful 404 (unknown projects are named in the error). Each `RoleServer`
+(`pkgcache/router.py`) then selects the project, strips the marker, and hands the
 request to that project's sub-app:
 
 - **path roles** — if segment 1 is a registered project *and* segment 2 is the role
   name, strip `/<p>/<role>` and set `scope["root_path"]` to it (so `external_base()`
   re-emits project-scoped links in rewritten pypi indexes, npm packuments, git LFS
-  and files URLs). Both segments must match, so a real npm package named `gamma` (a
-  single-segment request) is never mistaken for a project.
+  and files URLs).
 - **oci** — for `/v2/<seg>/…`, if `<seg>` is a registered project, rewrite the path
   to `/v2/…` and stash the project so `tags/list` can re-prefix the echoed `name`.
   Response bodies are otherwise content-addressed by digest, so nothing else needs
-  rewriting. `/v2/` (ping) and `/v2/_progress` stay global.
+  rewriting. `/v2/` (ping) stays global. The uniform `/<p>/oci/…` path form is also
+  accepted so internal admin URLs (healthz, +ledger, progress) look the same for
+  every role.
 - **apt** — read the project from the `Proxy-Authorization` username. Internal
-  progress/health pollers, which can't set a proxy user, may also use a
-  `/<p>/apt/…` path form (a real proxied request arrives with an absolute-URL path,
-  so the two never collide).
+  progress/health pollers, which can't set a proxy user, use the uniform
+  `/<p>/apt/…` path form (a real proxied request arrives with an absolute-URL
+  target, so the two never collide).
 
 ### Reserved names
 
@@ -83,9 +91,21 @@ objects (there are no ports to store):
     "projA": {},
     "projB": {}
   },
-  "tokens": { "projA": "<files write token>", "global": "<token>" }
+  "tokens": { "projA": "<files write token>", "global": "<token>" },
+  "offline": { "projA": true },
+  "owners": { "projA": "alice" }
 }
 ```
+
+`offline` holds per-project **soft** offline flags (global included; absent =
+online, so old registries need no migration). The flag is stored sparsely — going
+back online deletes the entry rather than writing `false`.
+
+`owners` maps a project to the username that owns it (an admin or superuser).
+An **absent** owner means superuser-owned — which is how `global` and every project
+created before auth existed read, so ownership needs no migration either. Only the
+webui's authorization layer reads this map; pkgcache ignores it. See the auth section
+below for what ownership gates.
 
 Both processes locate it via `PKGCACHE_PROJECTS` (the webui defaults to
 `config/projects.json` in the repo; pkgcache mounts `./config:/config:ro` and reads
@@ -124,26 +144,85 @@ left in place — deleting cached bytes is a separate, explicit operator step.
 On the pkgcache side a supervisor in `__main__.py` re-reads the registry every few
 seconds and calls `RoleServer.reconcile()` for each role: new names get a sub-app
 (its own `Core` — storage/ledger/cache_root — and background flush task) built and
-mounted live; removed names have their sub-app dropped and core closed. No restart,
+mounted live; removed names have their sub-app dropped and core closed; a changed
+config (the offline flag) is live-swapped onto the running core without rebuilding
+the sub-app, so in-flight downloads for that project survive the flip. No restart,
 no rebind, no container recreate.
+
+### Per-project offline (soft mode)
+
+Each project — global included — can be taken offline on its own via the console's
+top-bar toggle (or `POST /api/projects/<name>/mode` with `{"target": "offline"}`).
+That writes the registry's `offline` flag; the supervisor applies it on its next
+poll (≤5s), and that one project serves cache-only (misses fail, files-role PUTs
+are rejected) while every other project keeps fetching. `/healthz` per (project,
+role) reports the live state, which is what the console indicator and the lockwarm
+guard read.
+
+This soft flag is distinct from the instance-wide **hard** mode: `OFFLINE=1` on the
+cache container (the air-gap deployment / the console's "Instance mode" action,
+which recreates the container). The hard mode always wins — while it is on, every
+project is offline regardless of soft flags, and the console locks the per-project
+toggle. Switching the instance back online leaves soft flags intact: a project
+flagged offline stays offline.
+
+## Auth & ownership
+
+Accounts and per-project ownership live in the webui only (pkgcache stays open on
+its own ports — gating the data plane is out of scope; see below). Three roles:
+
+- **superuser** — creates any account; promotes/demotes; reassigns who a user reports
+  to and which admin a project belongs to; may operate any project. The break-glass
+  superuser comes from `UI_ROOT_USER`/`UI_ROOT_PASSWORD` (verified from the env, never
+  stored, can't be demoted or deleted).
+- **admin** — creates `user` accounts that report to them; owns projects; operates the
+  projects they own.
+- **user** — reports to one admin; may view/consume that admin's projects and their
+  own password; no account or project management.
+
+Stored accounts live in `config/users.json` (scrypt-hashed, webui-managed); a session
+is an opaque HttpOnly cookie the webui maps to a username in memory.
+
+**Enforcement is opt-in.** It activates only once auth is configured — a root
+superuser is set, or the store already holds accounts. Until then every route stays
+open exactly as before (an un-migrated deployment keeps working). Setting
+`UI_ROOT_USER`/`UI_ROOT_PASSWORD` is what turns it on.
+
+Per route, with enforcement on:
+
+| Action | Who |
+|---|---|
+| View / consume a project (dashboards, endpoints, packages, lockfile download, artifact upload) | owner, the owner's reports, or a superuser |
+| Operate a project (checkpoint, rollback, export/import, per-project offline, rotate token, delete artifact, delete project) | owner or superuser |
+| Create a project (becomes its owner) | admin or superuser |
+| Reassign a project's owner (`POST /api/projects/<name>/owner`) | superuser |
+| Instance-wide mode recreate (`action=mode` job) | superuser |
+| Account management (`/api/users`) | superuser (any account); admin (own users only) |
+
+An absent owner (global, pre-auth projects) reads as superuser-owned, so only a
+superuser sees or touches them until one is explicitly assigned. `GET /api/projects`
+is filtered to what the caller may view; `GET /api/me` reports `auth_enabled` so the
+console knows whether to show a login screen.
 
 ## Implementation status
 
 Backend implemented and unit/integration-tested
-(`webui/test_projects.py`, `webui/test_multiproject.py`, `pkgcache/tests/test_router.py`):
+(`webui/tests/test_projects.py`, `webui/tests/test_multiproject.py`,
+`pkgcache/tests/test_router.py`, `pkgcache/tests/test_unified.py`):
 
 - **Registry** — `webui/app/services/projects.py`: name-only CRUD, name grammar + reserved names,
-  `role_prefix(project, role)`, files write tokens; legacy port-carrying registries
-  read without error.
-- **Routing** — `pkgcache/router.py`: a `RoleServer` per role port with the
-  path / oci / apt selection strategies above; `external_base()` honors the
-  stripped `root_path`; `handlers/oci.py` re-prefixes the `tags/list` name.
+  the uniform `role_prefix(project, role)`, files write tokens; legacy port-carrying
+  registries read without error.
+- **Routing** — `pkgcache/unified.py`: the one HTTPS listener dispatching to the
+  per-role `RoleServer`s (`pkgcache/router.py`) with the path / oci / apt selection
+  strategies above; `external_base()` honors the stripped `root_path`;
+  `handlers/oci.py` re-prefixes the `tags/list` name.
 - **Serving** — `pkgcache/core/config.py` `load_roles()` returns one `Config` per
-  `(role, project)` all sharing the role's default port; `Config.project`;
-  `/healthz` reports the project.
+  `(role, project)`; `Config.project`; `/healthz` reports the project.
 - **Live add/drop** — `pkgcache/__main__.py` supervisor polls the registry and
   reconciles each role's project sub-apps without a process restart; six long-lived
-  role servers own their projects' core lifecycles.
+  role servers (five behind the unified port + apt) own their projects' core
+  lifecycles.
 - **Per-project VC + shuttle** — `webui/app/services/operations.py` (checkpoint/export/import/rollback)
   threaded by `project`; per-project export/import dirs; a name-only `project.json`
   travels in a named project's shuttle so import re-registers it;
@@ -175,7 +254,7 @@ Backend implemented and unit/integration-tested
 - **Isolation over sharing:** separate trees + repos mean no cross-project dedup. A
   shared DVC remote could be layered later without changing the topology.
 - **TLS:** the in-process HTTPS roles reuse the same server cert; since every project
-  shares the role ports, one cert (and one Docker `certs.d/<host>:5000` entry) covers
+  shares the unified port, one cert (and one Docker `certs.d/<host>:8443` entry) covers
   all projects. The cert's SANs must still cover the host clients reach it by (ports
   and prefixes don't affect SANs).
 
@@ -275,4 +354,10 @@ redundant download; a shared digest-keyed single-flight would close it later.
   see the CAS "known gap" above.
 - Automatic CAS garbage collection (unreferenced entries are reclaimed by an explicit
   maintenance op, not on their own).
-- Per-project auth (the console remains trusted-network only, as today).
+- **Data-plane auth.** Control-plane accounts + ownership (above) gate the *console
+  API* only. The pkgcache pull ports stay open: anyone on the network can still
+  `pip install` / `docker pull` / fetch files from any project's cache. Gating those
+  would mean per-project pull credentials inside pkgcache (npm/pip basic-auth, OCI
+  token auth, client config on the air-gapped side) — a separate, larger effort. The
+  files-role **write** token is unchanged (a machine credential; rotating it is now an
+  owner-only action).
