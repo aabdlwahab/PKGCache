@@ -32,7 +32,7 @@ standard-library API.
 **Run it** (online host — fills the cache on demand; add `--profile ui` for the console on `:8088`):
 
 ```bash
-cp .env.example .env && ./scripts/gen-certs.sh         # one-time: host ids + TLS CA
+./scripts/bootstrap.sh                                 # one-time: .env from host ids + dirs + TLS CA
 docker compose --profile online --profile ui up -d     # one process, 6 roles + console
 ```
 
@@ -89,8 +89,7 @@ trust are in [Quick start](#quick-start) below.)
 
 ```bash
 git init                                            # the code repo (the cache repo self-inits later)
-cp .env.example .env                                # set PKGCACHE_UID/GID + DOCKER_GID to your host's ids
-./scripts/gen-certs.sh                              # mint the private CA + in-process TLS cert
+./scripts/bootstrap.sh                              # .env from this host's ids + host-owned dirs + TLS certs (idempotent)
 docker compose --profile online --profile ui up -d  # cache (one process, 6 roles) + console on :8088
 ```
 
@@ -379,6 +378,7 @@ package-registry/
 │   └── console/               # the React + TypeScript SPA (Vite) + nginx Dockerfile
 ├── scripts/                   # the glue we own
 │   ├── pkgops.py              # thin CLI over app.services.operations (the UI imports the SAME code in-process)
+│   ├── bootstrap.sh           # one-time host setup: .env (host ids) + dirs + certs (idempotent)
 │   ├── gen-certs.sh           # mint the private CA + server cert for in-process HTTPS
 │   ├── gen_manifest.py        # export manifests/<eco>.json from the ledgers (+ --rebuild repair)
 │   └── prefetch.py            # warm the cache from a declarative seed file
@@ -747,8 +747,7 @@ flowchart LR
 
 ```bash
 git init                                               # the CODE repo (cache repo self-inits on first checkpoint)
-cp .env.example .env                                   # set PKGCACHE_UID/GID + DOCKER_GID to your host's ids
-./scripts/gen-certs.sh                                 # mint the CA + in-process TLS cert
+./scripts/bootstrap.sh                                 # .env from this host's ids + host-owned dirs + TLS certs (idempotent)
 docker compose --profile online up -d                  # bring up the cache (one process, six roles)
 docker compose --profile online --profile ui up -d     # + the operator console on :8088
 # install certs/ca.crt on each build host so HTTPS is trusted (see below)
