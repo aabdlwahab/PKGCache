@@ -133,8 +133,10 @@ export function ActionsPanel({
   pendingNew: number;
   headShort: string;
   headDate: string;
-  // The compose profile the cache container runs under (null while unknown) — the
-  // instance-wide HARD mode, distinct from the top bar's per-project soft toggle.
+  // The instance-wide mode (null while unknown): "offline" when something the
+  // per-project toggle can't override pins the instance — the OFFLINE env (air-gap
+  // hard mode) or the mode op's "*" registry flag. Distinct from the top bar's
+  // per-project soft toggle.
   instanceMode?: "online" | "offline" | null;
   // Owner-level project ops (checkpoint/export/import); superuser-only instance mode.
   canOperate?: boolean;
@@ -368,7 +370,7 @@ export function ActionsPanel({
         <div className="xfer-card">
           <div className="xfer-card-head">
             <span className="xfer-card-title">⏻ Instance mode</span>
-            <span className="xfer-card-cap">recreates the cache container — affects ALL projects</span>
+            <span className="xfer-card-cap">applies live to ALL projects — a registry write, no restart</span>
             <span className="spacer" />
             <span
               className="state-pill"
@@ -384,8 +386,8 @@ export function ActionsPanel({
           <div className="row-inline">
             <span className="note">
               {canInstanceMode
-                ? "the air-gap hard switch — for one project, use the top-bar toggle instead"
-                : "superuser only — the air-gap hard switch affects every project"}
+                ? "shadows every project's own toggle while offline — for one project, use the top-bar toggle instead"
+                : "superuser only — the instance-wide switch affects every project"}
             </span>
             <span className="spacer" />
             <button

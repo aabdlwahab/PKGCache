@@ -21,8 +21,10 @@ the pkgcache side already has `json`; both processes read the SAME file:
 
 "offline" holds per-project SOFT offline flags (global included; absent = online):
 the pkgcache supervisor applies a change on its next registry poll, serving that
-one project cache-only with no restart. The OFFLINE env on the cache container is
-the separate instance-wide HARD mode (the air-gap guarantee) and always wins.
+one project cache-only with no restart. The reserved "*" key is the instance-wide
+soft switch (the mode op): while set, EVERY project serves cache-only, without
+touching the per-project flags it shadows. The OFFLINE env on the cache container
+is the separate instance-wide HARD mode (the air-gap guarantee) and always wins.
 
 "owners" maps a project to the username that owns it (an admin or superuser). An
 ABSENT owner means superuser-owned — which is how global and every pre-auth project
@@ -60,6 +62,7 @@ load_registry = _registry.load
 save_registry = _registry.save
 
 GLOBAL = "global"  # the implicit default project (default ports, caches/ repo)
+INSTANCE = "*"     # reserved offline-map key: the instance-wide soft switch (mode op)
 
 # pkgcache role names (what the registry + pkgcache config key on) and the six
 # cache subdirs / UI ecosystem labels they map to. apt's subdir also holds apk.
@@ -268,6 +271,30 @@ def set_offline(name, offline):
             flags.pop(name, None)
         save_registry(registry)
     return {"name": name, "offline": bool(offline)}
+
+
+def set_instance_offline(offline):
+    """Set/clear the instance-wide soft offline switch (the "*" registry key) — what
+    the mode op writes instead of recreating the cache container. While set, the
+    cache process serves EVERY project cache-only on its next registry poll (~5s);
+    clearing it restores each project to its own per-project flag, which this switch
+    shadows but never modifies. The OFFLINE env (air-gap hard mode) still wins."""
+    with _registry.LOCK:
+        registry = load_registry()
+        flags = registry.setdefault("offline", {})
+        if offline:
+            flags[INSTANCE] = True
+        else:
+            flags.pop(INSTANCE, None)
+        save_registry(registry)
+    return {"offline": bool(offline)}
+
+
+def is_instance_offline(registry=None):
+    """Whether the instance-wide soft switch is set (the "*" flag only — the OFFLINE
+    env's hard mode is visible through health probes, not this registry)."""
+    registry = registry if registry is not None else load_registry()
+    return bool(registry.get("offline", {}).get(INSTANCE))
 
 
 def _validate_project(project):

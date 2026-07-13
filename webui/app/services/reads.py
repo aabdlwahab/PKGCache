@@ -1,6 +1,6 @@
 """Read-only data for the API: cache contents (live, via pkgcache's /+ledger admin
 endpoints — see the pkgcache gateway), the committed manifest, git history (via the
-proc gateway), and proxy container status.
+proc gateway), and cache-process status (via its /healthz — no docker involved).
 
 The package/stats views used to open the per-project SQLite ledgers directly,
 duplicating pkgcache's own Ledger.query. They now fetch pkgcache's /+ledger/artifacts
@@ -10,11 +10,11 @@ Owns nothing mutable — it reads on each call — so the only injected collabor
 the disk-usage cache."""
 import json
 import statistics
-import subprocess
 
 from app import settings
 from app.gateways import pkgcache, proc
 from app.services import projects
+from app.urls import health_sources
 
 # eco label → the role whose ledger holds it, for mapping a per-eco row back to the
 # role's bandwidth samples when estimating time saved (apt + apk share the apt role).
@@ -34,8 +34,8 @@ def _empty_eco(eco):
 
 class Reads:
     """The read side of the control API: live cache contents (from pkgcache's ledger
-    admin endpoints), the last-checkpoint manifest, cache-repo git history, and proxy
-    container status."""
+    admin endpoints), the last-checkpoint manifest, cache-repo git history, and the
+    cache process's health/mode status."""
 
     def __init__(self, usage) -> None:
         self._usage = usage
@@ -164,34 +164,38 @@ class Reads:
         return {"head": head, "commits": commits}
 
     def status(self):
-        """Best-effort: which proxy containers are up. Empty if docker is unreachable."""
-        for profile in ("online", "offline"):
-            try:
-                res = subprocess.run(
-                    ["docker", "compose", "--profile", profile, "ps", "--format", "json"],
-                    cwd=str(settings.ROOT), text=True, capture_output=True, timeout=15,
-                )
-            except (OSError, subprocess.SubprocessError):
-                return {"available": False, "services": []}
-            services = []
-            for chunk in res.stdout.splitlines():
-                chunk = chunk.strip()
-                if not chunk:
-                    continue
-                try:
-                    obj = json.loads(chunk)
-                except ValueError:
-                    continue
-                items = obj if isinstance(obj, list) else [obj]
-                for it in items:
-                    services.append({
-                        "name": it.get("Service") or it.get("Name", ""),
-                        "state": it.get("State", ""),
-                        "status": it.get("Status", ""),
-                    })
-            if services:
-                return {"available": True, "profile": profile, "services": services}
-        return {"available": True, "profile": None, "services": []}
+        """Best-effort: is the cache process serving, and is the instance pinned
+        offline? Probed over HTTP (the global project's /healthz on each listener) —
+        the webui deliberately has no docker access, so 'up' means 'answering', not
+        'container exists'. `profile` keeps its historical meaning for the console's
+        hard-mode lock: "offline" when the INSTANCE is offline by something the
+        per-project toggle can't override (the OFFLINE env or the mode op's "*"
+        flag), "online" otherwise, None when the cache process is unreachable."""
+        checks = health_sources(projects.GLOBAL)
+        services, offline_global = [], None
+        # One probe per listener: pip rides the unified HTTPS port, apt is the
+        # separate plain-HTTP proxy port. All other roles share the unified listener.
+        for eco, label in (("pip", "pkgcache (unified port)"), ("apt", "pkgcache (apt proxy)")):
+            data = pkgcache.fetch_json(checks[eco], timeout=2)
+            up = isinstance(data, dict)
+            if up and offline_global is None:
+                offline_global = bool(data.get("offline"))
+            services.append({
+                "name": label,
+                "state": "running" if up else "unreachable",
+                "status": ("offline" if data.get("offline") else "online") if up else "",
+            })
+        if offline_global is None:
+            return {"available": False, "profile": None, "services": services}
+        # Offline without the global project's OWN soft flag explaining it means an
+        # instance-wide pin (env hard mode or the "*" switch) — what the console
+        # locks its per-project toggles on.
+        pinned = offline_global and not projects.is_offline(projects.GLOBAL)
+        return {
+            "available": True,
+            "profile": "offline" if pinned else "online",
+            "services": services,
+        }
 
     def _committed(self, project=projects.GLOBAL):
         """The committed ledger — what the LAST checkpoint versioned (manifests/*.json),

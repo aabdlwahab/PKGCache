@@ -211,7 +211,8 @@ function Console({ auth }: { auth: Auth }) {
 
   // The top-bar toggle flips the SELECTED project's soft offline flag — a registry
   // write the cache process applies on its next poll, scoped to this one project.
-  // The instance-wide hard switch (container recreate) lives in the Actions panel.
+  // The instance-wide switch (the "*" registry flag, same mechanism) lives in the
+  // Actions panel; the OFFLINE env stays the host-side air-gap hard mode.
   const switchMode = async (m: Mode) => {
     if (m === effectiveMode || hardOffline || !canOperate) return;
     setPendingMode(m);

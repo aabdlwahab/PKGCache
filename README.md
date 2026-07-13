@@ -668,7 +668,8 @@ flowchart LR
   jobs --> ops
   reads -->|"read-only"| ledgers[("caches/**/ledger.db")]
   live -.-> roles["pkgcache :8443 + :3142 (per-project via prefix)"]
-  ops -->|"git · dvc · docker compose"| host["host (mounted socket + repo)"]
+  ops -->|"git · dvc"| repo["mounted repo (caches/ · config/ · shuttle/)"]
+  ops -->|"mode = registry write"| proj
 ```
 
 - **webui** ([webui/server.py](webui/server.py)) — a **standard-library-only** HTTP API (no framework,
@@ -676,7 +677,8 @@ flowchart LR
   responsibility is a small **owner class**, wired once by the router via constructor
   injection:
   - **`Reads`** ([reads.py](webui/app/services/reads.py)) — live cache contents from the ledgers, the committed
-    manifest, the cache-repo git history, and proxy container status.
+    manifest, the cache-repo git history, and the cache process's health/mode status
+    (an HTTP `/healthz` probe — no docker).
   - **`LiveFeed`** ([live.py](webui/app/services/livefeed.py)) — a background poller (bounded thread pool, project
     list refreshed each cycle) that hits every project's `/_progress` + `/healthz`
     and owns the merged downloads / recent / health snapshots, plus the real **N
@@ -684,7 +686,8 @@ flowchart LR
   - **`Jobs`** ([jobs.py](webui/app/services/jobs.py)) — a one-at-a-time background runner that drains an
     `Operations` generator into a streamed log the UI polls.
   - **`Operations`** ([ops.py](webui/app/services/operations.py)) — the air-gap **service**:
-    checkpoint/export/import/rollback and the online↔offline **mode switch**, each a
+    checkpoint/export/import/rollback and the online↔offline **mode switch** (a
+    registry write the cache process applies live — no container recreate), each a
     generator of log lines, scoped by `project`.
   - **`Usage`** ([usage.py](webui/app/services/usage.py)) — a TTL-cached `du`-style scan with deduplicated-docker
     totals.
@@ -718,7 +721,9 @@ flowchart LR
   time, so the SPA still loads (and `/api` returns 502) even if webui is down.
 
 > **No auth, binds all interfaces** — run only on a trusted network. The webui runs
-> real `git`/`dvc`/`docker compose` commands against the host (mounted socket + repo).
+> real `git`/`dvc` commands against the mounted repo. It has **no docker socket and
+> no docker CLI**: mode changes are registry writes the cache process applies live,
+> and container lifecycle stays a host concern.
 
 ### 8. Scripts (the glue we own)
 

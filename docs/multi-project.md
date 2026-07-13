@@ -159,11 +159,14 @@ are rejected) while every other project keeps fetching. `/healthz` per (project,
 role) reports the live state, which is what the console indicator and the lockwarm
 guard read.
 
-This soft flag is distinct from the instance-wide **hard** mode: `OFFLINE=1` on the
-cache container (the air-gap deployment / the console's "Instance mode" action,
-which recreates the container). The hard mode always wins — while it is on, every
-project is offline regardless of soft flags, and the console locks the per-project
-toggle. Switching the instance back online leaves soft flags intact: a project
+Two instance-wide switches sit above the per-project flags. The console's
+"Instance mode" action writes the registry's reserved `"*"` soft flag — the same
+mechanism, applied on the cache's next poll with no restart; while set, every
+project serves cache-only, and clearing it restores each project to its own flag.
+Separately, `OFFLINE=1` on the cache container is the **hard** air-gap mode: set at
+`docker compose up` time on the host, it always wins — no registry write can take
+the instance online while it is on, and the console locks the per-project toggle.
+Switching the instance back online (either way) leaves soft flags intact: a project
 flagged offline stays offline.
 
 ## Auth & ownership

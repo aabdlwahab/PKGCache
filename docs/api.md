@@ -82,7 +82,7 @@ One job runs at a time. The job's streamed log is polled via `GET /api/jobs/{id}
 | `import` | — | applies the shuttle in `shuttle/in`; may register a brand-new project |
 | `rollback` | `commit` (hash) | restore the cache to a checkpoint |
 | `lockwarm` | `lock` (uv.lock text), `host` (bare hostname/IP) | warm the cache from a uv.lock, then produce a rewritten lock (download via `/api/lockfile`) |
-| `mode` | `target` ∈ `online`\|`offline` | instance-wide (no project) — recreates the pkgcache container under that profile |
+| `mode` | `target` ∈ `online`\|`offline` | instance-wide (no project) — writes the registry's `"*"` soft flag; the always-on cache process applies it on its next poll (~5s, no restart). The `OFFLINE` env (air-gap hard mode) still wins while set |
 
 ## Notes for maintainers
 

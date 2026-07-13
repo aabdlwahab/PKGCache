@@ -47,9 +47,14 @@ cd webui && PKGCACHE_PROJECTS=/tmp/verify/projects.json \
 ```
 
 Shares the registry file with pkgcache — a webui write is picked up by the pkgcache
-supervisor on its next poll. `docker compose ps` calls in reads.status() hit the
-real stack (read-only, harmless); the livefeed's `pkgcache` hostname won't resolve
-locally, so /api/proxies health shows roles down — expected.
+supervisor on its next poll. The backend reaches the cache over HTTP(S) at
+`UI_PKGCACHE_HOST` (default `pkgcache`, the compose alias — nothing docker-related:
+status, health, and the mode op's confirm-poll are all plain probes). To point it at
+a locally-run pkgcache add `UI_PKGCACHE_HOST=127.0.0.1 PKGCACHE_UNIFIED_PORT=18443`
+to the command above — and note the internal role URLs are https, so give the local
+pkgcache the repo's TLS material (`PKGCACHE_TLS_CERT=$PWD/../certs/server.crt
+PKGCACHE_TLS_KEY=$PWD/../certs/server.key`) or the probes report unreachable
+(harmless: ops still work, mode says "flag saved, not confirmed").
 
 ## console (React)
 

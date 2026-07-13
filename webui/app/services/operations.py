@@ -10,11 +10,13 @@ log lines* as it runs. Two callers share this one implementation:
     `python3 scripts/pkgops.py <action> …` runs the exact same code by hand on
     the air-gapped host.
 
-Python does all the orchestration, validation and control flow; git/dvc/docker
-are still the underlying CLIs (there is no Python-native equivalent for
-`git bundle` or `docker compose --profile`), invoked via subprocess with NO
-shell — so untrusted values (drive paths, commit hashes) are always separate
-argv elements, never interpolated into a command line.
+Python does all the orchestration, validation and control flow; git and dvc are
+still the underlying CLIs (there is no Python-native equivalent for `git bundle`),
+invoked via subprocess with NO shell — so untrusted values (drive paths, commit
+hashes) are always separate argv elements, never interpolated into a command line.
+Nothing here touches docker: mode changes are registry writes the always-on cache
+process applies on its own (see mode()), and container lifecycle is a HOST concern
+(the webui container deliberately has no docker socket).
 """
 import json
 import os
@@ -23,18 +25,20 @@ import re
 import shutil
 import ssl
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
 from app import settings
 from app.errors import OpError
 from app.gateways import proc
+from app.gateways.pkgcache import fetch_json
 from app.gateways.pkgcache import git_maintain_url as _git_maintain_url
 from app.gateways.proc import run
 from app.services import projects
 from app.services.lockwarm import IndexMap, LockParser, LockRewriter, Proxy, Warmer
 from app.services.projects import GLOBAL
-from app.urls import pypi_internal
+from app.urls import health_sources, pypi_internal
 
 ROOT = settings.ROOT
 
@@ -42,7 +46,7 @@ ROOT = settings.ROOT
 # is caches/ (unchanged); each named project gets caches/projects/<name>/, its own
 # git+DVC repo, so a per-project checkpoint / rollback / shuttle only ever touches
 # that one project's state. All git/dvc calls below run with cwd=_repo(project);
-# only the manifest regen and `docker compose` run from ROOT.
+# only the manifest regen runs from ROOT.
 CACHE_REPO = settings.CACHE_REPO   # the global project's repo (default)
 
 # Fixed shuttle staging dirs — the tool never takes a drive path. Export writes to
@@ -102,6 +106,11 @@ def _echo(msg):
     """A progress line, mirroring the old scripts' `echo "==> ..."`."""
     return f"==> {msg}\n"
 
+
+# How long mode() waits for the live cache process to confirm a flipped flag: the
+# supervisor polls the registry every PKGCACHE_PROJECT_POLL (5s default) and
+# live-swaps the config, so one poll interval plus margin covers the normal case.
+_MODE_CONFIRM_TIMEOUT = float(os.environ.get("PKGCACHE_MODE_TIMEOUT", "15"))
 
 # The git trust env and the subprocess/git-log helpers now live in the proc gateway
 # (app.gateways.proc); `run` is imported bare above so it stays monkeypatchable in
@@ -578,11 +587,13 @@ class Operations:
                 yield "WARNING: no certs/ in the shuttle — run scripts/gen-certs.sh on the online\n"
                 yield "         side and re-export, or the HTTPS proxy won't have a certificate.\n"
 
-            yield _echo("bringing up air-gapped proxies (serve-only)")
-            yield from run(
-                ["docker", "compose", "--profile", "offline", "up", "-d"],
-                cwd=ROOT, env={"COMPOSE_PROFILE": "offline"},
-            )
+            # The always-on cache process serves the imported state directly off the
+            # shared volume (it reopens each ledger on its next poll) — nothing to
+            # restart. First bring-up on a fresh machine is a HOST step: this
+            # backend deliberately has no docker access.
+            if fetch_json(health_sources(GLOBAL)["pip"], timeout=2) is None:
+                yield "WARNING: the cache process isn't reachable — start the stack on the host:\n"
+                yield "         OFFLINE=1 docker compose --profile offline --profile ui up -d\n"
 
             yield _echo("done. Point air-gapped clients at (install certs/ca.crt to trust these):")
             uni = projects.UNIFIED_PORT
@@ -669,12 +680,42 @@ class Operations:
         yield _echo(f"to re-resolve against this cache, point uv's index at {public_base}/<index>/+simple")
 
     def mode(self, target):
-        """Recreate just the pkgcache container under the online/offline profile."""
-        yield _echo(f"switching cache to {target}")
-        yield from run(
-            ["docker", "compose", "--profile", target, "up", "-d", "--no-deps", "pkgcache"],
-            env={"OFFLINE": "1" if target == "offline" else "0"},
-        )
+        """Flip the instance-wide SOFT offline switch — a registry write (the "*"
+        offline flag) the always-on cache process applies on its next registry poll
+        (~5s), live-swapping every project's config with no restart and no docker.
+        While set it shadows (never modifies) the per-project soft flags; clearing
+        it restores each project to its own flag. The OFFLINE env on the cache
+        container remains the air-gap HARD mode: while that is set, the instance
+        stays offline no matter what this op writes."""
+        offline = target == "offline"
+        yield _echo(f"switching cache to {target} (registry write — applied on the cache's next poll)")
+        projects.set_instance_offline(offline)
+
+        # Confirm against the live process: /healthz reports the mode actually being
+        # served (the supervisor swaps core.config in place — see pkgcache app.py).
+        url = health_sources(GLOBAL)["pip"]
+        deadline = time.monotonic() + _MODE_CONFIRM_TIMEOUT
+        reachable = False
+        while True:
+            data = fetch_json(url, timeout=2)
+            if isinstance(data, dict):
+                reachable = True
+                if bool(data.get("offline")) == offline:
+                    yield _echo(f"cache confirmed {target}")
+                    return
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(1.0)
+        if not reachable:
+            yield _echo("cache process unreachable — the flag is saved and applies "
+                        "as soon as the cache is up")
+        elif not offline:
+            yield _echo("cache still reports offline: the container's OFFLINE env "
+                        "(the air-gap hard mode) pins it — this instance can only "
+                        "serve online if the stack is brought up without OFFLINE=1")
+        else:
+            yield _echo("cache has not confirmed yet — the flag is saved and applies "
+                        "on the cache's next registry poll")
 
     def build(self, action, params):
         """Validate params eagerly (raising OpError on bad input — so a UI POST gets
