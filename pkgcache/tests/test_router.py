@@ -247,6 +247,34 @@ def test_offline_flag_scopes_to_one_project(tmp_path, monkeypatch):
     assert cfgs["global"].offline is False
 
 
+def test_instance_star_flag_takes_every_project_offline(tmp_path, monkeypatch):
+    # The reserved "*" key is the webui mode op's instance-wide SOFT switch: while
+    # set, every project (global included) is offline, WITHOUT touching the
+    # per-project flags it shadows — clearing it must restore each project to its
+    # own flag.
+    from pkgcache.core.config import load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text('{"projects": {"gamma": {}, "delta": {}}, '
+                   '"offline": {"*": true, "gamma": true}}')
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+    monkeypatch.setenv("OFFLINE", "0")
+
+    cfgs = load_roles()["pypi"]
+    assert cfgs["global"].offline is True
+    assert cfgs["gamma"].offline is True
+    assert cfgs["delta"].offline is True
+
+    # Clearing "*" restores the per-project flags exactly as they were.
+    reg.write_text('{"projects": {"gamma": {}, "delta": {}}, '
+                   '"offline": {"gamma": true}}')
+    cfgs = load_roles()["pypi"]
+    assert cfgs["global"].offline is False
+    assert cfgs["gamma"].offline is True
+    assert cfgs["delta"].offline is False
+
+
 def test_env_offline_wins_over_soft_flags(tmp_path, monkeypatch):
     # OFFLINE=1 is the air-gap hard mode: a project with no soft flag (or an
     # explicit false) must still be offline.

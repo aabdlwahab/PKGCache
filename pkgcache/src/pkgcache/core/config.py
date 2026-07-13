@@ -193,10 +193,13 @@ def load_roles() -> dict[str, dict[str, Config]]:
     registry = _registry()
     names = sorted(registry.get("projects", {}) or {})
     # A project is offline when the instance is (the OFFLINE env — the air-gap hard
-    # mode) OR its registry soft flag is set; the webui flips the flag per project
-    # (global included) and the supervisor applies it on its next poll.
+    # mode), OR the registry's instance-wide "*" soft flag is set (the webui's mode
+    # op — overrides every project while set, without touching their own flags), OR
+    # its own per-project soft flag is set; the webui flips the flags (global
+    # included) and the supervisor applies them on its next poll.
     env_offline = _as_bool(os.environ.get("OFFLINE", "0"))
     soft = registry.get("offline", {}) or {}
+    instance_offline = env_offline or bool(soft.get("*"))
     # ONE content store for the whole instance (all projects + roles), so identical
     # bytes are held once regardless of which project or ecosystem fetched them.
     cas_root = (base / _CAS_SUBDIR) if _cas_enabled() else None
@@ -206,13 +209,13 @@ def load_roles() -> dict[str, dict[str, Config]]:
         port = _DEFAULT_PORTS[role]
         projects = {
             GLOBAL: _build(role, data, cache_root=base / _ROLE_SUBDIR[role],
-                           offline=env_offline or bool(soft.get(GLOBAL)),
+                           offline=instance_offline or bool(soft.get(GLOBAL)),
                            cert=cert, key=key, port=port, cas_root=cas_root),
         }
         for name in names:
             projects[name] = _build(
                 role, data, cache_root=base / _PROJECTS_SUBDIR / name / _ROLE_SUBDIR[role],
-                offline=env_offline or bool(soft.get(name)),
+                offline=instance_offline or bool(soft.get(name)),
                 cert=cert, key=key, project=name, port=port, cas_root=cas_root,
             )
         out[role] = projects
