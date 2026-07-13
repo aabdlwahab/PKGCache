@@ -8,7 +8,9 @@ the proxy username. This module turns (project, eco) into the three URL shapes t
 backend needs: the client-facing pull endpoints (with copy-paste setup instructions)
 shown in the UI, the internal `pkgcache`-container progress feeds the live poller
 hits, and the /healthz probes. Ports and prefix rules come from the projects
-service, so nothing is hard-coded here."""
+service, and the cache's hostname from settings.PKGCACHE_HOST (the compose alias
+by default), so nothing is hard-coded here."""
+from app import settings
 from app.services import projects
 
 # eco label → pkgcache role, and the scheme each role speaks (apt is the plain-HTTP
@@ -23,10 +25,10 @@ _PROGRESS_PATH = {"docker": "/v2/_progress", "npm": "/-/progress",
 
 
 def _admin_base(project, eco):
-    """scheme://pkgcache:<port>/<project>/<role> — the uniform internal admin base
+    """scheme://<cache-host>:<port>/<project>/<role> — the uniform internal admin base
     every role answers on (the routers strip the prefix; see projects.role_prefix)."""
     role = _ECO_ROLE[eco]
-    return (f"{_ECO_SCHEME[eco]}://pkgcache:{projects.ROLE_PORT[role]}"
+    return (f"{_ECO_SCHEME[eco]}://{settings.PKGCACHE_HOST}:{projects.ROLE_PORT[role]}"
             f"{projects.role_prefix(project, role)}")
 
 
@@ -49,7 +51,7 @@ def pypi_internal(project=projects.GLOBAL):
     file into the cache; the public prefix is what the rewritten lock's URLs carry
     (always fully qualified: `/global/pypi` or `/<project>/pypi`)."""
     prefix = projects.role_prefix(project, "pypi")
-    return f"https://pkgcache:{projects.ROLE_PORT['pypi']}{prefix}", prefix
+    return f"https://{settings.PKGCACHE_HOST}:{projects.ROLE_PORT['pypi']}{prefix}", prefix
 
 
 def endpoints(project=projects.GLOBAL):

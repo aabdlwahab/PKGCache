@@ -1,8 +1,9 @@
 """The pkgcache-container HTTP boundary: the one gateway for talking to the running
-proxies over the compose network. Owns the internal (unverified) TLS context — the
-roles terminate TLS in-process with the private CA, so internal calls skip
-verification — and builds every project-prefixed URL through the projects service so
-the prefix rules live in one place.
+proxies (at settings.PKGCACHE_HOST — the compose-network alias by default, or
+wherever the cache runs when the backend is outside that network). Owns the internal
+(unverified) TLS context — the roles terminate TLS in-process with the private CA,
+so internal calls skip verification — and builds every project-prefixed URL through
+the projects service so the prefix rules live in one place.
 
 Read feeds (progress/health/ledger) go through fetch_json; the checkpoint's git
 maintenance and the console's artifact upload build their target URLs here and drive
@@ -15,7 +16,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-from app import manifest
+from app import manifest, settings
 from app.services import projects
 
 # Internal polls/among roles that serve HTTPS with the private CA — skip verification
@@ -59,7 +60,7 @@ _cache: dict = {}  # url -> (monotonic_ts, value)
 def _ledger_url(project, role, path, params=None):
     scheme = "http" if role == "apt" else "https"
     port = projects.ROLE_PORT[role]
-    url = f"{scheme}://pkgcache:{port}{projects.role_prefix(project, role)}{path}"
+    url = f"{scheme}://{settings.PKGCACHE_HOST}:{port}{projects.role_prefix(project, role)}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
     return url
@@ -104,7 +105,7 @@ def git_maintain_url(project):
     the project's URL prefix (all projects share the role ports; the project rides the
     path — see projects.role_prefix). Raises ProjectError if the project is unknown."""
     port = projects.ports(project)["git"]
-    return f"https://pkgcache:{port}{projects.role_prefix(project, 'git')}/+maintain"
+    return f"https://{settings.PKGCACHE_HOST}:{port}{projects.role_prefix(project, 'git')}/+maintain"
 
 
 def files_target(project, rel, overwrite=False):
@@ -117,7 +118,8 @@ def files_target(project, rel, overwrite=False):
 
 
 def files_connection(timeout=3600):
-    """An HTTPS connection to the shared files role on the `pkgcache` container, for
-    the console upload/delete proxy to stream a request body through."""
+    """An HTTPS connection to the shared files role on the pkgcache host, for the
+    console upload/delete proxy to stream a request body through."""
     return http.client.HTTPSConnection(
-        "pkgcache", projects.ROLE_PORT["files"], timeout=timeout, context=INTERNAL_TLS)
+        settings.PKGCACHE_HOST, projects.ROLE_PORT["files"],
+        timeout=timeout, context=INTERNAL_TLS)

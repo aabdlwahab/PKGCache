@@ -19,6 +19,13 @@ MANIFESTS = CACHE_REPO / "manifests"
 HOST = os.environ.get("UI_HOST", "0.0.0.0")
 PORT = int(os.environ.get("UI_PORT", "8088"))
 
+# Where the pkgcache process answers (ledger reads, health probes, git maintenance,
+# artifact uploads). Defaults to the compose-network alias; point it at localhost —
+# or wherever the cache runs — when the backend runs outside the compose network
+# (e.g. scripts/serve-ui.sh on the host). UI_-prefixed because the bare
+# PKGCACHE_HOST is already the cache process's own BIND address.
+PKGCACHE_HOST = os.environ.get("UI_PKGCACHE_HOST", "pkgcache")
+
 # ---- auth (Phase 2) ------------------------------------------------------
 # The break-glass superuser: verified from the environment at login and NEVER
 # written to the users store. Account management creates ordinary stored accounts;
