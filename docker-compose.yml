@@ -12,6 +12,11 @@
 # is the air-gap mode (a cache miss simply fails). Run scripts/gen-certs.sh once
 # before `up` to populate ./certs.
 
+# Pin the compose project name so every invocation — any directory name, any shell,
+# systemd, the CLI — manages the SAME stack instead of deriving a name from the
+# checkout directory's basename.
+name: package-registry
+
 services:
   # ---- the cache (all four roles, one process) ---------------------------
   pkgcache:
@@ -21,8 +26,9 @@ services:
     # Run as the host user so everything written under ./caches is host-owned, not
     # root — this is what lets the webui's `dvc add`/`dvc checkout` and the operator
     # manage the cache without permission fights. All ports are >1024, so a non-root
-    # process can bind them. IDs come from .env (see .env.example).
-    user: "${PKGCACHE_UID:-1000}:${PKGCACHE_GID:-1000}"
+    # process can bind them. IDs come from .env — written by scripts/bootstrap.sh;
+    # REQUIRED (no silent fallback: a wrong uid means root-owned cache files).
+    user: "${PKGCACHE_UID:?run ./scripts/bootstrap.sh first}:${PKGCACHE_GID:?run ./scripts/bootstrap.sh first}"
     environment:
       OFFLINE: "${OFFLINE:-0}"
       PKGCACHE_CACHE_ROOT: /caches
@@ -73,11 +79,10 @@ services:
     # Same host-user mapping as pkgcache, so the cache repo's git objects, the DVC
     # store and manifests this service writes are owned by the operator, never root
     # (root-owned git objects are exactly what blocked the host from committing).
-    # group_add gives the non-root container the host's docker-socket group, so it
-    # can still drive `docker compose`. IDs + docker gid come from .env.
-    user: "${PKGCACHE_UID:-1000}:${PKGCACHE_GID:-1000}"
-    group_add:
-      - "${DOCKER_GID:-999}"
+    # No docker socket and no docker group: mode changes are registry writes the
+    # cache process applies live (see webui/app/services/operations.py mode()),
+    # status is an HTTP health probe — this container has no power over the host.
+    user: "${PKGCACHE_UID:?run ./scripts/bootstrap.sh first}:${PKGCACHE_GID:?run ./scripts/bootstrap.sh first}"
     environment:
       UI_HOST: 0.0.0.0
       HOME: /tmp           # writable home for git/dvc config under an arbitrary uid
@@ -90,10 +95,14 @@ services:
       # Shuttle staging dir (from .env). Forwarded into the process env so the backend's
       # os.environ.get("PKGCACHE_SHUTTLE") sees it; empty falls back to ./shuttle.
       PKGCACHE_SHUTTLE: "${PKGCACHE_SHUTTLE:-}"
-    working_dir: ${PWD}
+    working_dir: /repo
     volumes:
-      - .:${PWD}                              # repo at its own path (includes ./shuttle)
-      - /var/run/docker.sock:/var/run/docker.sock
+      # The repo at a FIXED container path — no ${PWD} coupling. The backend resolves
+      # every path relative to its own source tree (webui/app/settings.py ROOT), and
+      # nothing in it talks to the host docker daemon anymore, so container paths no
+      # longer need to mirror host paths. The mount includes ./caches, ./config and
+      # ./shuttle.
+      - .:/repo
       # The shuttle staging dir defaults to ./shuttle (inside the repo mount above).
       # If you relocate it with PKGCACHE_SHUTTLE to a path OUTSIDE the repo, mount
       # that path here too, e.g.:  - ${PKGCACHE_SHUTTLE}:${PKGCACHE_SHUTTLE}
