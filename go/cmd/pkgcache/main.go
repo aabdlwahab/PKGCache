@@ -22,22 +22,25 @@ var commands = map[string]struct {
 	summary string
 	run     func(ctx context.Context, args []string) error
 }{
-	"run":     {"run one command with its tools pointed at the cache", runRun},
-	"shell":   {"open a shell whose tools use the cache", runShell},
-	"env":     {"print the settings that point tools at the cache", runEnv},
-	"build":   {"run docker build through the cache", runBuild},
-	"compose": {"run docker compose through the cache", runCompose},
-	"limit":   {"set how much disk this cache may use", runLimit},
-	"prune":   {"reclaim space, now, because you asked", runPrune},
-	"status":  {"is the cache running, and what is in it", runStatus},
-	"stop":    {"stop the cache daemon", runStop},
-	"serve":   {"run the cache in the foreground", runServe},
-	"version": {"print build identity", runVersion},
+	"run":                {"run one command with its tools pointed at the cache", runRun},
+	"shell":              {"open a shell whose tools use the cache", runShell},
+	"env":                {"print the settings that point tools at the cache", runEnv},
+	"build":              {"run docker build through the cache", runBuild},
+	"compose":            {"run docker compose through the cache", runCompose},
+	"docker-setup":       {"teach the Docker daemon about this cache", runDockerSetup},
+	"docker-build-setup": {"cache apt and apk in every build on this machine", runDockerBuildSetup},
+	"limit":              {"set how much disk this cache may use", runLimit},
+	"prune":              {"reclaim space, now, because you asked", runPrune},
+	"status":             {"is the cache running, and what is in it", runStatus},
+	"stop":               {"stop the cache daemon", runStop},
+	"serve":              {"run the cache in the foreground", runServe},
+	"version":            {"print build identity", runVersion},
 }
 
 // order fixes the help text, which a map iteration would shuffle between runs.
 var order = []string{
 	"run", "shell", "env", "build", "compose",
+	"docker-setup", "docker-build-setup",
 	"limit", "status", "prune", "stop", "serve", "version",
 }
 
@@ -111,7 +114,7 @@ usage: pkgcache <command> [flags]
 commands:
 `)
 	for _, name := range order {
-		fmt.Fprintf(os.Stderr, "  %-14s %s\n", name, commands[name].summary)
+		fmt.Fprintf(os.Stderr, "  %-20s %s\n", name, commands[name].summary)
 	}
 	fmt.Fprint(os.Stderr, "\nrun `pkgcache <command> -h` for a command's flags\n")
 }
