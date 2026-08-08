@@ -26,6 +26,8 @@ func runSetup(ctx context.Context, args []string) error {
 	minFree := fs.String("min-free", "", "free-disk floor to keep underneath the limit")
 	noDirect := fs.Bool("no-direct", false,
 		"never reach a public registry: use the team cache or fail")
+	noCache := fs.Bool("no-cache", false,
+		"do not cache locally; use the team cache through a verified loopback bridge")
 	uninstall := fs.Bool("uninstall", false, "forget the team cache and its chain")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `pkgcache setup — point this machine at a cache, once
@@ -91,17 +93,24 @@ flags:
 			Fingerprint: verified.Fingerprint,
 			Project:     *project,
 			Direct:      !*noDirect,
+			NoCache:     *noCache,
 		}
 		if err := local.WriteTeam(snap.DataDir, team); err != nil {
 			return err
 		}
-		if err := local.ConfigureChains(ctx, snap, team, true); err != nil {
-			return err
+		// No chain to configure when nothing is cached here: with -no-cache this
+		// machine is a bridge, and opening the store to write upstream rows would
+		// create the databases the mode promises not to.
+		if !team.NoCache {
+			if err := local.ConfigureChains(ctx, snap, team, true); err != nil {
+				return err
+			}
 		}
 		fmt.Printf("pkgcache: verified %s\n  fingerprint %s\n",
 			team.Server, team.Fingerprint)
-	} else if *noDirect {
-		return errors.New("-no-direct only means something with a team cache; pass -server")
+	} else if *noDirect || *noCache {
+		return errors.New(
+			"-no-direct and -no-cache only mean something with a team cache; pass -server")
 	}
 
 	return describe(snap)
@@ -140,6 +149,12 @@ func applyLimit(dataDir, limit, minFree string) error {
 // check that setup did what they meant.
 func describe(snap *config.Snapshot) error {
 	fmt.Println()
+	if team, has, err := local.ReadTeam(snap.DataDir); err == nil && has && team.NoCache {
+		fmt.Println("local      disabled")
+		fmt.Printf("team       %s (project %s)\n", team.Server, team.Project)
+		fmt.Println("direct     never — this machine caches nothing itself")
+		return nil
+	}
 	budget, err := local.ReadBudget(snap.DataDir)
 	switch {
 	case errors.Is(err, local.ErrNoLimit):
@@ -163,6 +178,9 @@ func describe(snap *config.Snapshot) error {
 		return nil
 	}
 	fmt.Printf("team       %s (project %s)\n", team.Server, team.Project)
+	if team.NoCache {
+		fmt.Println("local      disabled — a verified bridge to the team cache, nothing stored")
+	}
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {

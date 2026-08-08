@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -647,5 +648,64 @@ func TestPkgcacheFallsBackFromTeamToPublic(t *testing.T) {
 	defer teamMu.Unlock()
 	if publicHits == 0 {
 		t.Fatal("nothing fell through to the public registry once the team cache was down")
+	}
+}
+
+// -no-cache is a promise as much as a setting: it is the old client's behaviour, and if
+// it ever opens a store then the merge has cost existing users something they did not
+// ask for. Asserted by looking at the directory rather than by reading the code.
+func TestPkgcacheNoCacheOpensNoStore(t *testing.T) {
+	binary, err := buildPkgcache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir := t.TempDir()
+
+	// A pkgreg serving TLS is what -no-cache bridges to. A plain TLS server is enough
+	// to exercise the setup path's verification, which is what writes the mode.
+	var caPEM []byte
+	team := httptest.NewTLSServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/ca.crt" {
+				_, _ = w.Write(caPEM)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer team.Close()
+	caPEM = pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: team.Certificate().Raw,
+	})
+	caPath := filepath.Join(t.TempDir(), "ca.crt")
+	if err := os.WriteFile(caPath, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	run := exec.Command(binary, "setup",
+		"-server", team.URL, "-ca-file", caPath, "-no-cache")
+	run.Env = append(os.Environ(), "PKGCACHE_DATA_DIR="+dataDir, "PKGCACHE_LIMIT=")
+	out, err := run.CombinedOutput()
+	if err != nil {
+		t.Fatalf("setup -no-cache: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "local      disabled") {
+		t.Errorf("setup did not report the mode:\n%s", out)
+	}
+
+	// The promise: settings, and nothing that constitutes a store.
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{"team.json": true, "team-ca.crt": true, "budget.json": true}
+	for _, entry := range entries {
+		if !allowed[entry.Name()] {
+			t.Errorf("-no-cache created %q; it must open no store", entry.Name())
+		}
+	}
+	for _, forbidden := range []string{"db", "blobs", "managed"} {
+		if _, err := os.Stat(filepath.Join(dataDir, forbidden)); err == nil {
+			t.Errorf("-no-cache created %s/", forbidden)
+		}
 	}
 }

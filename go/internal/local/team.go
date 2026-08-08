@@ -37,6 +37,13 @@ type Team struct {
 	// Direct records whether the public registry is in the chain behind the team cache.
 	// False is `setup -no-direct`: a machine that must never reach a registry itself.
 	Direct bool `json:"direct"`
+	// NoCache turns local caching off entirely, leaving a verified loopback bridge to
+	// the team cache and nothing else — which is exactly what pkgreg-client did.
+	//
+	// It is a promise as much as a setting: in this mode no store is opened, no
+	// database is created and nothing is written to the cache directory, so the merged
+	// binary costs an existing client's users its size and nothing else.
+	NoCache bool `json:"no_cache,omitempty"`
 }
 
 func teamPath(dataDir string) string { return filepath.Join(dataDir, "team.json") }

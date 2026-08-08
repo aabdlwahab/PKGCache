@@ -46,6 +46,11 @@ func dockerCommand(ctx context.Context, argv []string, compose bool) error {
 		"reach the cache through "+clientbuild.DefaultHostGateway+" instead of loopback, "+
 			"for a daemon that cannot see this terminal's network: Docker Desktop, a "+
 			"remote daemon, CI")
+	// pkgreg-client spells this -cache-address. Both work, because every existing
+	// instruction, Makefile and CI job says the old one, and a merge that silently
+	// broke them would be a migration rather than a merge.
+	cacheAddress := fs.Bool("cache-address", false,
+		"deprecated alias for -host-address")
 	fs.BoolVar(&options.SkipFrom, "keep-images", false,
 		"leave image names alone, for a daemon that already resolves them through the cache")
 	gitHosts := fs.String("git-host", strings.Join(defaultGitHosts, ","),
@@ -77,6 +82,11 @@ flags:
 			return nil
 		}
 		return err
+	}
+	if *cacheAddress {
+		fmt.Fprintln(os.Stderr,
+			"pkgcache: -cache-address is now -host-address; the old name still works")
+		options.HostAddress = true
 	}
 
 	// The cache has to be running before its address can be put into a build.

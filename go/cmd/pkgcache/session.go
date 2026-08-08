@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/brightskies/pkgreg/internal/clientbridge"
 	"github.com/brightskies/pkgreg/internal/config"
 	"github.com/brightskies/pkgreg/internal/local"
 	"github.com/brightskies/pkgreg/internal/session"
@@ -85,12 +86,61 @@ func startSession(
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
 	}
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, stop, err := reachCache(ctx, snap)
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
 	}
+	if stop != nil {
+		// A bridge lives exactly as long as the command it serves. Registered here so
+		// every caller gets it without having to remember.
+		bridgeStops = append(bridgeStops, stop)
+	}
 	environment := session.Environment(os.Environ(), sessionOptions(state, flags))
 	return snap, state, environment, fs.Args(), nil
+}
+
+// bridgeStops holds the shutdown for a bridge started by this process, closed once the
+// command it exists for has finished.
+var bridgeStops []func()
+
+func closeBridges() {
+	for _, stop := range bridgeStops {
+		stop()
+	}
+	bridgeStops = nil
+}
+
+// reachCache returns something for tools to point at: a local daemon, or — when this
+// machine caches nothing — a verified loopback bridge to the team cache.
+//
+// The second is what pkgreg-client has always done, and it is a mode of this program
+// rather than a second program. Nothing here opens a store, creates a database or
+// writes to the cache directory, which is the promise -no-cache makes.
+func reachCache(
+	ctx context.Context, snap *config.Snapshot,
+) (local.State, func(), error) {
+	team, has, err := local.ReadTeam(snap.DataDir)
+	if err != nil {
+		return local.State{}, nil, err
+	}
+	if !has || !team.NoCache {
+		state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+		return state, nil, err
+	}
+
+	caPEM, err := os.ReadFile(local.TeamCAPath(snap.DataDir))
+	if err != nil {
+		return local.State{}, nil, fmt.Errorf(
+			"pkgcache: the team cache's CA is missing; run `pkgcache setup` again: %w", err)
+	}
+	running, err := clientbridge.Start(ctx, clientbridge.SessionOptions{
+		Server: team.Server, Project: team.Project, CAPEM: caPEM,
+		CAFingerprint: team.Fingerprint,
+	})
+	if err != nil {
+		return local.State{}, nil, err
+	}
+	return local.State{Addr: running.Addr}, func() { _ = running.Close() }, nil
 }
 
 func runRun(ctx context.Context, args []string) error {
@@ -125,6 +175,7 @@ flags:
 	child.Cancel = func() error { return nil }
 
 	err = child.Run()
+	closeBridges()
 	// A full cache is reported whatever happened, and the child's own failure still
 	// wins the exit status: `npm ci` exiting 1 must surface as 1, never masked by
 	// pkgcache's 75, because the build failing is the more urgent of the two facts.
@@ -182,6 +233,7 @@ Type exit to return to your previous environment.
 	child.Cancel = func() error { return nil }
 
 	err = child.Run()
+	closeBridges()
 	full := reportFull(snap.DataDir)
 	if err == nil {
 		fmt.Fprintln(os.Stderr, "pkgcache: session ended; previous settings restored")
@@ -211,6 +263,14 @@ flags:
 `)
 	if err != nil {
 		return err
+	}
+	// env prints settings for a shell that outlives this process, so a bridge that dies
+	// with it would be worse than useless. It is refused rather than silently printed.
+	if len(bridgeStops) > 0 {
+		closeBridges()
+		return errors.New(
+			"env cannot be used with -no-cache: the bridge it names lives only as long as\n" +
+				"  this command. Use `pkgcache run` or `pkgcache shell`, which keep it open")
 	}
 	for _, entry := range changedBy(os.Environ(), environment) {
 		name, value, _ := strings.Cut(entry, "=")

@@ -35,19 +35,38 @@ type SessionOptions struct {
 	CommandContext  func(context.Context, string, ...string) *exec.Cmd
 }
 
-// Session runs a temporary pkgreg environment. It writes no files, installs no
-// certificate, and binds only to an ephemeral IPv4 loopback port.
-func Session(ctx context.Context, options SessionOptions) error {
+// Running is a bridge that is listening, and the way to stop it.
+type Running struct {
+	// Addr is the loopback address tools are pointed at, host:port.
+	Addr string
+	// Errors reports a listener failure. Nothing is sent on a clean shutdown.
+	Errors <-chan error
+
+	server   *http.Server
+	listener net.Listener
+}
+
+// Close stops the bridge, allowing in-flight requests a moment to finish.
+func (r *Running) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return r.server.Shutdown(ctx)
+}
+
+// Start binds the loopback bridge and serves it until Close.
+//
+// Split out of Session so that a caller can run something other than a shell against
+// it. pkgcache does exactly that: with local caching turned off it is this bridge and
+// nothing else, which is what makes "the old client's behaviour" a mode of the merged
+// program rather than a second program.
+func Start(ctx context.Context, options SessionOptions) (*Running, error) {
 	target, err := parseServer(options.Server)
 	if err != nil {
-		return err
-	}
-	if options.Project == "" {
-		options.Project = "global"
+		return nil, err
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(options.CAPEM) {
-		return errors.New("verified CA contains no usable PEM certificate")
+		return nil, errors.New("verified CA contains no usable PEM certificate")
 	}
 	tlsConfig := &tls.Config{ // #nosec G402 -- the caller supplies a fingerprint-verified CA.
 		ServerName: target.Hostname(), MinVersion: tls.VersionTLS12, RootCAs: roots,
@@ -69,16 +88,15 @@ func Session(ctx context.Context, options SessionOptions) error {
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(ctx, "tcp4", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("start temporary loopback bridge: %w", err)
+		return nil, fmt.Errorf("start temporary loopback bridge: %w", err)
 	}
 	local := listener.Addr().String()
-	handler := &bridge{
-		target: target,
-		local:  local,
-		token:  options.Token,
-		client: upstream,
+	server := &http.Server{
+		Handler: &bridge{
+			target: target, local: local, token: options.Token, client: upstream,
+		},
+		ReadHeaderTimeout: 30 * time.Second,
 	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 30 * time.Second}
 	serverErrors := make(chan error, 1)
 	go func() {
 		if serveErr := server.Serve(listener); serveErr != nil &&
@@ -86,6 +104,25 @@ func Session(ctx context.Context, options SessionOptions) error {
 			serverErrors <- serveErr
 		}
 	}()
+	return &Running{
+		Addr: local, Errors: serverErrors, server: server, listener: listener,
+	}, nil
+}
+
+// Session runs a temporary pkgreg environment. It writes no files, installs no
+// certificate, and binds only to an ephemeral IPv4 loopback port.
+func Session(ctx context.Context, options SessionOptions) error {
+	if options.Project == "" {
+		options.Project = "global"
+	}
+	running, err := Start(ctx, options)
+	if err != nil {
+		return err
+	}
+	local := running.Addr
+	serverErrors := running.Errors
+	listener := running.listener
+	server := running.server
 
 	sessionCtx, stopSession := context.WithCancel(ctx)
 	defer stopSession()
