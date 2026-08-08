@@ -77,6 +77,26 @@ bridge-release: ## Build the loopback bridge for Linux, macOS, and Windows
 	cd bin && sha256sum pkgreg-bridge-linux-* pkgreg-bridge-darwin-* \
 		pkgreg-bridge-windows-*.exe > pkgreg-bridge-SHA256SUMS
 
+# pkgcache is the same engine composed for one machine: one loopback port, no
+# certificate, no accounts. It ships as its own binary rather than a subcommand so a
+# laptop does not carry the control plane, the PKI and the migration code.
+pkgcache: ## Build pkgcache for this host
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/pkgcache ./cmd/pkgcache
+
+pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-arm64 ./cmd/pkgcache
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-darwin-amd64 ./cmd/pkgcache
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-darwin-arm64 ./cmd/pkgcache
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-windows-amd64.exe ./cmd/pkgcache
+	cd bin && sha256sum pkgcache-linux-* pkgcache-darwin-* \
+		pkgcache-windows-*.exe > pkgcache-SHA256SUMS
+
 test: ## Run tests
 	go test ./...
 

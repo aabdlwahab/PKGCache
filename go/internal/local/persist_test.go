@@ -1,3 +1,6 @@
+//go:build !windows
+
+// Socket activation is the systemd and launchd contract, so these run on Unix.
 package local
 
 import (

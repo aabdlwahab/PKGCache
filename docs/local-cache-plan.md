@@ -325,6 +325,35 @@ works in CI and on a laptop, needs no shell integration, and leaves nothing behi
 
 ---
 
+## Status, 2026-08-08
+
+**M1–M7 and M9 are implemented, verified and merged.** What follows is the plan they
+were built from; this section is what actually happened.
+
+Verified by running it, on Linux: real `npm`, `uv` and `git` through the cache and again
+from it with the origin switched off; a real `docker build`; socket activation against a
+pre-bound descriptor; twenty concurrent starts producing one daemon; a full cache
+serving an install it does not store, reporting it, and exiting 75. Every package passes
+`go test -race`.
+
+**Not done, and not started:**
+
+- **M8, the team upstream.** `upstream --from` needs two things that are not in the
+  tree: the upstream pool has no way to trust a private CA, and there is nowhere to
+  persist a team cache's address across daemon restarts. Neither is hard; both are more
+  than a wiring change, and shipping a half of it would be worse than shipping none.
+- **The console banner** for a full cache. The other three notification channels and
+  `pkgcache status` are in; putting it in the browser needs an API field and a change to
+  the embedded console assets.
+
+**Written but never run:** the macOS and Windows branches of `docker-setup`, `persist`,
+the daemon lock and process control, and the desktop notification. CI cross-compiles and
+vets all three platforms, which catches the class of breakage where a Linux-only change
+leaves the others referring to something that no longer exists — and catches nothing
+about whether they work.
+
+---
+
 ## Milestones
 
 Each is independently useful and independently testable. Acceptance criteria are

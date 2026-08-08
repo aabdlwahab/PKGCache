@@ -1,3 +1,8 @@
+//go:build !windows
+
+// The lifecycle is proven with real signals and real process death, which is a Unix
+// contract. The Windows half of os_windows.go is compiled by CI and, as recorded in
+// docs/local-cache-plan.md, not run.
 package local
 
 import (

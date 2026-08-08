@@ -384,7 +384,22 @@ func TestPkgcacheFullCacheServesWithoutStoring(t *testing.T) {
 	npmBinary := requireBinary(t, "npm")
 	cache := startCache(t)
 
-	tarballRequests := map[string]int{}
+	// Counted under a mutex: the origin's handler runs on the server's goroutines while
+	// the test reads the tally on its own.
+	var (
+		requestsMu      sync.Mutex
+		tarballRequests = map[string]int{}
+	)
+	countTarball := func(name string) {
+		requestsMu.Lock()
+		defer requestsMu.Unlock()
+		tarballRequests[name]++
+	}
+	tarballCount := func(name string) int {
+		requestsMu.Lock()
+		defer requestsMu.Unlock()
+		return tarballRequests[name]
+	}
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, name := range []string{"first-package", "second-package"} {
 			if r.URL.Path == "/"+name {
@@ -396,7 +411,7 @@ func TestPkgcacheFullCacheServesWithoutStoring(t *testing.T) {
 				return
 			}
 			if r.URL.Path == "/"+name+"/-/"+name+"-1.0.0.tgz" {
-				tarballRequests[name]++
+				countTarball(name)
 				w.Header().Set("Content-Type", "application/octet-stream")
 				_, _ = w.Write(namedNPMTarball(t, name))
 				return
@@ -442,9 +457,9 @@ func TestPkgcacheFullCacheServesWithoutStoring(t *testing.T) {
 	}
 
 	// Nothing was stored, so the same package is fetched from the origin again.
-	before := tarballRequests["second-package"]
+	before := tarballCount("second-package")
 	install(t, cache, npmBinary, t.TempDir(), "second-package")
-	if tarballRequests["second-package"] <= before {
+	if tarballCount("second-package") <= before {
 		t.Error("the artifact came from the cache, but the cache was full")
 	}
 

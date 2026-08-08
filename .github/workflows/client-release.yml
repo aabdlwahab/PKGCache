@@ -1,0 +1,246 @@
+name: Signed client installer release
+
+on:
+  push:
+    tags:
+      - "client-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: "-trimpath"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build static Linux clients
+        shell: bash
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -ldflags="-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/brightskies/pkgreg/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/brightskies/pkgreg/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "dist/pkgreg-client-linux-${arch}" ./cmd/pkgreg-client
+          done
+      - uses: actions/attest@v4
+        with:
+          subject-path: "go/dist/pkgreg-client-linux-*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgreg-client-linux
+          path: go/dist/*
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-14
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: go
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Require Apple signing and notarization credentials
+        shell: bash
+        run: |
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            test -n "${!name:-}" || { echo "::error::$name is required"; exit 1; }
+          done
+      - name: Import Developer ID certificate
+        shell: bash
+        run: |
+          CERTIFICATE="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN="$RUNNER_TEMP/pkgreg-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$CERTIFICATE"
+          security create-keychain -p "$RUNNER_TEMP" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$RUNNER_TEMP" "$KEYCHAIN"
+          security import "$CERTIFICATE" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$RUNNER_TEMP" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+      # The published artifact is the signed bare binary, not the zip.
+      #
+      # notarytool only accepts an archive, so one is still built — but it is a
+      # transport for the submission, not the deliverable, and it is written outside
+      # dist/ so it cannot reach the release. Publishing the zip instead was a real
+      # defect: `pkgreg publish-client` accepts only the bare filename grammar in
+      # internal/clientrelease, so an operator who downloaded the official release got
+      # "3 of 5 platforms published" and macOS developers saw no download at all. A
+      # notarization ticket cannot be stapled to a bare executable in any case;
+      # Gatekeeper verifies it online, and the signature that matters is on the binary.
+      - name: Build, sign, and notarize macOS clients
+        shell: bash
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            binary="pkgreg-client-darwin-${arch}"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build \
+              -ldflags="-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/brightskies/pkgreg/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/brightskies/pkgreg/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o "dist/$binary" ./cmd/pkgreg-client
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" "dist/$binary"
+            codesign --verify --strict --verbose=2 "dist/$binary"
+            ditto -c -k --keepParent "dist/$binary" "$RUNNER_TEMP/${binary}.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/${binary}.zip" --wait \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD"
+            # Prove the signature survived archiving and submission, on the exact
+            # bytes that ship.
+            codesign --verify --strict --verbose=2 "dist/$binary"
+          done
+      - uses: actions/attest@v4
+        with:
+          subject-path: "go/dist/pkgreg-client-darwin-*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgreg-client-macos
+          path: go/dist/*
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: go
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Require Windows signing credentials
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE_BASE64) { throw "WINDOWS_CERTIFICATE_BASE64 is required" }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) { throw "WINDOWS_CERTIFICATE_PASSWORD is required" }
+      - name: Build and Authenticode-sign Windows client
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          go build "-ldflags=-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=$env:GITHUB_REF_NAME -X github.com/brightskies/pkgreg/internal/buildinfo.commit=$env:GITHUB_SHA -X github.com/brightskies/pkgreg/internal/buildinfo.date=$date" `
+            -o dist/pkgreg-client-windows-amd64.exe ./cmd/pkgreg-client
+          $certificate = Join-Path $env:RUNNER_TEMP "pkgreg-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          & signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+            /f $certificate /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+            dist/pkgreg-client-windows-amd64.exe
+          & signtool verify /pa /v dist/pkgreg-client-windows-amd64.exe
+      - uses: actions/attest@v4
+        with:
+          subject-path: "go/dist/pkgreg-client-windows-amd64.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgreg-client-windows
+          path: go/dist/*
+          if-no-files-found: error
+
+  # The gate that was missing. Every artifact shape below was individually reasonable,
+  # and the combination still produced a release that the server could not publish —
+  # because nothing ever ran the operator's actual command against the actual output.
+  # This job is that command. It fails the release rather than shipping something an
+  # operator will discover is broken on their own host.
+  verify-publishable:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkgreg-client-*
+          path: go/dist
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: go/dist
+        run: >-
+          sha256sum pkgreg-client-linux-* pkgreg-client-darwin-*
+          pkgreg-client-windows-*.exe > pkgreg-client-SHA256SUMS
+      - name: Publish the release into a scratch instance and require all 5 platforms
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 go build -o bin/pkgreg ./cmd/pkgreg
+          ./bin/pkgreg init -data-dir "$RUNNER_TEMP/verify" -write-config=false
+          ./bin/pkgreg publish-client -data-dir "$RUNNER_TEMP/verify" dist | tee publish.log
+          # doctor is the same check an operator runs, so agreeing with it here is the
+          # point. Anything short of "5 platform binaries published" fails the release.
+          ./bin/pkgreg doctor -data-dir "$RUNNER_TEMP/verify" > doctor.log 2>&1 || true
+          grep -q "5 platform binaries published with matching checksums" doctor.log || {
+            echo "::error::the release artifacts are not publishable by pkgreg publish-client"
+            cat publish.log doctor.log
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgreg-client-checksums
+          path: go/dist/pkgreg-client-SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [verify-publishable]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkgreg-client-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: dist
+        run: >-
+          sha256sum pkgreg-client-linux-* pkgreg-client-darwin-*
+          pkgreg-client-windows-*.exe > pkgreg-client-SHA256SUMS
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes

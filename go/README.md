@@ -7,6 +7,15 @@ Design: [go-architecture.md](../docs/go-architecture.md) ·
 Build plan: [go-implementation-plan.md](../docs/go-implementation-plan.md) ·
 Language rationale: [language-choice.md](../docs/language-choice.md)
 
+For one machine rather than a team, the same engine ships as
+**[pkgcache](../docs/pkgcache.md)**: one loopback port, no certificate, no account, no
+privileged setup.
+
+```sh
+make pkgcache && ./bin/pkgcache limit 25G
+./bin/pkgcache run -- npm ci
+```
+
 ## Status
 
 **Phases 0–10 are implemented.** The Go binary now includes bounded-storage

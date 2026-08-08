@@ -6,9 +6,14 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
+
+// stillActive is the exit code a running process reports. x/sys/windows does not
+// export it, and the value is fixed by the API contract (STATUS_PENDING).
+const stillActive = 259
 
 // The Windows half of the lifecycle. Written to the same contract as the Unix half and
 // NOT verified on a Windows host — see docs/local-cache-plan.md, which records exactly
@@ -53,11 +58,13 @@ func processAlive(pid int) bool {
 	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
 		return false
 	}
-	return code == uint32(windows.STILL_ACTIVE)
+	return code == stillActive
 }
 
 func detach(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &windows.SysProcAttr{
+	// syscall's SysProcAttr, not x/sys/windows's: os/exec takes the former, and the two
+	// are different types with the same shape.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
 }

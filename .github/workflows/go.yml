@@ -1,0 +1,148 @@
+name: Go implementation
+
+on:
+  push:
+    paths:
+      - "go/**"
+      - ".github/workflows/go.yml"
+      - "dnsmasq/**"
+      - "examples/build-resolution/**"
+      - "docker-compose.yml"
+  pull_request:
+    paths:
+      - "go/**"
+      - ".github/workflows/go.yml"
+      - "dnsmasq/**"
+      - "examples/build-resolution/**"
+      - "docker-compose.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: python -m pip install --disable-pip-version-check uv==0.11.19
+      - name: Pull pinned apt and apk client images
+        run: |
+          docker pull debian@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+          docker pull alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+      - name: Unit, integration, and real-client acceptance
+        run: go test ./...
+      - name: Race detector
+        run: go test -race ./...
+      - name: Static analysis
+        run: go vet ./...
+      # pkgcache's macOS and Windows branches — the daemon lock, process control,
+      # docker-setup, persist and the desktop notification — cannot be run here, and
+      # some of them cannot be run anywhere in CI without a desktop session. Compiling
+      # them is the floor: it catches the class of breakage where a Linux-only change
+      # leaves the other two platforms referring to something that no longer exists.
+      - name: Cross-compile pkgcache for every supported platform
+        run: |
+          for target in darwin/amd64 darwin/arm64 windows/amd64 linux/arm64; do
+            GOOS="${target%%/*}" GOARCH="${target##*/}" CGO_ENABLED=0 \
+              go build -o /dev/null ./cmd/pkgcache
+          done
+          for target in darwin/arm64 windows/amd64; do
+            GOOS="${target%%/*}" GOARCH="${target##*/}" CGO_ENABLED=0 \
+              go vet ./internal/local/...
+          done
+      # The definition of done requires a clean lint, so CI has to be the thing that
+      # enforces it. Without this step the repository accumulated 200 findings while
+      # every other gate stayed green.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.6.2
+          working-directory: go
+          args: --timeout 10m
+
+  onboarding-os:
+    name: Client onboarding (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Privileged Linux/macOS install, trust, idempotency, and uninstall
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          sudo env \
+            "PATH=$PATH" \
+            "PKGREG_ONBOARDING_OS_ACCEPTANCE=1" \
+            go test -count=1 -v ./test/onboardingos
+      - name: Privileged Windows install, trust, idempotency, and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PKGREG_ONBOARDING_OS_ACCEPTANCE: "1"
+        run: go test -count=1 -v ./test/onboardingos
+
+  onboarding-linux-distros:
+    name: Client onboarding (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04
+            image: ubuntu@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+            prepare: >-
+              apt-get update &&
+              DEBIAN_FRONTEND=noninteractive apt-get install -y bash ca-certificates curl
+          - name: Alpine 3.22
+            image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+            prepare: apk add --no-cache bash ca-certificates curl
+          - name: Red Hat UBI 9.6
+            image: registry.access.redhat.com/ubi9/ubi@sha256:dec374e05cc13ebbc0975c9f521f3db6942d27f8ccdf06b180160490eef8bdbc
+            prepare: ":"
+          - name: Arch Linux
+            image: archlinux@sha256:3406a568f45d68f0bef35dc80b3eacec8bda59b0292b2e50d5932ba1667f20cf
+            prepare: pacman -Sy --noconfirm bash ca-certificates curl p11-kit
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build static privileged acceptance binary
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 go test -c -o bin/onboardingos.test ./test/onboardingos
+      - name: Install, trust, reinstall, and uninstall in ${{ matrix.name }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          PREPARE: ${{ matrix.prepare }}
+        run: |
+          docker pull "$IMAGE"
+          docker run --rm --privileged \
+            -v "$PWD/bin/onboardingos.test:/onboardingos.test:ro" \
+            "$IMAGE" /bin/sh -lc \
+            "$PREPARE && PKGREG_ONBOARDING_OS_ACCEPTANCE=1 /onboardingos.test -test.v"
