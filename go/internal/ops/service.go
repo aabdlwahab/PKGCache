@@ -303,8 +303,13 @@ func (s *Service) lockwarmJob(
 	for name, upstream := range ecosystem.Descriptor().DefaultUpstreams {
 		indexes[name] = upstream
 	}
-	for name, upstream := range s.Config.Current().ProjectUpstreams[record.Project]["pypi"] {
-		indexes[name] = upstream
+	// The head of each chain. Lock warming resolves an index to decide what to fetch,
+	// and the fetch itself goes through the engine, which walks the rest of the chain
+	// if the head is unreachable.
+	for name, chain := range s.Config.Current().ProjectUpstreams[record.Project]["pypi"] {
+		if len(chain) > 0 {
+			indexes[name] = chain[0].URL
+		}
 	}
 	indexMap := lockwarm.NewIndexMap(indexes)
 	for _, pkg := range packages {

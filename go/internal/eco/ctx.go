@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/brightskies/pkgreg/internal/blob"
@@ -266,15 +267,41 @@ func canonicalHost(host string) string {
 // back to the descriptor's defaults.
 func (c *Ctx) Upstreams() map[string]string {
 	out := make(map[string]string, len(c.desc.DefaultUpstreams))
-	for k, v := range c.desc.DefaultUpstreams {
-		out[k] = v
+	for name, origin := range c.desc.DefaultUpstreams {
+		out[name] = origin
 	}
-	if ecosystems := c.cfg.ProjectUpstreams[c.Project]; ecosystems != nil {
-		for name, origin := range ecosystems[c.Eco] {
-			out[name] = origin
+	for name, chain := range c.chains() {
+		if len(chain) > 0 {
+			// The head of the chain: the origin this index is normally answered from.
+			// Callers that need the rest — the engine, when the head is unreachable —
+			// ask for UpstreamChain instead.
+			out[name] = chain[0].URL
 		}
 	}
 	return out
+}
+
+// UpstreamChain returns every origin configured for one index name, in the order they
+// should be tried. Empty when the name is unknown.
+//
+// A chain of one is the shape every configuration had before chains existed, and is
+// what a descriptor's DefaultUpstreams still produces.
+func (c *Ctx) UpstreamChain(name string) []config.Endpoint {
+	if chain, ok := c.chains()[name]; ok && len(chain) > 0 {
+		return chain
+	}
+	if origin, ok := c.desc.DefaultUpstreams[name]; ok {
+		return []config.Endpoint{{URL: origin}}
+	}
+	return nil
+}
+
+// chains is this project's configured overrides for this ecosystem.
+func (c *Ctx) chains() map[string][]config.Endpoint {
+	if ecosystems := c.cfg.ProjectUpstreams[c.Project]; ecosystems != nil {
+		return ecosystems[c.Eco]
+	}
+	return nil
 }
 
 // Upstream returns one named origin.
@@ -284,11 +311,42 @@ func (c *Ctx) Upstream(name string) (string, bool) {
 }
 
 // SingleUpstream returns the sole origin for an ecosystem shaped that way.
+//
+// Sorted rather than "whatever the map yields first". A map iteration is deliberately
+// randomised in Go, so with more than one name configured this used to return a
+// different origin between requests — an ecosystem declaring UpstreamSingle should
+// only ever have one, but a configuration that grew a second one would have failed
+// intermittently rather than visibly.
 func (c *Ctx) SingleUpstream() (string, bool) {
-	for _, v := range c.Upstreams() {
-		return v, true
+	origins := c.Upstreams()
+	names := make([]string, 0, len(origins))
+	for name := range origins {
+		names = append(names, name)
 	}
-	return "", false
+	if len(names) == 0 {
+		return "", false
+	}
+	sort.Strings(names)
+	return origins[names[0]], true
+}
+
+// SingleUpstreamChain is SingleUpstream's ordered form.
+func (c *Ctx) SingleUpstreamChain() []config.Endpoint {
+	chains := c.chains()
+	names := make([]string, 0, len(chains)+len(c.desc.DefaultUpstreams))
+	for name := range chains {
+		names = append(names, name)
+	}
+	for name := range c.desc.DefaultUpstreams {
+		if _, overridden := chains[name]; !overridden {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	return c.UpstreamChain(names[0])
 }
 
 // ExternalBase is the absolute scheme://host prefix a client used to reach this
@@ -365,21 +423,33 @@ func (c *Ctx) UpstreamRequest(url string, headers http.Header) upstream.Request 
 	return request
 }
 
+// credentialForURL finds the credential belonging to the origin a URL came from.
+//
+// Longest-prefix wins, so a credential configured for a specific path on a host does
+// not lose to one configured for the host itself. Every endpoint in every chain is a
+// candidate: a chain's second entry is a different origin with its own credential, and
+// looking only at the head would send the team cache's token to the public registry
+// behind it.
 func (c *Ctx) credentialForURL(url string) *upstream.Credential {
-	origins := c.Upstreams()
-	credentials := c.cfg.ProjectCredentials[c.Project][c.Eco]
 	longest := 0
 	var selected *upstream.Credential
-	for name, origin := range origins {
-		credential, found := credentials[name]
-		if !found || len(origin) <= longest ||
-			(url != origin && !strings.HasPrefix(url, strings.TrimRight(origin, "/")+"/")) {
-			continue
+	consider := func(endpoint config.Endpoint) {
+		origin := endpoint.URL
+		if endpoint.Anonymous() || len(origin) <= longest {
+			return
+		}
+		if url != origin && !strings.HasPrefix(url, strings.TrimRight(origin, "/")+"/") {
+			return
 		}
 		longest = len(origin)
 		selected = &upstream.Credential{
-			Kind: credential.Kind, Username: credential.Username,
-			Password: credential.Password, Token: credential.Token,
+			Kind: endpoint.Credential.Kind, Username: endpoint.Credential.Username,
+			Password: endpoint.Credential.Password, Token: endpoint.Credential.Token,
+		}
+	}
+	for _, chain := range c.chains() {
+		for _, endpoint := range chain {
+			consider(endpoint)
 		}
 	}
 	return selected

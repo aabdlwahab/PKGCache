@@ -29,12 +29,15 @@ type Snapshot struct {
 	Maintenance Maintenance        `yaml:"maintenance"`
 	Auth        Auth               `yaml:"auth"`
 	Projects    map[string]Project `yaml:"-"` // owned by the control plane, not the file
-	// ProjectUpstreams is project → ecosystem → name → URL. It is a live projection
-	// of control.db and is never decoded from the static configuration file.
-	ProjectUpstreams map[string]map[string]map[string]string `yaml:"-"`
-	// ProjectCredentials mirrors ProjectUpstreams and contains decrypted credentials
-	// only in the immutable in-memory snapshot. They are sealed in control.db.
-	ProjectCredentials map[string]map[string]map[string]UpstreamCredential `yaml:"-"`
+	// ProjectUpstreams is project → ecosystem → name → an ordered chain of origins.
+	// It is a live projection of control.db and is never decoded from the static
+	// configuration file.
+	//
+	// A chain rather than one URL because an index can have more than one place to look:
+	// a laptop's cache asks the team's cache first and the public registry only if that
+	// is unreachable. A chain of one, which is every configuration that predates this,
+	// behaves exactly as a single URL did.
+	ProjectUpstreams map[string]map[string]map[string][]Endpoint `yaml:"-"`
 	// ProjectPeers is project → ecosystem → priority-ordered sibling instances.
 	ProjectPeers map[string]map[string][]Peer `yaml:"-"`
 	// Local is set only by pkgcache. See local.go.
@@ -48,6 +51,25 @@ type UpstreamCredential struct {
 	Password string
 	Token    string
 }
+
+// Endpoint is one origin in an upstream chain.
+//
+// The credential travels with the origin rather than in a parallel map keyed by name,
+// which is what a chain makes necessary: two endpoints under one index name — a team
+// cache and the public registry behind it — need different credentials, and a map keyed
+// by name can only hold one of them.
+type Endpoint struct {
+	// URL is the origin, without a trailing slash by convention.
+	URL string
+	// Priority orders the chain, lowest first. Equal priorities fall back to URL order
+	// so that a configuration always produces the same chain.
+	Priority int
+	// Credential authenticates requests to this origin. The zero value is anonymous.
+	Credential UpstreamCredential
+}
+
+// Anonymous reports whether this endpoint carries no credential.
+func (e Endpoint) Anonymous() bool { return e.Credential == UpstreamCredential{} }
 
 // Peer is a digest-addressed sibling cache endpoint.
 type Peer struct {

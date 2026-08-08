@@ -90,8 +90,7 @@ func (s *Store) SetProjects(projects map[string]Project) error {
 // Projects and their upstream overrides must never become visible separately.
 func (s *Store) SetControl(
 	projects map[string]Project,
-	upstreams map[string]map[string]map[string]string,
-	credentials map[string]map[string]map[string]UpstreamCredential,
+	upstreams map[string]map[string]map[string][]Endpoint,
 	peers map[string]map[string][]Peer,
 ) error {
 	return s.Apply(func(next *Snapshot) error {
@@ -100,7 +99,6 @@ func (s *Store) SetControl(
 			next.Projects = map[string]Project{}
 		}
 		next.ProjectUpstreams = cloneUpstreams(upstreams)
-		next.ProjectCredentials = cloneCredentials(credentials)
 		next.ProjectPeers = clonePeers(peers)
 		return nil
 	})
@@ -118,7 +116,6 @@ func (s *Snapshot) clone() *Snapshot {
 		next.Server.ProxyAllowlist = append([]string(nil), s.Server.ProxyAllowlist...)
 	}
 	next.ProjectUpstreams = cloneUpstreams(s.ProjectUpstreams)
-	next.ProjectCredentials = cloneCredentials(s.ProjectCredentials)
 	next.ProjectPeers = clonePeers(s.ProjectPeers)
 	if s.Auth.CookieSecure != nil {
 		v := *s.Auth.CookieSecure
@@ -142,34 +139,21 @@ func clonePeers(source map[string]map[string][]Peer) map[string]map[string][]Pee
 	return out
 }
 
-func cloneCredentials(
-	source map[string]map[string]map[string]UpstreamCredential,
-) map[string]map[string]map[string]UpstreamCredential {
-	if source == nil {
-		return map[string]map[string]map[string]UpstreamCredential{}
-	}
-	out := make(map[string]map[string]map[string]UpstreamCredential, len(source))
-	for project, ecosystems := range source {
-		ecoCopy := make(map[string]map[string]UpstreamCredential, len(ecosystems))
-		for ecosystem, credentials := range ecosystems {
-			ecoCopy[ecosystem] = maps.Clone(credentials)
-		}
-		out[project] = ecoCopy
-	}
-	return out
-}
-
 func cloneUpstreams(
-	source map[string]map[string]map[string]string,
-) map[string]map[string]map[string]string {
+	source map[string]map[string]map[string][]Endpoint,
+) map[string]map[string]map[string][]Endpoint {
 	if source == nil {
-		return map[string]map[string]map[string]string{}
+		return map[string]map[string]map[string][]Endpoint{}
 	}
-	out := make(map[string]map[string]map[string]string, len(source))
+	out := make(map[string]map[string]map[string][]Endpoint, len(source))
 	for project, ecosystems := range source {
-		ecoCopy := make(map[string]map[string]string, len(ecosystems))
-		for ecosystem, upstreams := range ecosystems {
-			ecoCopy[ecosystem] = maps.Clone(upstreams)
+		ecoCopy := make(map[string]map[string][]Endpoint, len(ecosystems))
+		for ecosystem, names := range ecosystems {
+			nameCopy := make(map[string][]Endpoint, len(names))
+			for name, chain := range names {
+				nameCopy[name] = append([]Endpoint(nil), chain...)
+			}
+			ecoCopy[ecosystem] = nameCopy
 		}
 		out[project] = ecoCopy
 	}

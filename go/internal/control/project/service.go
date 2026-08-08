@@ -325,8 +325,7 @@ func (s *Service) publish() error {
 	if err != nil {
 		return err
 	}
-	overrides := make(map[string]map[string]map[string]string)
-	credentials := make(map[string]map[string]map[string]config.UpstreamCredential)
+	overrides := make(map[string]map[string]map[string][]config.Endpoint)
 	peers := make(map[string]map[string][]config.Peer)
 	for _, upstream := range rows {
 		if !upstream.Enabled {
@@ -358,27 +357,41 @@ func (s *Service) publish() error {
 			continue
 		}
 		if overrides[project] == nil {
-			overrides[project] = make(map[string]map[string]string)
+			overrides[project] = make(map[string]map[string][]config.Endpoint)
 		}
 		if overrides[project][upstream.Eco] == nil {
-			overrides[project][upstream.Eco] = make(map[string]string)
+			overrides[project][upstream.Eco] = make(map[string][]config.Endpoint)
 		}
-		overrides[project][upstream.Eco][upstream.Name] = upstream.URL
-		if upstream.CredentialID != nil && s.secrets != nil {
-			if credentials[project] == nil {
-				credentials[project] = make(map[string]map[string]config.UpstreamCredential)
-			}
-			if credentials[project][upstream.Eco] == nil {
-				credentials[project][upstream.Eco] =
-					make(map[string]config.UpstreamCredential)
-			}
-			credentials[project][upstream.Eco][upstream.Name] = config.UpstreamCredential{
-				Kind: plain.Kind, Username: plain.Username,
-				Password: plain.Password, Token: plain.Token,
+		// Appended rather than assigned. Two rows sharing a name are a chain — a team
+		// cache and the registry behind it — and assigning let the last row read from
+		// the database silently win, in whatever order it happened to arrive.
+		overrides[project][upstream.Eco][upstream.Name] = append(
+			overrides[project][upstream.Eco][upstream.Name],
+			config.Endpoint{
+				URL: upstream.URL, Priority: upstream.Priority, Credential: plain,
+			})
+	}
+	sortChains(overrides)
+	return s.config.SetControl(projects, overrides, peers)
+}
+
+// sortChains puts every chain in the order it will be tried: lowest priority first,
+// then by URL so that a configuration always produces the same chain. Without the
+// second key, two endpoints at the same priority would swap places between restarts
+// and a cache would appear to change its mind about where it fetches from.
+func sortChains(overrides map[string]map[string]map[string][]config.Endpoint) {
+	for _, ecosystems := range overrides {
+		for _, names := range ecosystems {
+			for _, chain := range names {
+				sort.SliceStable(chain, func(i, j int) bool {
+					if chain[i].Priority != chain[j].Priority {
+						return chain[i].Priority < chain[j].Priority
+					}
+					return chain[i].URL < chain[j].URL
+				})
 			}
 		}
 	}
-	return s.config.SetControl(projects, overrides, credentials, peers)
 }
 
 func (s *Service) validateName(name string) error {

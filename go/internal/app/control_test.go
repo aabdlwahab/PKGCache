@@ -128,7 +128,11 @@ func TestPhase7ControlAPIIsLiveScopedAndLegacyCompatible(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("partial upstream edit = %d %s", response.StatusCode, body)
 	}
-	credential := a.Config.Current().ProjectCredentials["team-a"]["pypi"]["private"]
+	chain := a.Config.Current().ProjectUpstreams["team-a"]["pypi"]["private"]
+	if len(chain) != 1 {
+		t.Fatalf("live upstream chain = %+v, want one endpoint", chain)
+	}
+	credential := chain[0].Credential
 	if credential.Username != "mirror" || credential.Password != "secret-pass" {
 		t.Fatalf("live upstream credential = %+v", credential)
 	}

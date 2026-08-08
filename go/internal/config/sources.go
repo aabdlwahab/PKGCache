@@ -71,10 +71,9 @@ func Defaults() Snapshot {
 			GuestRead:    true,
 			MaxJSONBytes: 64 << 20,
 		},
-		Projects:           map[string]Project{},
-		ProjectUpstreams:   map[string]map[string]map[string]string{},
-		ProjectCredentials: map[string]map[string]map[string]UpstreamCredential{},
-		ProjectPeers:       map[string]map[string][]Peer{},
+		Projects:         map[string]Project{},
+		ProjectUpstreams: map[string]map[string]map[string][]Endpoint{},
+		ProjectPeers:     map[string]map[string][]Peer{},
 	}
 }
 
