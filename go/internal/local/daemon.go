@@ -56,11 +56,24 @@ func Run(ctx context.Context, o RunOptions) error {
 		return err
 	}
 
-	a, err := app.Open(snap)
+	// The budget is read before anything opens, so a cache with no limit refuses at
+	// startup rather than on the first download. See ErrNoLimit: choosing a size is a
+	// decision pkgcache asks for once, rather than a default it picks for somebody
+	// else's disk.
+	budget, err := ReadBudget(snap.DataDir)
+	if err != nil {
+		return err
+	}
+	guard := NewGuard(nil, snap.DataDir, budget, func(reason string) {
+		Notify("pkgcache: the cache is full", reason)
+	})
+
+	a, err := app.Open(snap, app.WithStoreGuard(guard))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = a.Close() }()
+	guard.attach(a.Blobs)
 
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())

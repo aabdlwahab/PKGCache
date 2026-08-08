@@ -66,6 +66,13 @@ func Ensure(ctx context.Context, o EnsureOptions) (State, error) {
 	if o.NoStart {
 		return State{}, ErrNoDaemon
 	}
+	// Checked here, not only in the daemon. The daemon refuses to start without a
+	// budget and exits immediately; a client that did not look first would spawn it,
+	// wait out the readiness timeout and then report "the cache did not start", which
+	// is true and useless. The answer the person needs is one file read away.
+	if _, err := ReadBudget(o.Snapshot.DataDir); err != nil {
+		return State{}, err
+	}
 	if err := o.Snapshot.EnsureDirs(); err != nil {
 		return State{}, err
 	}

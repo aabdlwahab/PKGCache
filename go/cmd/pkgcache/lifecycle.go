@@ -57,14 +57,41 @@ flags:
 	if errors.Is(err, local.ErrNoDaemon) {
 		fmt.Printf("daemon     not running\n")
 		fmt.Printf("address    %s (when started)\n", snap.LocalBaseURL())
-		return nil
+		return reportBudget(snap.DataDir, snap.BlobRoot())
 	}
 	fmt.Printf("daemon     running, pid %d, up %s\n",
 		state.PID, state.Uptime().Round(time.Second))
 	fmt.Printf("address    %s\n", state.BaseURL())
 	fmt.Printf("version    %s\n", state.Version)
-	if size, err := directorySize(snap.BlobRoot()); err == nil {
-		fmt.Printf("size       %s\n", humanBytes(size))
+	return reportBudget(snap.DataDir, snap.BlobRoot())
+}
+
+// reportBudget prints what the cache holds against what it is allowed to hold, and is
+// the second of the four channels: a non-zero status while the cache is full, from a
+// command whose whole job is to answer "is this healthy?".
+func reportBudget(dataDir, blobRoot string) error {
+	budget, err := local.ReadBudget(dataDir)
+	if errors.Is(err, local.ErrNoLimit) {
+		fmt.Println("limit      not set — pkgcache will not serve until it is")
+		fmt.Println("           pkgcache limit 25G     or     pkgcache limit none")
+		return &exitError{code: 1}
+	}
+	if err != nil {
+		return err
+	}
+	if size, err := directorySize(blobRoot); err == nil {
+		if budget.LimitBytes == local.NoLimit {
+			fmt.Printf("size       %s of no limit\n", local.FormatSize(size))
+		} else {
+			fmt.Printf("size       %s of %s\n",
+				local.FormatSize(size), local.FormatSize(budget.LimitBytes))
+		}
+	}
+	usage, sampled, found := local.ReadUsage(dataDir)
+	if found && usage.Full {
+		fmt.Printf("\nCACHE FULL — %s\n", usage.Reason)
+		fmt.Printf("(measured %s ago)\n", time.Since(sampled).Round(time.Second))
+		return &exitError{code: local.FullExitCode}
 	}
 	return nil
 }

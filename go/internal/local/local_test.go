@@ -65,6 +65,12 @@ func testSnapshot(t *testing.T, idle time.Duration) *config.Snapshot {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv(config.LocalEnvPrefix+"DATA_DIR", dir)
+	t.Setenv("PKGCACHE_LIMIT", "")
+	// Every cache needs a budget before it serves; these tests are about the lifecycle,
+	// so they choose the one that never interferes with it.
+	if err := WriteBudget(dir, Budget{LimitBytes: NoLimit, MinFreeBytes: 1}); err != nil {
+		t.Fatal(err)
+	}
 	flags := config.LocalFlags{DataDir: dir, Addr: "0"}
 	if idle > 0 {
 		flags.IdleTimeout = &idle

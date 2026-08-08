@@ -86,12 +86,31 @@ type App struct {
 	listenersReady    atomic.Bool
 }
 
+// Option customises construction. It exists for pkgcache, which needs to install a
+// store guard the server has no use for; every option is inert unless passed.
+type Option func(*options)
+
+type options struct {
+	guard engine.StoreGuard
+}
+
+// WithStoreGuard installs a policy deciding whether fills may be kept. See
+// engine.StoreGuard: only pkgcache passes one, and a nil guard is the server's
+// behaviour of storing everything.
+func WithStoreGuard(g engine.StoreGuard) Option {
+	return func(o *options) { o.guard = g }
+}
+
 // Open constructs everything from a validated snapshot. The caller closes it.
 //
 // Ordering matters: the data directory must exist before the blob store touches it,
 // and the blob store's crash recovery must run before anything can serve, so a
 // staging file from a previous kill is never mistaken for live content.
-func Open(snap *config.Snapshot) (*App, error) {
+func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
+	var settings options
+	for _, apply := range opts {
+		apply(&settings)
+	}
 	if err := snap.EnsureDirs(); err != nil {
 		return nil, err
 	}
@@ -168,6 +187,7 @@ func Open(snap *config.Snapshot) (*App, error) {
 	cacheEngine := engine.New(engine.Options{
 		Blobs: blobs, Catalog: cat, Pool: pool, Config: cfg,
 		Metrics: metrics, Events: events, Context: baseCtx, Peer: peerService,
+		Guard: settings.guard,
 	})
 	jobs, err := job.New(controlDB, events, 4)
 	if err != nil {

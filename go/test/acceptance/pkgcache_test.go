@@ -1,7 +1,9 @@
 package acceptance
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -59,6 +61,11 @@ func startCache(t *testing.T) *cacheProcess {
 	}
 	dataDir := t.TempDir()
 	c := &cacheProcess{t: t, binary: binary, dataDir: dataDir}
+	// A cache will not serve until somebody has chosen its size. These tests are not
+	// about that policy, so they take the answer that never gets in the way.
+	if out, err := c.command("limit", "none").CombinedOutput(); err != nil {
+		t.Fatalf("setting the cache limit: %v\n%s", err, out)
+	}
 
 	// `run true` is the shortest way to say "start the cache and tell me nothing".
 	if out, err := c.command("run", "--", "true").CombinedOutput(); err != nil {
@@ -84,6 +91,18 @@ func startCache(t *testing.T) *cacheProcess {
 	return c
 }
 
+// limit sets this cache's budget.
+func (c *cacheProcess) limit(t *testing.T, value string) {
+	t.Helper()
+	if out, err := c.command("limit", value).CombinedOutput(); err != nil {
+		t.Fatalf("pkgcache limit %s: %v\n%s", value, err, out)
+	}
+	// The daemon reads its budget at startup, so a change needs a restart to take.
+	if out, err := c.command("stop").CombinedOutput(); err != nil {
+		t.Fatalf("stopping to apply the limit: %v\n%s", err, out)
+	}
+}
+
 func (c *cacheProcess) command(args ...string) *exec.Cmd {
 	cmd := exec.Command(c.binary, args...)
 	// A per-test cache directory, and an ephemeral port so concurrent tests and a
@@ -91,6 +110,11 @@ func (c *cacheProcess) command(args ...string) *exec.Cmd {
 	cmd.Env = append(os.Environ(),
 		"PKGCACHE_DATA_DIR="+c.dataDir,
 		"PKGCACHE_ADDR=0",
+		// npm keeps its own cache in the user's home, and it will happily satisfy an
+		// install from there without ever contacting a registry. A test asserting what
+		// this cache did would then be measuring npm's cache instead — which is how the
+		// full-cache case first appeared to pass.
+		"npm_config_cache="+filepath.Join(c.dataDir, "npm-cache"),
 	)
 	return cmd
 }
@@ -347,4 +371,186 @@ func requireClient(t *testing.T, name string) string {
 		t.Skipf("%s is not installed", name)
 	}
 	return path
+}
+
+// The decision that separates pkgcache from a server: a cache with no room left keeps
+// serving and stops storing. A server refuses the request, which on a laptop would mean
+// a full cache breaks the build it exists to speed up.
+//
+// Two things have to be true at once, and the second is the one that could silently
+// rot: the build still works, and what it received is intact. A pass-through that
+// truncated a tarball would be far worse than one that refused.
+func TestPkgcacheFullCacheServesWithoutStoring(t *testing.T) {
+	npmBinary := requireBinary(t, "npm")
+	cache := startCache(t)
+
+	tarballRequests := map[string]int{}
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, name := range []string{"first-package", "second-package"} {
+			if r.URL.Path == "/"+name {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"name":%q,"dist-tags":{"latest":"1.0.0"},
+				  "versions":{"1.0.0":{"name":%q,"version":"1.0.0",
+				  "dist":{"tarball":"%s/%s/-/%s-1.0.0.tgz"}}}}`,
+					name, name, originBase(r), name, name)
+				return
+			}
+			if r.URL.Path == "/"+name+"/-/"+name+"-1.0.0.tgz" {
+				tarballRequests[name]++
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write(namedNPMTarball(t, name))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer origin.Close()
+	cache.pointAt(t, "npm", "registry", origin.URL)
+
+	// Fill the cache first, so that the limit set next is one the store is already
+	// over. A guard cannot refuse an artifact whose size upstream never declared while
+	// the store it is measuring is empty — and pretending otherwise in a test would
+	// prove something the product does not do.
+	install(t, cache, npmBinary, t.TempDir(), "first-package")
+
+	// Now the store is over its budget by any measure.
+	cache.limit(t, "1")
+
+	project := t.TempDir()
+	cmd := cache.command("run", "--", npmBinary, "install", "--no-audit", "--no-fund",
+		"second-package@1.0.0")
+	cmd.Dir = project
+	out, err := cmd.CombinedOutput()
+
+	// The install worked.
+	if _, statErr := os.Stat(filepath.Join(
+		project, "node_modules", "second-package", "package.json")); statErr != nil {
+		t.Fatalf("a full cache broke the install: %v\n%s", statErr, out)
+	}
+	// It said so, on stderr, in words somebody can act on.
+	if !strings.Contains(string(out), "NOTHING WAS CACHED") {
+		t.Errorf("a full cache did not report itself:\n%s", out)
+	}
+	// And it exited 75 even though npm itself succeeded: silently-degraded caching in a
+	// pipeline is exactly the failure this is meant to surface.
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("a full cache exited 0; want 75\n%s", out)
+	}
+	if exit.ExitCode() != 75 {
+		t.Fatalf("exit status = %d, want 75\n%s", exit.ExitCode(), out)
+	}
+
+	// Nothing was stored, so the same package is fetched from the origin again.
+	before := tarballRequests["second-package"]
+	install(t, cache, npmBinary, t.TempDir(), "second-package")
+	if tarballRequests["second-package"] <= before {
+		t.Error("the artifact came from the cache, but the cache was full")
+	}
+
+	// The relayed bytes are intact — npm verifies the tarball itself, so an install
+	// that succeeds is most of this, but the contents are checked rather than assumed.
+	body, readErr := os.ReadFile(filepath.Join(
+		project, "node_modules", "second-package", "package.json"))
+	if readErr != nil || !strings.Contains(string(body), "second-package") {
+		t.Fatalf("the relayed package is not intact: %v", readErr)
+	}
+}
+
+// install runs one npm install through the cache and fails the test if it does not work.
+func install(t *testing.T, cache *cacheProcess, npmBinary, dir, name string) {
+	t.Helper()
+	cmd := cache.command("run", "--", npmBinary, "install", "--no-audit", "--no-fund",
+		name+"@1.0.0")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	// A full cache exits 75 with the install itself intact, which is not a failure here.
+	var exit *exec.ExitError
+	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 75) {
+		t.Fatalf("npm install %s: %v\n%s", name, err, out)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "node_modules", name, "package.json")); statErr != nil {
+		t.Fatalf("npm install %s did not install it: %v\n%s", name, statErr, out)
+	}
+}
+
+// Once there is room again, caching resumes and the full condition clears — so a cache
+// somebody pruned does not keep reporting itself full.
+func TestPkgcacheRecoversWhenGivenRoom(t *testing.T) {
+	npmBinary := requireBinary(t, "npm")
+	cache := startCache(t)
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, name := range []string{"first-package", "second-package"} {
+			if r.URL.Path == "/"+name {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"name":%q,"dist-tags":{"latest":"1.0.0"},
+				  "versions":{"1.0.0":{"name":%q,"version":"1.0.0",
+				  "dist":{"tarball":"%s/%s/-/%s-1.0.0.tgz"}}}}`,
+					name, name, originBase(r), name, name)
+				return
+			}
+			if r.URL.Path == "/"+name+"/-/"+name+"-1.0.0.tgz" {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write(namedNPMTarball(t, name))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer origin.Close()
+	cache.pointAt(t, "npm", "registry", origin.URL)
+
+	install(t, cache, npmBinary, t.TempDir(), "first-package")
+	cache.limit(t, "1")
+	install(t, cache, npmBinary, t.TempDir(), "second-package")
+
+	cache.limit(t, "none")
+	project := t.TempDir()
+	cmd := cache.command("run", "--", npmBinary, "install", "--no-audit", "--no-fund",
+		"second-package@1.0.0")
+	cmd.Dir = project
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("a cache with room again did not run cleanly: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "NOTHING WAS CACHED") {
+		t.Errorf("the full condition survived being given room:\n%s", out)
+	}
+
+	// The origin can go away now, because this time it really was stored.
+	origin.Close()
+	install(t, cache, npmBinary, t.TempDir(), "second-package")
+}
+
+// namedNPMTarball builds a tarball whose package.json names the package being served,
+// so a test can install two distinct packages from one origin.
+func namedNPMTarball(t *testing.T, name string) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	gz := gzip.NewWriter(&out)
+	tw := tar.NewWriter(gz)
+	files := map[string]string{
+		"package/package.json": fmt.Sprintf(
+			`{"name":%q,"version":"1.0.0","main":"index.js"}`, name),
+		"package/index.js": "module.exports = function () { return " +
+			fmt.Sprintf("%q", name) + "; };",
+	}
+	for path, body := range files {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: path, Mode: 0o644, Size: int64(len(body)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(tw, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }

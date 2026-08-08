@@ -93,6 +93,7 @@ type Engine struct {
 	stats    *statsCollector
 	docs     docGroup
 	peer     PeerFetcher
+	guard    StoreGuard
 
 	// usage caches per-project entry totals for the quota pre-flight, so a burst of
 	// requests costs one aggregate query rather than one per request.
@@ -125,6 +126,8 @@ type Options struct {
 	Events  *obs.Bus
 	Context context.Context
 	Peer    PeerFetcher
+	// Guard, when set, decides whether a fill may be kept. See StoreGuard.
+	Guard StoreGuard
 }
 
 // New wires an engine.
@@ -145,6 +148,7 @@ func New(o Options) *Engine {
 		usage:    make(map[string]usageSample),
 		baseCtx:  ctx,
 		peer:     o.Peer,
+		guard:    o.Guard,
 	}
 }
 
@@ -240,6 +244,16 @@ func (e *Engine) Serve(w http.ResponseWriter, r *http.Request, res Resolution) (
 	if err := e.checkQuota(res.Project, res.Expect.Size); err != nil {
 		e.record(res, OutcomeFail, 0, now)
 		return OutcomeFail, err
+	}
+
+	// ---- 5b. store guard --------------------------------------------------
+	// The cache is full, or the disk is. Serve the artifact anyway and keep nothing:
+	// on a machine somebody is sitting in front of, a full cache should stop being a
+	// cache, not stop the build. Only pkgcache installs a guard.
+	if e.guard != nil {
+		if mayStore, reason := e.guard.MayStore(res.Expect.Size); !mayStore {
+			return e.servePassThrough(w, r, res, reason, now)
+		}
 	}
 
 	// ---- 6. single-flight miss --------------------------------------------

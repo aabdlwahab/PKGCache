@@ -69,7 +69,7 @@ func splitList(value string) []string {
 // startSession resolves configuration, ensures a daemon and builds the environment.
 func startSession(
 	ctx context.Context, name string, args []string, usage string,
-) (local.State, []string, []string, error) {
+) (*config.Snapshot, local.State, []string, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
@@ -79,25 +79,25 @@ func startSession(
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		return local.State{}, nil, nil, err
+		return nil, local.State{}, nil, nil, err
 	}
 	snap, err := config.LoadLocal(collect())
 	if err != nil {
-		return local.State{}, nil, nil, err
+		return nil, local.State{}, nil, nil, err
 	}
 	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
 	if err != nil {
-		return local.State{}, nil, nil, err
+		return nil, local.State{}, nil, nil, err
 	}
 	environment := session.Environment(os.Environ(), sessionOptions(state, flags))
-	return state, environment, fs.Args(), nil
+	return snap, state, environment, fs.Args(), nil
 }
 
 func runRun(ctx context.Context, args []string) error {
 	// Everything after `--` is the command, and must not be parsed as ours: `pkgcache
 	// run -- npm ci --no-audit` has to reach npm with its flags intact.
 	ours, theirs := splitAtDoubleDash(args)
-	state, environment, rest, err := startSession(ctx, "run", ours,
+	snap, _, environment, rest, err := startSession(ctx, "run", ours,
 		`pkgcache run — run one command with its package tools pointed at the cache
 
 usage: pkgcache run [flags] -- <command> [arguments]
@@ -125,8 +125,14 @@ flags:
 	child.Cancel = func() error { return nil }
 
 	err = child.Run()
-	_ = state
+	// A full cache is reported whatever happened, and the child's own failure still
+	// wins the exit status: `npm ci` exiting 1 must surface as 1, never masked by
+	// pkgcache's 75, because the build failing is the more urgent of the two facts.
+	full := reportFull(snap.DataDir)
 	if err == nil {
+		if full != nil {
+			return full
+		}
 		return nil
 	}
 	var exit *exec.ExitError
@@ -139,7 +145,7 @@ flags:
 }
 
 func runShell(ctx context.Context, args []string) error {
-	state, environment, rest, err := startSession(ctx, "shell", args,
+	snap, state, environment, rest, err := startSession(ctx, "shell", args,
 		`pkgcache shell — a shell whose package tools use the cache
 
 usage: pkgcache shell [flags]
@@ -176,8 +182,12 @@ Type exit to return to your previous environment.
 	child.Cancel = func() error { return nil }
 
 	err = child.Run()
+	full := reportFull(snap.DataDir)
 	if err == nil {
 		fmt.Fprintln(os.Stderr, "pkgcache: session ended; previous settings restored")
+		if full != nil {
+			return full
+		}
 		return nil
 	}
 	var exit *exec.ExitError
@@ -188,7 +198,7 @@ Type exit to return to your previous environment.
 }
 
 func runEnv(ctx context.Context, args []string) error {
-	_, environment, _, err := startSession(ctx, "env", args,
+	_, _, environment, _, err := startSession(ctx, "env", args,
 		`pkgcache env — print the settings that point tools at the cache
 
 usage: eval "$(pkgcache env)"

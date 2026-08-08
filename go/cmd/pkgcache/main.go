@@ -25,6 +25,8 @@ var commands = map[string]struct {
 	"run":     {"run one command with its tools pointed at the cache", runRun},
 	"shell":   {"open a shell whose tools use the cache", runShell},
 	"env":     {"print the settings that point tools at the cache", runEnv},
+	"limit":   {"set how much disk this cache may use", runLimit},
+	"prune":   {"reclaim space, now, because you asked", runPrune},
 	"status":  {"is the cache running, and what is in it", runStatus},
 	"stop":    {"stop the cache daemon", runStop},
 	"serve":   {"run the cache in the foreground", runServe},
@@ -32,7 +34,9 @@ var commands = map[string]struct {
 }
 
 // order fixes the help text, which a map iteration would shuffle between runs.
-var order = []string{"run", "shell", "env", "status", "stop", "serve", "version"}
+var order = []string{
+	"run", "shell", "env", "limit", "status", "prune", "stop", "serve", "version",
+}
 
 func main() {
 	os.Exit(dispatch())
