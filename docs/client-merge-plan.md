@@ -136,6 +136,39 @@ the two profiles disagree on purpose:
 
 ---
 
+## Status, 2026-08-08
+
+**N1–N5 are implemented, verified and merged.** Ordered chains, failover with the
+failure table, the lifted trust package plus `upstream.ca_file`, `setup` and the team
+tier, and the absorption of `pkgreg-client`. An acceptance test drives a real daemon and
+real `npm`: while the team cache is up the public registry is never touched, and when it
+dies mid-test the next install falls through and succeeds.
+
+**One simplification.** There is no fallthrough policy flag. The chain is the policy:
+`-no-direct` omits the public row, and a server whose chain is one — every configuration
+that exists — cannot fall through at all. That removes what this plan called its largest
+risk without an opt-in anyone has to remember.
+
+**N6 is blocked on open question 1**, and the block is concrete rather than
+administrative. The tutorial tells people to run
+`pkgreg-client -server … -ca-sha256 …`, and `pkgcache`'s CLI is `setup` and `run`. The
+shim forwards its arguments unchanged, so a downloaded `pkgreg-client` cannot honour
+that line. Three ways out, and they are a product decision rather than an
+implementation one:
+
+1. **Teach `pkgcache` the old flag form** — `pkgcache -server … -ca-sha256 …` behaves as
+   the client did when no subcommand is given. Every existing instruction keeps working,
+   at the cost of two grammars in one program.
+2. **Change the tutorial and the published name**, and let the shim print the new
+   command rather than run it. Cleanest end state, breaks every copied instruction once.
+3. **Translate in the shim** — map the old flags onto `setup` plus `shell`. Keeps both
+   grammars out of `pkgcache`, and puts a translation layer somewhere it has to be
+   maintained until N7 removes it.
+
+**Not started:** N7, which retires the shim a release after N6.
+
+---
+
 ## Milestones
 
 **N1 — ordered upstreams.** `config.ProjectUpstreams` becomes

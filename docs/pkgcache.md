@@ -8,8 +8,14 @@ For the design and the decisions behind it, see [local-cache-plan.md](local-cach
 
 ```sh
 make pkgcache            # or: go install github.com/brightskies/pkgreg/cmd/pkgcache@latest
-pkgcache limit 25G
+pkgcache setup -limit 25G
 pkgcache run -- npm ci
+```
+
+With a team cache in front of the registries:
+
+```sh
+pkgcache setup -server https://cache.internal:8443 -ca-sha256 AB:CD:… -limit 25G
 ```
 
 That is the whole setup. Nothing is installed, nothing is reachable from another
@@ -24,7 +30,8 @@ put anywhere except your own cache directory.
 | `pkgcache shell` | the same, as a child shell; type `exit` to leave |
 | `pkgcache env` | print the exports, for a shell that has to keep them |
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
-| `pkgcache limit 25G \| none` | set the cache budget — required before first use |
+| `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
+| `pkgcache limit 25G \| none` | change the budget later |
 | `pkgcache status` | size against the limit, uptime, and whether it is still caching |
 | `pkgcache prune` | reclaim space, when you ask and not before |
 | `pkgcache persist` | settings that outlive the session, plus socket activation |
@@ -58,6 +65,39 @@ silently degrades is worse than one that fails:
   75 means "it worked, and nothing was cached".
 
 `pkgcache prune` reclaims space. It is the only thing that deletes.
+
+## Three tiers
+
+With a team cache configured, a lookup goes local, then the team's cache, then the
+registries. It is not a mode: `setup` writes two ordinary upstream rows per index, the
+team at priority 10 and the public registry at 20, and the engine walks a chain it
+already knows how to walk.
+
+The team's CA is fetched over an unverified connection and refused unless it matches
+the fingerprint you were given separately; every request after that is verified
+normally.
+
+**When the team cache cannot serve**, the next origin is tried — on a connection
+refused, a DNS failure, a timeout or a 5xx. Deliberately *not* on a 404, which is what
+a cache in offline mode answers and falling through would defeat, and not on a 401 or
+403, which is a misconfigured credential that going around would hide.
+
+`setup -no-direct` omits the public row, for a machine that must never fetch from the
+internet itself. `pkgcache status` shows all three tiers and probes the team cache, so
+one that has been down for a week is visible rather than just "builds got slower".
+
+Chained ecosystems today are **pypi and npm**. apt and git derive their origin from the
+request, `files` is local-only, and oci resolves through a registry alias whose path
+shape is still an open question — absent rather than half-supported.
+
+## Replacing pkgreg-client
+
+`pkgcache setup -no-cache -server … -ca-sha256 …` is `pkgreg-client` exactly: a
+verified loopback bridge to a team cache, with no local store. In that mode nothing is
+written to the cache directory and no database is opened, which a test asserts by
+looking at the directory afterwards.
+
+`pkgreg-client` still exists as a shim that forwards to `pkgcache` and says so once.
 
 ## What works with no setup at all
 

@@ -47,7 +47,10 @@ client-release: ## Build the client installer for Linux, macOS, and Windows
 	cd bin && sha256sum pkgreg-client-linux-* pkgreg-client-darwin-* \
 		pkgreg-client-windows-*.exe > pkgreg-client-SHA256SUMS
 
-client-publish: client-release client-install ## Build and publish clients into DATA_DIR/downloads
+# pkgcache is the merged client. Published under its own names alongside the
+# pkgreg-client ones, which still carry the forwarding shim until N7 retires it — see
+# docs/client-merge-plan.md.
+client-publish: client-release pkgcache-release client-install ## Build and publish clients into DATA_DIR/downloads
 
 # Publishing is `pkgreg publish-client`, not a pile of install(1) and sha256sum(1)
 # calls, because a production host has the binary and nothing else — no Makefile, no Go
