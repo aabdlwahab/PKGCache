@@ -367,6 +367,63 @@ npm install left-pad</code>
       </section>
 
       <!-- ============================ START ============================ -->
+      <section class="sec tint" id="pkgcache">
+        <div class="wrap">
+          <p class="eyebrow rv">new — one binary, three places to look</p>
+          <h2 class="rv">Or cache on this machine too.</h2>
+          <p class="lede rv">
+            <code>pkgcache</code> is this client with a cache of its own. A lookup goes to
+            your machine first, then to this server, then to the public registry — so a
+            second <code>npm ci</code> costs nothing, and a morning when this server is
+            down costs you a slower build rather than a stopped one.
+          </p>
+
+          <div class="tool-grid">
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Once</span><h3>Set it up</h3></div>
+              <p>Verifies this server’s CA against the fingerprint below, sets a disk budget, and writes nothing outside its own directory.</p>
+              <div class="term"><code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -limit 25G</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Every day</span><h3>Use it</h3></div>
+              <p>Starts the cache if it is not running. Nothing is installed and nothing outlives the command.</p>
+              <div class="term"><code class="term-cmd">pkgcache run -- npm ci</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Anytime</span><h3>See what it is doing</h3></div>
+              <p>Reports all three tiers, and says plainly when this server is unreachable rather than letting builds quietly get slower.</p>
+              <div class="term"><code class="term-cmd">pkgcache status</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+
+          <div class="note rv">
+            <p>
+              <b>It never deletes anything on its own.</b> The limit is asked for once and
+              never guessed. When the cache is full it keeps serving and stops storing,
+              says so on stderr, in <code>status</code> and as a desktop notification, and
+              exits <code>75</code> — so a pipeline that has quietly stopped caching goes
+              red instead of getting slower. <code>pkgcache prune</code> is the only thing
+              that removes anything.
+            </p>
+            <p>
+              <b>Falling back is deliberate, not automatic.</b> A refused connection, a
+              timeout or a server error moves to the next place to look. A
+              <code>404</code> does not — that is what a cache in offline mode answers,
+              and going around it would defeat an air gap somebody switched on. Nor does a
+              <code>403</code>, which is a credential problem worth seeing once rather than
+              never. <code>pkgcache setup -no-direct</code> removes the public registry
+              from the chain entirely.
+            </p>
+            <p>
+              <b>Want only what the shell below does?</b>
+              <code>pkgcache setup -no-cache -server … -ca-sha256 …</code> is exactly that:
+              a verified loopback bridge, no local store, no database. Nothing is written
+              to disk beyond the settings themselves.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section class="sec walkthrough night" id="start">
         <div class="wrap">
           <p class="eyebrow rv">the first three steps, in full · about two minutes</p>

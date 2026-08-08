@@ -68,21 +68,12 @@ type Pool struct {
 }
 
 // New builds a pool from configuration.
-// New builds the pool. A CA file that cannot be read is a startup error rather than a
-// warning: a cache configured to trust a sibling and silently not trusting it would
-// fail every fetch to that sibling with a certificate error nobody could explain.
-func New(cfg config.Upstream, m *obs.Metrics) *Pool {
-	pool, err := NewWithError(cfg, m)
-	if err != nil {
-		// Preserved for the callers that predate the CA option and cannot fail here.
-		// NewWithError is what the composition root uses.
-		panic(err)
-	}
-	return pool
-}
-
-// NewWithError is New, reporting a bad CA file instead of panicking.
-func NewWithError(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
+// New builds the pool.
+//
+// A CA file that cannot be read is an error rather than a warning: a cache configured to
+// trust a sibling and silently not trusting it would fail every fetch to that sibling
+// with a certificate error nobody could explain from the configuration.
+func New(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   cfg.ConnectTimeout,

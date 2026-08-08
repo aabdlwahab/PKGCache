@@ -115,9 +115,6 @@ func TestSingleUpstreamIsDeterministic(t *testing.T) {
 			t.Fatalf("SingleUpstream returned %q then %q", first, got)
 		}
 	}
-	if chain := c.SingleUpstreamChain(); len(chain) == 0 || chain[0].URL != first {
-		t.Fatalf("SingleUpstreamChain disagrees with SingleUpstream: %+v vs %q", chain, first)
-	}
 }
 
 // A chain's second endpoint is a different origin with its own credential. Looking only

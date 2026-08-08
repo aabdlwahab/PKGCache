@@ -63,10 +63,12 @@ const (
 	AvailabilityUnknown Availability = iota
 	// AvailabilitySocket means an activation socket holds the port open.
 	AvailabilitySocket
-	// AvailabilityResident means a supervised daemon stays up.
-	AvailabilityResident
 	// AvailabilityAccepted means the user asked for the settings anyway, knowing the
 	// address can stop answering.
+	//
+	// There is deliberately no "a supervised daemon stays resident" value. It was in an
+	// earlier draft, and a constant naming a guarantee nothing implements is worse than
+	// its absence: somebody would have read it as a mode that exists.
 	AvailabilityAccepted
 )
 

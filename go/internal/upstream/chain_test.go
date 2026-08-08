@@ -18,13 +18,22 @@ import (
 
 func chainPool(t *testing.T) *Pool {
 	t.Helper()
-	return New(config.Upstream{
+	return mustPool(t, config.Upstream{
 		RequestTimeout:        10 * time.Second,
 		ConnectTimeout:        2 * time.Second,
 		ResponseHeaderTimeout: 2 * time.Second,
 		MaxIdlePerHost:        4,
 		UserAgent:             "pkgreg-test/1",
-	}, obs.NewMetrics())
+	})
+}
+
+func mustPool(t *testing.T, cfg config.Upstream) *Pool {
+	t.Helper()
+	pool, err := New(cfg, obs.NewMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pool
 }
 
 // answering serves a fixed status and records that it was asked.
@@ -213,12 +222,12 @@ func TestChainFailsOverFromAStalledOrigin(t *testing.T) {
 	defer close(released)
 	second, secondHits := answering(t, http.StatusOK, "second")
 
-	pool := New(config.Upstream{
+	pool := mustPool(t, config.Upstream{
 		RequestTimeout:        10 * time.Minute, // the real one: sized for a huge body
 		ConnectTimeout:        2 * time.Second,
 		ResponseHeaderTimeout: 300 * time.Millisecond,
 		MaxIdlePerHost:        4,
-	}, obs.NewMetrics())
+	})
 
 	started := time.Now()
 	response, err := open(t, pool, Request{
@@ -280,13 +289,10 @@ func TestPoolTrustsAConfiguredCA(t *testing.T) {
 		t.Fatal("a self-signed origin verified against the system roots alone")
 	}
 
-	trusting, err := NewWithError(config.Upstream{
+	trusting := mustPool(t, config.Upstream{
 		RequestTimeout: 10 * time.Second, ConnectTimeout: 2 * time.Second,
 		ResponseHeaderTimeout: 2 * time.Second, MaxIdlePerHost: 4, CAFile: caPath,
-	}, obs.NewMetrics())
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
 	response, err := open(t, trusting, Request{URL: server.URL, Eco: "pypi"})
 	if err != nil {
 		t.Fatalf("a configured CA did not make the origin reachable: %v", err)
@@ -301,16 +307,16 @@ func TestPoolTrustsAConfiguredCA(t *testing.T) {
 // trusting a sibling fails every fetch to it with a certificate error nobody could
 // explain from the configuration.
 func TestPoolRefusesAnUnreadableCA(t *testing.T) {
-	if _, err := NewWithError(config.Upstream{
+	if _, err := New(config.Upstream{
 		CAFile: filepath.Join(t.TempDir(), "missing.crt"),
-	}, obs.NewMetrics()); err == nil {
+	}, obs.NewMetrics()); err == nil { //nolint:staticcheck // asserting the error
 		t.Fatal("a missing ca_file was accepted")
 	}
 	bad := filepath.Join(t.TempDir(), "bad.crt")
 	if err := os.WriteFile(bad, []byte("not a certificate"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewWithError(config.Upstream{CAFile: bad}, obs.NewMetrics()); err == nil {
+	if _, err := New(config.Upstream{CAFile: bad}, obs.NewMetrics()); err == nil {
 		t.Fatal("a ca_file with no certificate in it was accepted")
 	}
 }

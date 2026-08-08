@@ -55,10 +55,14 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(origin.Close)
 
 	m := obs.NewMetrics()
+	pool, poolErr := upstream.New(snap.Upstream, m)
+	if poolErr != nil {
+		t.Fatal(poolErr)
+	}
 	e := New(Options{
 		Blobs:   blobs,
 		Catalog: cat,
-		Pool:    upstream.New(snap.Upstream, m),
+		Pool:    pool,
 		Config:  cfg,
 		Metrics: m,
 		Events:  obs.NewBus(),

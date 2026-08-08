@@ -89,9 +89,13 @@ func TestM2TwentyClientsSingle2GiB(t *testing.T) {
 	snap.DataDir = dataDir
 	cfg := config.NewStore(&snap)
 	metrics := obs.NewMetrics()
+	pool, poolErr := upstream.New(snap.Upstream, metrics)
+	if poolErr != nil {
+		t.Fatal(poolErr)
+	}
 	cache := engine.New(engine.Options{
 		Blobs: blobs, Catalog: cat,
-		Pool:   upstream.New(snap.Upstream, metrics),
+		Pool:   pool,
 		Config: cfg, Metrics: metrics, Events: obs.NewBus(),
 		Context: context.Background(),
 	})

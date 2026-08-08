@@ -21,7 +21,10 @@ func newPool(t *testing.T) *Pool {
 	cfg := config.Defaults().Upstream
 	cfg.RequestTimeout = 10 * time.Second
 	cfg.ConnectTimeout = 2 * time.Second
-	p := New(cfg, obs.NewMetrics())
+	p, poolErr := New(cfg, obs.NewMetrics())
+	if poolErr != nil {
+		t.Fatal(poolErr)
+	}
 	t.Cleanup(p.CloseIdleConnections)
 	return p
 }

@@ -196,7 +196,7 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 		_ = cat.Close()
 		return nil, err
 	}
-	pool, err := upstream.NewWithError(snap.Upstream, metrics)
+	pool, err := upstream.New(snap.Upstream, metrics)
 	if err != nil {
 		_ = controlDB.Close()
 		_ = cat.Close()

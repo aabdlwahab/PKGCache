@@ -68,10 +68,14 @@ func New(t *testing.T, build func(*testupstream.Server) eco.Ecosystem) *Harness 
 	t.Cleanup(origin.Close)
 
 	m := obs.NewMetrics()
+	pool, err := upstream.New(snap.Upstream, m)
+	if err != nil {
+		t.Fatal(err)
+	}
 	e := engine.New(engine.Options{
 		Blobs:   blobs,
 		Catalog: cat,
-		Pool:    upstream.New(snap.Upstream, m),
+		Pool:    pool,
 		Config:  cfg,
 		Metrics: m,
 		Events:  obs.NewBus(),

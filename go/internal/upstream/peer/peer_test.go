@@ -56,7 +56,10 @@ func TestTwoInstancesTransferByDigest(t *testing.T) {
 		},
 	}
 	cfg := config.NewStore(&destinationCfg)
-	pool := upstream.New(destinationCfg.Upstream, obs.NewMetrics())
+	pool, err := upstream.New(destinationCfg.Upstream, obs.NewMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer pool.CloseIdleConnections()
 	destinationPeer := New(destination, cfg, pool, nil)
 

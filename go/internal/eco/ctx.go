@@ -333,24 +333,6 @@ func (c *Ctx) SingleUpstream() (string, bool) {
 	return origins[names[0]], true
 }
 
-// SingleUpstreamChain is SingleUpstream's ordered form.
-func (c *Ctx) SingleUpstreamChain() []config.Endpoint {
-	chains := c.chains()
-	names := make([]string, 0, len(chains)+len(c.desc.DefaultUpstreams))
-	for name := range chains {
-		names = append(names, name)
-	}
-	for name := range c.desc.DefaultUpstreams {
-		if _, overridden := chains[name]; !overridden {
-			names = append(names, name)
-		}
-	}
-	if len(names) == 0 {
-		return nil
-	}
-	sort.Strings(names)
-	return c.UpstreamChain(names[0])
-}
 
 // ExternalBase is the absolute scheme://host prefix a client used to reach this
 // ecosystem, including the stripped project/eco prefix.
