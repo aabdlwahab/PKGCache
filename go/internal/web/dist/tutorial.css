@@ -1,0 +1,752 @@
+/* Client-first setup tutorial. landing.css owns the theme, header, section,
+   button, footer, and ecosystem primitives; this file only defines the tutorial
+   layouts. Everything remains usable without JavaScript. */
+
+.sec, .thero, .foot { scroll-margin-top: 66px; }
+
+/* The landing page animates .rv elements into view. The tutorial intentionally
+   keeps its longer instructions visible immediately, even when theme.js adds .js. */
+.rv, .js .rv {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+.lede a, .ps-link {
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.lede code, .plain-card code, .after-install code, .faq code, .info-strip code {
+  color: var(--fg2);
+  background: var(--inset);
+  padding: 1px 5px;
+  border-radius: var(--radius);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- hero -------------------------------------------------------- */
+.thero {
+  position: relative;
+  overflow: hidden;
+  padding: 104px 0 92px;
+}
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 49.9%, oklch(0.70 0.15 248 / 0.08) 50%, transparent 50.1%),
+    radial-gradient(580px 360px at 78% 38%, oklch(0.70 0.15 248 / 0.20), transparent 70%);
+}
+.thero-in {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 72px;
+  align-items: center;
+}
+.hero-copy { min-width: 0; }
+.thero h1 {
+  max-width: 18ch;
+  margin: 0 0 20px;
+  font-size: clamp(34px, 5.4vw, 62px);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.thero-lede { max-width: 66ch; margin-bottom: 28px; }
+.hero-note { margin: 0; color: var(--muted); font-size: 12px; }
+.hero-status {
+  padding: 22px;
+  background: color-mix(in oklab, var(--panel) 88%, transparent);
+  border: 1px solid var(--line2);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg), 0 0 38px rgb(var(--glow) / 0.14);
+  backdrop-filter: blur(12px);
+}
+.status-k, .download-k, .card-step {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tspace);
+  text-transform: uppercase;
+}
+.status-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  color: var(--fg2);
+  font-size: 12.5px;
+  border-top: 1px solid var(--line);
+}
+.status-ok { color: var(--ok); font-weight: 700; }
+
+@media (max-width: 850px) {
+  .thero { padding: 76px 0 68px; }
+  .thero-in { grid-template-columns: 1fr; gap: 36px; }
+  .hero-status { max-width: 520px; }
+}
+
+/* ---------- the fast path ----------------------------------------------- */
+/* The six-step summary directly under the hero. It reads as one instrument rather
+   than six cards: a single beam runs down the gutter, fills as the reader descends,
+   and lights each step marker as that step reaches the reading line. The page
+   already uses a filling beam for scroll progress at the top of the window — this
+   is the same idea turned on its side, so the vocabulary is not new. */
+.fastpath {
+  position: relative;
+  overflow: hidden;
+  padding-block: 78px 70px;
+  /* Both neighbours are night bands too, so without these hairlines the section has
+     no edge at all and the gaps around it read as dead space. */
+  border-top: 1px solid color-mix(in oklab, var(--accent) 34%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.fp-field, .fp-glow {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Light only, no second grid: .night already draws one, and a drifting grid over a
+   fixed grid beats itself into moiré at exactly the scroll speeds this uses. */
+.fp-field {
+  inset: -26% -10%;
+  background:
+    radial-gradient(680px 420px at 8% 12%, oklch(0.70 0.15 248 / 0.17), transparent 68%),
+    radial-gradient(420px 300px at 34% 88%, oklch(0.70 0.15 248 / 0.10), transparent 70%);
+}
+.fp-glow {
+  inset: -20% -14% -20% 40%;
+  background: radial-gradient(560px 460px at 78% 62%, oklch(0.78 0.15 152 / 0.13), transparent 66%);
+}
+.fp-head { max-width: 62ch; margin-bottom: 40px; }
+.fp-head h2 {
+  margin: 0 0 14px;
+  font-size: clamp(26px, 3.6vw, 38px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+.fp-head .lede { margin: 0; }
+
+.fp-track { position: relative; }
+.fp-steps {
+  counter-reset: fp;
+  display: grid;
+  gap: 24px;
+  margin: 0;
+  padding: 0 0 0 58px;
+  list-style: none;
+}
+.fp-step {
+  position: relative;
+  counter-increment: fp;
+  min-width: 0;
+}
+.fp-body { min-width: 0; }
+.fp-body h3 {
+  margin: 3px 0 12px;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.fp-note {
+  margin: 11px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.fp-note code { color: var(--fg2); background: var(--inset); padding: 1px 5px; border-radius: var(--radius); font-size: 0.92em; }
+/* A note that introduces the block under it rather than qualifying the block above. */
+.fp-note.fp-lead { margin: 0 0 12px; }
+/* One button per build that matches the reader's platform — usually one, at most
+   two when both architectures are published. */
+.fp-quick { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+/* Sized to the label rather than stretched: two published architectures for one
+   platform is a pair of equal choices, and two full-width filled buttons would shout
+   over the five steps under them. */
+.fp-quick .dl-btn { flex: 0 1 auto; gap: 14px; }
+/* --muted is a body colour for dark surfaces; on the filled accent button it is the
+   wrong ink entirely, so the size reads as the button's own quieter tone. */
+.fp-quick .btn-primary .dl-size { color: color-mix(in oklab, var(--accent-ink) 72%, var(--accent)); }
+.fastpath .term { padding: 11px 13px; }
+.fastpath .term + .term { margin-top: 10px; }
+
+/* One column per platform. A reader knows which operating system they are on, so the
+   fastest possible page gives them one column to run top to bottom rather than a
+   sequence of three-way choices at every step. */
+.fp-download {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  background: color-mix(in oklab, var(--panel) 78%, transparent);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+}
+.fp-download h3 { margin: 0; font-size: 15.5px; }
+.fp-download .fp-quick { margin: 6px 0 0; }
+.fp-os {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  /* Sized to their own content. Stretching all three to the tallest left the shorter
+     columns with a third of a panel of empty space, which reads as something missing. */
+  align-items: start;
+}
+.fp-card {
+  min-width: 0;
+  padding: 20px 20px 24px;
+  background: color-mix(in oklab, var(--panel) 72%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.fp-card-head { margin-bottom: 20px; }
+.fp-card-head h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.fp-card-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.fp-body h4 {
+  margin: 3px 0 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.fp-card .fp-steps { gap: 20px; padding-left: 44px; }
+.fp-card .fp-beam { left: 12px; }
+.fp-card .fp-mark { left: -44px; width: 26px; height: 26px; font-size: 10.5px; }
+.fp-card .term-cmd { font-size: 11px; }
+.fp-card .fp-note { font-size: 12px; }
+/* Each column counts from one: they are alternatives, not a single sequence. */
+.fp-card .fp-steps { counter-reset: fp; }
+
+@media (max-width: 1080px) {
+  .fp-os { grid-template-columns: 1fr; }
+  .fp-card { max-width: 640px; }
+}
+
+/* ---------- entrance motion ---------------------------------------------- */
+/* The platform columns are the one place on this page that animates in.
+   Everything below them is instructions somebody is scanning for a command, and
+   content that starts invisible costs a reader more than it gives — which is why
+   .rv is neutralised at the top of this file and stays that way.
+   Three structural blocks are different: they are the first thing seen, they are
+   large, and they settle before anyone could be reading them.
+
+   The move is a blur that resolves as the block rises, on an exponential ease-out.
+   Blur is doing real work here rather than decorating: it reads as depth-of-field
+   pulling into focus, so the card arrives rather than slides. */
+:root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes fpArrive {
+  from { opacity: 0; filter: blur(6px); transform: translateY(20px); }
+  to   { opacity: 1; filter: blur(0); transform: none; }
+}
+/* Breathing rather than blinking: a slow scale on a soft halo, so a column that is
+   being read is warmer than the others without ever pulling the eye off the text. */
+@keyframes fpBreathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* Gated on .js so a reader without scripting gets the finished state, never a blank
+   column waiting for an observer that will not run. */
+.js .fp-card,
+.js .fp-download {
+  opacity: 0;
+  will-change: opacity, filter, transform;
+}
+.js .fp-card.is-in,
+.js .fp-download.is-in {
+  animation: fpArrive 720ms var(--ease-out) both;
+}
+/* Staggered by position rather than by a JS-set variable: three fixed columns need no
+   more than three rules, and this way the delay is legible in the stylesheet. */
+.js .fp-card:nth-child(2).is-in { animation-delay: 90ms; }
+.js .fp-card:nth-child(3).is-in { animation-delay: 180ms; }
+
+/* The column being read. Its top edge takes the accent and a soft halo breathes
+   behind it — the same signal as a lit step marker, at the scale of a whole column. */
+.fp-card {
+  position: relative;
+  border-top: 2px solid var(--line);
+  transition: border-color 420ms var(--ease-out);
+}
+.fp-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 34px rgb(var(--glow) / 0.30);
+  transition: opacity 420ms var(--ease-out);
+}
+.js .fp-card.is-active { border-top-color: var(--accent); }
+.js .fp-card.is-active::after {
+  opacity: 1;
+  animation: fpBreathe 3.4s ease-in-out infinite;
+}
+
+/* The rail: a dim full-height track with a bright fill on top of it. The fill is
+   scaled rather than resized so the per-frame write stays on the compositor. */
+.fp-beam {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 19px;
+  width: 2px;
+  background: var(--line);
+  border-radius: 2px;
+}
+.fp-beam i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(to bottom, var(--accent), var(--ok));
+  border-radius: inherit;
+  box-shadow: 0 0 14px rgb(var(--glow) / 0.55);
+  transform-origin: top center;
+  will-change: transform;
+}
+/* Without scripting the beam simply stands full: it is decoration, and an empty
+   track would read as a broken control. tutorial.js drives it from zero instead. */
+.js .fp-beam i { transform: scaleY(0); }
+
+.fp-mark {
+  position: absolute;
+  top: 0;
+  left: -52px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  background: var(--bg);
+  border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--line));
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fp-mark::before { content: counter(fp, decimal-leading-zero); }
+/* Dim until the step arrives, so lighting up means something. Scripting only. */
+.js .fp-mark {
+  color: var(--muted);
+  border-color: var(--line);
+  transition:
+    color 260ms var(--ease),
+    border-color 260ms var(--ease),
+    box-shadow 260ms var(--ease),
+    background 260ms var(--ease);
+}
+.js .fp-step.is-lit .fp-mark {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 6px 18px rgb(var(--glow) / 0.35);
+}
+/* The last step is the finish line, so it lands on the success colour the rest of
+   the page uses for "this worked" rather than on one more accent dot. */
+.js .fp-step:last-child.is-lit .fp-mark {
+  background: var(--ok);
+  border-color: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--ok) 22%, transparent), 0 6px 18px rgb(var(--glow-ok) / 0.35);
+}
+
+.fp-out {
+  display: grid;
+  gap: 6px;
+  margin-top: 34px;
+  padding: 16px 18px;
+  background: color-mix(in oklab, var(--panel) 78%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.fp-out-k {
+  color: var(--ok);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tspace);
+  text-transform: uppercase;
+}
+.fp-out p { margin: 0; color: var(--fg2); font-size: 12.5px; }
+
+@media (max-width: 620px) {
+  .fastpath { padding-block: 58px 64px; }
+  .fp-steps { padding-left: 44px; }
+  .fp-beam { left: 12px; }
+  .fp-mark { left: -44px; width: 26px; height: 26px; font-size: 10.5px; }
+}
+
+/* ---------- shared command blocks -------------------------------------- */
+.term {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 13px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius);
+}
+.term-cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.term-cmd::before { content: "$ "; color: var(--ok); }
+.term-multi, .term-block {
+  flex-direction: column;
+  gap: 10px;
+}
+.term-multi .term-cmd {
+  display: block;
+  white-space: pre-wrap;
+}
+.term-multi .term-cmd::before { content: none; }
+.cp {
+  flex: none;
+  padding: 4px 9px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cp:hover { color: var(--fg); border-color: var(--line2); }
+.cp.ok { color: var(--ok); border-color: var(--ok); }
+.term-block .cp, .term-multi .cp { align-self: flex-start; }
+
+/* ---------- step markers and asides ------------------------------------- */
+/* Was .tldr, which now names the fast-path section above rather than this one. */
+.walkthrough { padding-block: 82px; }
+/* Also carries the letters A/B/C in the Docker section: the shape reads as "one of a
+   sequence" either way, and a second component for three characters would be one. */
+.quick-n {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--line));
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+.build-step h3 {
+  margin: 2px 0 7px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.info-strip {
+  margin-top: 18px;
+  padding: 14px 16px;
+  color: var(--fg2);
+  background: color-mix(in oklab, var(--accent) 9%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--accent) 38%, var(--line));
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+.info-strip a, .callout a, .after-install a, .faq a, .check-list a { font-weight: 600; }
+
+/* ---------- downloads --------------------------------------------------- */
+.download-panel {
+  margin-top: 34px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.download-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  background: var(--inset);
+  border-bottom: 1px solid var(--line);
+}
+.download-head h3 { margin: 0; font-size: 17px; }
+.download-head .download-k { margin-bottom: 4px; }
+.download-live {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.download-live i {
+  width: 7px;
+  height: 7px;
+  background: var(--warn);
+  border-radius: 50%;
+}
+.download-live.ready { color: var(--ok); }
+.download-live.ready i { background: var(--ok); }
+.download-live.empty { color: var(--warn); }
+.dl { padding: 20px; }
+.dl-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.dl-btn {
+  justify-content: space-between;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+}
+.dl-btn.recommended {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.dl-size { color: var(--muted); font-size: 11px; }
+.dl-hash {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.dl .note { margin: 0; color: var(--muted); font-size: 12px; }
+.dl .note code {
+  color: var(--fg2);
+  background: var(--inset);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+}
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.plain-card, .install-card, .after-install, .faq {
+  min-width: 0;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.plain-card h3, .install-card h3, .after-install h3, .faq h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.plain-card p, .install-card p, .after-install p, .faq p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.plain-card p:last-child, .install-card p:last-child,
+.after-install p:last-child, .faq p:last-child { margin-bottom: 0; }
+.plain-card .term { margin-top: 14px; }
+.callout {
+  margin: 18px 0 0;
+  padding: 15px 17px;
+  color: var(--fg2);
+  background: color-mix(in oklab, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--warn) 38%, var(--line));
+  border-left: 2px solid var(--warn);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+@media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ---------- install ----------------------------------------------------- */
+.fingerprint {
+  display: grid;
+  gap: 7px;
+  margin: 28px 0 18px;
+  padding: 16px 18px;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--ok);
+  border-radius: var(--radius);
+}
+.fingerprint-k {
+  color: var(--ok);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tspace);
+  text-transform: uppercase;
+}
+.fingerprint code { color: var(--fg2); font-size: 11.5px; overflow-wrap: anywhere; }
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.install-card { border-top: 2px solid var(--accent); }
+.install-card .card-step { margin-bottom: 8px; }
+.install-card .term { margin-top: 16px; }
+.after-install {
+  margin-top: 22px;
+  border-left: 2px solid var(--ok);
+}
+.after-install .term { margin: 12px 0; }
+/* The fingerprint arrives from /api/v1/coordinates; until it does, the element holds
+   fallback prose rather than a blank box, so the digest gets monospace only once it is
+   actually a digest. */
+.fingerprint code.is-live { font-family: var(--mono); }
+.check-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 0;
+  list-style: none;
+}
+.check-list li {
+  position: relative;
+  padding-left: 22px;
+  color: var(--fg2);
+  font-size: 12.5px;
+}
+.check-list li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: var(--ok);
+  font-weight: 700;
+}
+@media (max-width: 800px) { .install-grid { grid-template-columns: 1fr; } }
+
+/* ---------- test cards -------------------------------------------------- */
+.eco-uv { --eco: oklch(0.72 0.12 196); }
+/* Light-mode lightness, matching the per-theme eco hues in landing.css. */
+[data-theme="light"] .eco-uv { --eco: oklch(0.505 0.12 196); }
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+.tool-card {
+  min-width: 0;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--eco, var(--accent));
+  border-radius: var(--radius);
+}
+.tool-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.tool-head h3 { margin: 0; font-size: 15px; }
+.tool-card p { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+.tool-card p code { color: var(--fg2); }
+@media (max-width: 760px) { .tool-grid { grid-template-columns: 1fr; } }
+
+/* ---------- numbered steps and callouts -------------------------------- */
+.build-steps {
+  display: grid;
+  gap: 16px;
+  margin: 34px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.build-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.build-step p { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+.build-step p code { color: var(--fg2); }
+.build-step p:last-child, .build-step .term:last-child { margin-bottom: 0; }
+/* Long build commands and Dockerfiles live in these cards, so the text column must be
+   allowed to shrink below its content — without this a <code> block widens the grid
+   track and the whole page scrolls sideways. */
+.build-step > div { min-width: 0; }
+.build-step .term + p { margin-top: 14px; }
+.build-step .check-list { margin-bottom: 14px; }
+.start-steps .download-panel { margin-top: 16px; }
+.start-steps .two-col { margin-bottom: 2px; }
+
+/* ---------- optional persistent setup ---------------------------------- */
+.advanced {
+  margin-top: 30px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+}
+.advanced summary {
+  padding: 18px 20px;
+  color: var(--fg2);
+  background: var(--inset);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.advanced-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+.advanced-body h3 { margin: 8px 0 0; font-size: 15px; }
+.advanced-body h3:first-child { margin-top: 0; }
+.advanced-body p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; }
+.advanced-body p code { color: var(--fg2); }
+
+/* ---------- help -------------------------------------------------------- */
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+.faq { border-top: 2px solid var(--line2); }
+.faq h3 code { font-size: 0.88em; }
+@media (max-width: 720px) { .faq-grid { grid-template-columns: 1fr; } }
+
+@media (max-width: 560px) {
+  .wrap { padding-inline: 18px; }
+  .term { flex-wrap: wrap; }
+  .term-cmd { flex-basis: 100%; }
+  .term-block, .term-multi { flex-wrap: nowrap; }
+  .build-step { padding: 17px; gap: 12px; }
+  .download-head { align-items: flex-start; flex-direction: column; }
+}
+
+/* Parallax layers (tutorial.js sets translate3d on scroll). Only decorative or
+   non-instructional hero elements carry data-px, so drift never hides content. */
+.px { will-change: transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .mark-cur, .foot .mark-big { animation: none; }
+  /* Honor the setting: no scroll-linked motion, and undo any inline transform. */
+  .px { transform: none !important; }
+  /* tutorial.js stands the rail finished rather than tracking the reader; all that
+     is left here is to stop the markers fading in when it does so. */
+  .js .fp-mark { transition: none; }
+  /* The columns arrive already arrived. Opacity is reset explicitly because the
+     animation that would have set it never runs. */
+  .js .fp-card, .js .fp-download { opacity: 1; animation: none; }
+  .js .fp-card.is-active::after { animation: none; }
+  .fp-card, .fp-card::after { transition: none; }
+}

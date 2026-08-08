@@ -1,0 +1,5 @@
+/bin/
+/web/console/dist/
+*.test
+*.out
+/testdata/tmp/

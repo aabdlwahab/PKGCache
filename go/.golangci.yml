@@ -1,0 +1,67 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments: [checkPrivateReceivers]
+        - name: package-comments
+    gocritic:
+      enabled-tags: [diagnostic, style, performance]
+      disabled-checks:
+        - ifElseChain
+        # hugeParam and rangeValCopy flag 80-216 byte value copies of records that
+        # travel on cold paths: a job row, snapshot metadata, an ecosystem descriptor.
+        # Taking pointers instead would save an immeasurable copy while introducing
+        # aliasing into code that deliberately copies a value before mutating it — the
+        # `a := *artifact` pattern in the engine's link path is exactly that, and it is
+        # a correctness property, not an oversight. Not worth trading.
+        - hugeParam
+        - rangeValCopy
+
+  exclusions:
+    rules:
+      # Tests may be looser about error wrapping and long functions. bodyclose is here
+      # because the control-plane helpers read and close the body themselves, which the
+      # linter cannot see through.
+      - path: _test\.go
+        linters: [errcheck, errorlint, gocritic, noctx, bodyclose]
+
+      # The catalog and control stores expose a context-free API by design: every
+      # method is a short, local SQLite statement, and catalog.Store is a contract the
+      # whole codebase is written against (see docs/go-implementation-plan.md §3.2).
+      # Threading a context through it is a deliberate open question recorded in
+      # docs/go-architecture.md, not something to paper over per call site — so noctx
+      # is scoped off here and stays on everywhere else, where it still catches an
+      # outbound HTTP request or subprocess started without cancellation.
+      - path: internal/(catalog|control)/
+        linters: [noctx]
+
+      # Same reason, from the other side: these open the stores at startup, and
+      # contextcheck reads a context-free constructor as a dropped context.
+      - path: cmd/pkgreg/(serve|doctor|operations)\.go
+        linters: [contextcheck]
+
+formatters:
+  enable:
+    - gofmt

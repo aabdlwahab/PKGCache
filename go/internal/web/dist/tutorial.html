@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgreg — getting started</title>
+    <meta
+      name="description"
+      content="Download pkgreg-client, open a temporary package shell, and use pip, uv, npm, Git, apt and Docker through the cache."
+    />
+    <script src="/theme.js"></script>
+    <script src="/coords.js"></script>
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/landing.css" />
+    <link rel="stylesheet" href="/tutorial.css" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151a'/><rect x='0.6' y='0.6' width='30.8' height='30.8' rx='6.6' fill='none' stroke='%232b3540'/><path d='M13 8 H9 V24 H13' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><path d='M19 8 H23 V24 H19' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><rect x='14.4' y='13.6' width='3.2' height='4.8' rx='1' fill='%2345d98a'/></svg>"
+    />
+  </head>
+  <body>
+    <div class="progress" aria-hidden="true"></div>
+
+    <header class="hdr">
+      <div class="wrap hdr-in">
+        <a class="lockup" href="/" aria-label="pkgreg home">
+          <span class="mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect class="mark-cur" x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="lockup-txt">
+            <span class="wordmark">pkgreg</span>
+            <span class="sublabel">getting started</span>
+          </span>
+        </a>
+        <nav class="nav" aria-label="Tutorial sections">
+          <a href="#tldr">TL;DR</a>
+          <a href="#start">Start</a>
+          <a href="#commands">Your tools</a>
+          <a href="#docker">Docker</a>
+          <a href="#persist">Shared hosts</a>
+          <a href="#help">Troubleshooting</a>
+        </nav>
+        <div class="hdr-right">
+          <button class="icon-btn" id="theme" type="button" aria-label="Toggle theme">
+            <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+            <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          </button>
+          <a class="btn btn-primary hdr-cta" href="#download">Download client</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="thero night">
+        <div class="hero-grid px" aria-hidden="true" data-px="0.6"></div>
+        <div class="wrap thero-in">
+          <div class="hero-copy px" data-px="-0.1">
+            <p class="eyebrow">developer setup</p>
+            <h1>One temporary shell. Nothing to undo.</h1>
+            <p class="lede thero-lede">
+              Download <code>pkgreg-client</code> and run one command. It opens a child
+              shell in this terminal with your package tools already pointed at this
+              cache. Type <code>exit</code> when you are done.
+            </p>
+            <div class="hero-ctas">
+              <a class="btn btn-primary" href="#tldr">Six commands</a>
+              <a class="btn btn-ghost" href="#start">Explain each one</a>
+            </div>
+            <p class="hero-note">No <code>sudo</code>, no CA installation, no cache IP, no insecure TLS flag.</p>
+          </div>
+          <aside class="hero-status px" aria-label="What the temporary client does" data-px="0.16">
+            <span class="status-k">while the child shell is open</span>
+            <div class="status-row"><span class="status-ok">✓</span><span>the cache’s CA is fingerprint-verified</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>pip, uv and npm use a localhost bridge</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>Git, files and apt get temporary addresses</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>no system or project files are changed</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================= TL;DR ===========================
+           The same six things the rest of the page teaches, with the reasons
+           removed. Written for the reader who already knows what a package cache
+           is and only wants the commands; every one of them is the live form for
+           this instance, so the section is copy-and-run rather than a summary to
+           translate. Anything that needs a paragraph to be safe is not here — it
+           is a one-line pointer into the section that owns it. -->
+      <section class="sec fastpath night" id="tldr">
+        <!-- Two decorative layers drifting at opposite speeds: the depth is the
+             difference between them, not either one on its own. Both are pure light,
+             so nothing instructional moves. -->
+        <div class="fp-field px" data-px="0.55" aria-hidden="true"></div>
+        <div class="fp-glow px" data-px="-0.4" aria-hidden="true"></div>
+        <div class="wrap">
+          <div class="fp-head">
+            <h2>Your commands, top to bottom.</h2>
+            <p class="lede">
+              Pick your platform and run the column. Every address, project and fingerprint
+              is already this instance’s own. Everything below this section is the same
+              steps with the reasons attached.
+            </p>
+          </div>
+
+          <div class="fp-download">
+            <span class="fp-out-k">first, for every platform</span>
+            <h3>Download <code>pkgreg-client</code></h3>
+            <div class="fp-quick" data-role="downloads-quick">
+              <a class="btn btn-ghost dl-btn" href="#download"><b>Choose your build</b><span class="dl-size">5 platforms</span></a>
+            </div>
+          </div>
+
+          <div class="fp-os">
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>Linux</h3>
+                <p>The daemon shares your loopback, so nothing here involves a certificate.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Make it runnable</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">chmod +x pkgreg-client</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Open the shell</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">./pkgreg-client -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note"><code>temporary session ready</code> means you are in. <code>exit</code> undoes everything.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install packages as usual</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">python -m pip install six
+uv pip install six
+npm install left-pad
+sudo apt-get -o Acquire::http::Proxy="$PKGREG_APT_PROXY" update</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Pull images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">docker pull "$PKGREG_DOCKER_REGISTRY/dockerhub/library/alpine:3.20"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Build images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgreg-client build -t myapp:dev .
+pkgreg-client compose build</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Your Dockerfile is never modified. Add <code>-print</code> to see what it would build.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Optional — builds you start another way</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgreg-client -docker-build-trust</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Once, then <code>apt</code> and <code>apk</code> reach the cache from any build on this machine — a Makefile, an IDE, Compose.</p>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>macOS</h3>
+                <p>Docker Desktop runs in a VM that cannot see your loopback, so Docker uses the cache’s own address.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Make it runnable</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">chmod +x pkgreg-client</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Open the shell</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">./pkgreg-client -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install packages as usual</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">python -m pip install six
+uv pip install six
+npm install left-pad</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Teach Docker the cache, once</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">./pkgreg-client -docker-trust -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">No <code>sudo</code>. Restart Docker Desktop afterwards.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Pull images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">docker pull cache.example.com:8443/dockerhub/library/alpine:3.20</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Build images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgreg-client build -cache-address -t myapp:dev .
+pkgreg-client compose -cache-address build</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note"><code>-cache-address</code> mounts the CA into each step that needs it — never written into a layer.</p>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>Windows</h3>
+                <p>PowerShell, and Docker Desktop takes registry trust from the Windows certificate store rather than a directory.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Rename it</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">Rename-Item pkgreg-client-windows-amd64.exe pkgreg-client.exe</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">There is no <code>chmod</code> step.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Open the shell</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">.\pkgreg-client.exe -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">A normal window is enough; Administrator is not needed for this.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install packages as usual</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">python -m pip install six
+uv pip install six
+npm install left-pad</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>For Docker, an Administrator PowerShell, once</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">.\pkgreg-client.exe --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">
+                        <code>-docker-trust</code> does not work here: a per-registry folder would have to be named
+                        <code>&lt;host&gt;:&lt;port&gt;</code>, and a colon cannot appear in a Windows path. Open a new terminal afterwards.
+                      </p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Pull images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">docker pull cache.example.com:8443/dockerhub/library/alpine:3.20</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Build images</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgreg-client build -cache-address -t myapp:dev .</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Working in WSL2? Use the Linux column for everything except this — the daemon is still Docker Desktop’s.</p>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+          </div>
+
+
+          <div class="fp-out">
+            <span class="fp-out-k">that is the whole setup</span>
+            <p>
+              Something failed, or you want to know why any of it is shaped this way?
+              <a class="ps-link" href="#start">Start</a> walks the same steps slowly,
+              <a class="ps-link" href="#docker">Docker</a> covers builders and CI, and
+              <a class="ps-link" href="#help">Troubleshooting</a> lists the errors by message.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ START ============================ -->
+      <section class="sec tint" id="pkgcache">
+        <div class="wrap">
+          <p class="eyebrow rv">new — one binary, three places to look</p>
+          <h2 class="rv">Or cache on this machine too.</h2>
+          <p class="lede rv">
+            <code>pkgcache</code> is this client with a cache of its own. A lookup goes to
+            your machine first, then to this server, then to the public registry — so a
+            second <code>npm ci</code> costs nothing, and a morning when this server is
+            down costs you a slower build rather than a stopped one.
+          </p>
+
+          <div class="tool-grid">
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Once</span><h3>Set it up</h3></div>
+              <p>Verifies this server’s CA against the fingerprint below, sets a disk budget, and writes nothing outside its own directory.</p>
+              <div class="term"><code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -limit 25G</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Every day</span><h3>Use it</h3></div>
+              <p>Starts the cache if it is not running. Nothing is installed and nothing outlives the command.</p>
+              <div class="term"><code class="term-cmd">pkgcache run -- npm ci</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Anytime</span><h3>See what it is doing</h3></div>
+              <p>Reports all three tiers, and says plainly when this server is unreachable rather than letting builds quietly get slower.</p>
+              <div class="term"><code class="term-cmd">pkgcache status</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+
+          <div class="note rv">
+            <p>
+              <b>It never deletes anything on its own.</b> The limit is asked for once and
+              never guessed. When the cache is full it keeps serving and stops storing,
+              says so on stderr, in <code>status</code> and as a desktop notification, and
+              exits <code>75</code> — so a pipeline that has quietly stopped caching goes
+              red instead of getting slower. <code>pkgcache prune</code> is the only thing
+              that removes anything.
+            </p>
+            <p>
+              <b>Falling back is deliberate, not automatic.</b> A refused connection, a
+              timeout or a server error moves to the next place to look. A
+              <code>404</code> does not — that is what a cache in offline mode answers,
+              and going around it would defeat an air gap somebody switched on. Nor does a
+              <code>403</code>, which is a credential problem worth seeing once rather than
+              never. <code>pkgcache setup -no-direct</code> removes the public registry
+              from the chain entirely.
+            </p>
+            <p>
+              <b>Want only what the shell below does?</b>
+              <code>pkgcache setup -no-cache -server … -ca-sha256 …</code> is exactly that:
+              a verified loopback bridge, no local store, no database. Nothing is written
+              to disk beyond the settings themselves.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec walkthrough night" id="start">
+        <div class="wrap">
+          <p class="eyebrow rv">the first three steps, in full · about two minutes</p>
+          <h2 class="rv">Download the client, start the shell, then exit.</h2>
+          <p class="lede rv">
+            Every command on this page is already filled in for this cache and for
+            project <b data-role="project">global</b> — the addresses and the fingerprint
+            below are this instance’s own, not examples. If your team uses a different
+            project, open <a href="/console#/connect">Console → Connect</a> and copy the
+            command shown there instead.
+          </p>
+
+          <!-- Shown only when this instance reports a non-https scheme, which means no
+               certificate pair is configured. Every command below would then be rewritten
+               to http:// and pkgreg-client refuses those outright, so saying nothing leaves
+               the reader stuck on an error whose cause is on the server. -->
+          <div class="callout rv" data-role="no-tls" hidden>
+            <b>This cache is not serving TLS, so the client cannot connect to it yet.</b>
+            <p>
+              <code>pkgreg-client</code> only accepts an <code>https://</code> server: it
+              fetches the CA over one unverified request, pins it to the fingerprint, and
+              verifies everything after that. Against an <code>http://</code> address it
+              stops with <code>server must use https</code>. Nothing you can pass on the
+              command line changes this, and no insecure flag is the answer.
+            </p>
+            <p>
+              The operator fixes it on the cache host: <code>pkgreg init</code> mints the
+              certificate pair into the data directory, and a server started against that
+              data directory picks it up on restart. <code>pkgreg doctor</code> reports the
+              missing pair as a failure.
+            </p>
+          </div>
+
+          <ol class="build-steps start-steps">
+            <li class="build-step rv" id="download">
+              <span class="quick-n">1</span>
+              <div>
+                <h3>Download <code>pkgreg-client</code></h3>
+                <p>
+                  One executable, not an installer. Most Intel and AMD machines are
+                  <code>amd64</code>; Apple silicon is <code>darwin arm64</code>.
+                </p>
+                <div class="download-panel">
+                  <div class="download-head">
+                    <div>
+                      <span class="download-k">served by this pkgreg instance</span>
+                      <h3>Client downloads</h3>
+                    </div>
+                    <span class="download-live"><i></i>checking</span>
+                  </div>
+                  <div class="dl" data-role="downloads" aria-live="polite">
+                    <p class="note">Looking for published client binaries…</p>
+                  </div>
+                </div>
+                <div class="two-col">
+                  <article class="plain-card">
+                    <h3>Linux or macOS</h3>
+                    <p>Rename it, make it executable, and check it arrived intact — the expected digest is printed under each download button above.</p>
+                    <div class="term term-multi">
+                      <code class="term-cmd">mv pkgreg-client-&lt;os&gt;-&lt;arch&gt; pkgreg-client
+chmod +x pkgreg-client
+sha256sum pkgreg-client   # shasum -a 256 on macOS</code>
+                      <button class="cp" type="button">copy</button>
+                    </div>
+                  </article>
+                  <article class="plain-card">
+                    <h3>Windows</h3>
+                    <p>Rename it to <code>pkgreg-client.exe</code>, then check the digest. A normal PowerShell window is enough; Administrator is not needed.</p>
+                    <div class="term term-multi">
+                      <code class="term-cmd">Get-FileHash .\pkgreg-client.exe -Algorithm SHA256</code>
+                      <button class="cp" type="button">copy</button>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </li>
+
+            <li class="build-step rv" id="fingerprint">
+              <span class="quick-n">2</span>
+              <div>
+                <h3>Check the fingerprint, then start the shell</h3>
+                <p>
+                  This is the SHA-256 of this cache’s public certificate authority. Compare
+                  it with the value your operator gave you through a separate trusted
+                  channel — a chat message, a wiki page, anything that is not this page.
+                  That comparison is what makes the connection safe; the client refuses to
+                  continue if it does not match.
+                </p>
+                <div class="fingerprint">
+                  <span class="fingerprint-k">CA SHA-256 · this instance</span>
+                  <code data-role="fingerprint">Open Console → Connect to copy the fingerprint</code>
+                </div>
+                <div class="install-grid">
+                  <article class="install-card">
+                    <span class="card-step">Linux and macOS</span>
+                    <div class="term term-block">
+                      <code class="term-cmd">./pkgreg-client -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                      <button class="cp" type="button">copy</button>
+                    </div>
+                  </article>
+                  <article class="install-card">
+                    <span class="card-step">Windows PowerShell</span>
+                    <div class="term term-block">
+                      <code class="term-cmd">.\pkgreg-client.exe -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                      <button class="cp" type="button">copy</button>
+                    </div>
+                  </article>
+                </div>
+                <div class="callout">
+                  <b>If your project requires an access token</b>, this command fails with
+                  <code>401</code> until you add one. Create a read token in
+                  <a class="ps-link" href="/console#/connect">Console → Connect</a>, save the
+                  one-time secret to a file, restrict it with
+                  <code>chmod 600 pkgreg.token</code>, and add
+                  <code>-token-file ./pkgreg.token</code> to the command above. Connect
+                  shows the exact command with the flag already included when the project
+                  needs it.
+                </div>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">3</span>
+              <div>
+                <h3>Work in the new shell, then type <code>exit</code></h3>
+                <p>
+                  A <code>temporary session ready</code> message means the localhost bridge
+                  is running. You are now in a child shell — the same directory, the same
+                  files, different package settings. Exiting stops the bridge and returns
+                  you to the parent terminal exactly as it was.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">python -m pip install six
+exit</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+              </div>
+            </li>
+          </ol>
+
+          <div class="after-install rv">
+            <h3>What the shell actually changed</h3>
+            <p>
+              Only environment variables, only in that child shell. Nothing is written to
+              your home directory, your project, or the operating system — which is why
+              there is no uninstall step. Print them at any time:
+            </p>
+            <div class="term term-multi">
+              <code class="term-cmd">env | grep ^PKGREG_ | sort</code>
+              <button class="cp" type="button">copy</button>
+            </div>
+            <ul class="check-list">
+              <li><code>PIP_INDEX_URL</code>, <code>UV_DEFAULT_INDEX</code>, <code>NPM_CONFIG_REGISTRY</code> — why pip, uv and npm need no flags</li>
+              <li><code>PKGREG_GIT_URL</code>, <code>PKGREG_FILES_URL</code>, <code>PKGREG_APT_PROXY</code> — the addresses used by the commands in the next section</li>
+              <li><code>PKGREG_DOCKER_REGISTRY</code> — the image registry, covered under <a class="ps-link" href="#docker">Docker</a></li>
+              <li><code>PKGREG_BRIDGE_URL</code> — the loopback bridge itself, on a port chosen fresh for each session</li>
+            </ul>
+            <p>
+              Because that port is new every time, never paste a bridge address into a
+              file that outlives the session — a Dockerfile, a lockfile, a CI config.
+              Reference the variable, or use the direct cache address described under
+              <a class="ps-link" href="#persist">shared hosts</a>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================= YOUR TOOLS ========================== -->
+      <section class="sec" id="commands">
+        <div class="wrap">
+          <p class="eyebrow rv">inside the pkgreg shell</p>
+          <h2 class="rv">Use normal package commands.</h2>
+          <p class="lede rv">
+            The client already set the variables these tools read. Use them exactly as you
+            would without a cache.
+          </p>
+          <div class="tool-grid">
+            <article class="tool-card eco-pip rv">
+              <div class="tool-head"><span class="eco-badge">Python</span><h3>pip</h3></div>
+              <div class="term"><code class="term-cmd">python -m pip install six</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-uv rv">
+              <div class="tool-head"><span class="eco-badge">Python</span><h3>uv</h3></div>
+              <div class="term"><code class="term-cmd">uv pip install six</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-npm rv">
+              <div class="tool-head"><span class="eco-badge">Node</span><h3>npm</h3></div>
+              <div class="term"><code class="term-cmd">npm install left-pad</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-git rv">
+              <div class="tool-head"><span class="eco-badge">Source</span><h3>Git</h3></div>
+              <p>Keep the original host in the path; the mirror is read-only.</p>
+              <div class="term"><code class="term-cmd">git clone "$PKGREG_GIT_URL/github.com/pallets/click.git"</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-files rv">
+              <div class="tool-head"><span class="eco-badge">Artifacts</span><h3>Files</h3></div>
+              <p>Replace <code>&lt;path&gt;</code> with a file your team has uploaded. Downloads are anonymous; uploading needs a write token.</p>
+              <div class="term"><code class="term-cmd">wget "${PKGREG_FILES_URL}&lt;path&gt;"</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-apt rv">
+              <div class="tool-head"><span class="eco-badge">System</span><h3>apt and apk</h3></div>
+              <p>Here <code>sudo</code> is for changing operating-system packages, not for pkgreg — the client setup itself stays unprivileged.</p>
+              <div class="term"><code class="term-cmd">sudo apt-get -o Acquire::http::Proxy="$PKGREG_APT_PROXY" update</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+
+          <div class="callout rv">
+            <b>Do not add TLS workarounds.</b> No <code>--trusted-host</code>, no
+            <code>--insecure</code>, no CA path, no cache IP. The bridge is plain HTTP on
+            your own loopback interface and the hop to the cache is verified TLS, so every
+            such flag only removes a check that is already passing. If a tool reports a
+            certificate error, the fingerprint or the address is wrong — see
+            <a class="ps-link" href="#help">Troubleshooting</a>.
+          </div>
+
+          <div class="info-strip rv">
+            <b>Different package, project or ecosystem?</b>
+            <a class="ps-link" href="/console#/connect">Console → Connect</a> generates the
+            same commands from this instance’s live configuration, for whichever project you
+            select. This page is the explanation; Connect is the lookup.
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================== DOCKER ============================ -->
+      <section class="sec tint" id="docker">
+        <div class="wrap">
+          <p class="eyebrow rv">containers</p>
+          <h2 class="rv">Docker plays by different rules.</h2>
+          <p class="lede rv">
+            Everything above works because the client changed <em>your shell’s</em>
+            environment. Docker does not read your shell: the daemon is a separate,
+            long-running process, and it — not your terminal — resolves image names and
+            runs build steps. So each Docker task needs its address passed in explicitly.
+            Three cases cover all of it.
+          </p>
+
+          <ol class="build-steps">
+            <li class="build-step rv">
+              <span class="quick-n">A</span>
+              <div>
+                <h3>Pull and run images</h3>
+                <p>
+                  Works from the temporary shell with Docker running on this same Linux
+                  machine. The daemon shares your loopback interface, and Docker already
+                  treats a <code>127.0.0.1</code> registry as a local one, so nothing has
+                  to be configured or trusted first.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker pull "$PKGREG_DOCKER_REGISTRY/dockerhub/library/alpine:3.20"</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Every image name is <code>&lt;upstream&gt;/&lt;repo&gt;:&lt;tag&gt;</code>. Choose the
+                  upstream with the first path segment — the rest is the image’s normal path
+                  on that registry:
+                </p>
+                <ul class="check-list">
+                  <li><code>dockerhub/library/alpine:3.20</code> — Docker Hub. Official images live under <code>library/</code> (so <code>alpine</code> is <code>library/alpine</code>).</li>
+                  <li><code>dockerhub/grafana/grafana:11.1.0</code> — a Hub image that keeps its <code>&lt;org&gt;/&lt;image&gt;</code> namespace.</li>
+                  <li><code>dockerhub/library/postgres:16</code>, <code>dockerhub/library/redis:7</code>, <code>dockerhub/library/node:22-alpine</code> — more official images.</li>
+                  <li><code>ghcr/astral-sh/uv:python3.12-bookworm-slim</code> — GitHub Container Registry.</li>
+                  <li><code>quay/prometheus/busybox:latest</code> — Quay.</li>
+                </ul>
+                <p>
+                  <b>Pin by digest for reproducibility.</b> A tag can move; a digest cannot.
+                  The cache stores each blob by digest, so a digest pull is served identically
+                  forever — and offline once it has been fetched:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker pull "$PKGREG_DOCKER_REGISTRY/dockerhub/library/alpine@sha256:beefdead…"</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  <b>Cross-architecture pulls</b> work too — the cache passes the manifest list
+                  through, so <code>--platform</code> selects the variant the same way it would
+                  against the upstream:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker pull --platform linux/arm64 "$PKGREG_DOCKER_REGISTRY/dockerhub/library/alpine:3.20"</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  <b>Run a throwaway tool</b> straight from the cache — the run itself is
+                  ordinary, only the image name is prefixed:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker run --rm -it "$PKGREG_DOCKER_REGISTRY/dockerhub/library/alpine:3.20" sh</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  If the container itself installs packages, give it the host’s network and
+                  pass the variables through so the tools inside also reach the cache:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker run --rm --network=host \
+  -e PIP_INDEX_URL -e UV_DEFAULT_INDEX -e NPM_CONFIG_REGISTRY \
+  "$PKGREG_DOCKER_REGISTRY/dockerhub/library/python:3.13-alpine" \
+  pip download six -d /tmp/wheels</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <div class="callout">
+                  <b>The first pull is a miss, the rest are hits.</b> A pull the cache has never
+                  seen is fetched from the upstream once and stored; every later pull of the
+                  same tag or digest — from any machine pointed at the cache — is served from
+                  disk, and keeps working after you go offline.
+                </div>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">B</span>
+              <div>
+                <h3>Build an image</h3>
+                <p>
+                  A build has two separate needs, and they fail in different ways.
+                  <b>The base image</b> is fetched by the daemon, so it works like a pull —
+                  but pass it in as a build argument rather than writing it into the
+                  Dockerfile, because the bridge port changes every session.
+                  <b>A <code>RUN</code> step</b> is different: it executes in its own network
+                  namespace, where <code>127.0.0.1</code> is the build container itself and
+                  the bridge is simply not there. Without
+                  <code>--network=host</code> those steps fail with
+                  <code>connection refused</code>.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># Dockerfile
+ARG BASE
+FROM ${BASE}
+ARG PIP_INDEX_URL
+RUN pip install --no-cache-dir six</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker build --network=host \
+  --build-arg BASE="$PKGREG_DOCKER_REGISTRY/dockerhub/library/python:3.13-alpine" \
+  --build-arg PIP_INDEX_URL \
+  -t myapp:dev .</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  The same pattern carries npm
+                  (<code>NPM_CONFIG_REGISTRY</code>) and Debian or Alpine packages
+                  (<code>--build-arg APT_PROXY="$PKGREG_APT_PROXY"</code>, then
+                  <code>apt-get -o Acquire::http::Proxy="$APT_PROXY" update</code>).
+                </p>
+                <p>
+                  A realistic <b>multi-stage build</b> follows the same rule in each stage
+                  that touches the network — the base is a build arg, and any
+                  <code>RUN</code> that fetches packages needs <code>--network=host</code>:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># Dockerfile — build wheels in one stage, copy into a slim runtime
+ARG BASE
+FROM ${BASE} AS build
+ARG PIP_INDEX_URL
+WORKDIR /app
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir -r requirements.txt -w /wheels
+
+FROM ${BASE}
+COPY --from=build /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  <b>Every ecosystem at once.</b> Each tool reads its own variable, so one
+                  block of <code>ARG</code>s covers all of them and every later
+                  <code>RUN</code> is an ordinary command. <code>ARG</code> rather than
+                  <code>ENV</code>: a <code>RUN</code> sees the value, and the shipped image
+                  does not keep a bridge address that will be dead by the time anyone runs it.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">ARG PKGREG
+ARG PROJECT=global
+ARG APT_PROXY
+ARG PIP_INDEX_URL=${PKGREG}/${PROJECT}/pypi/root/pypi/+simple/
+ARG UV_DEFAULT_INDEX=${PKGREG}/${PROJECT}/pypi/root/pypi/+simple/
+ARG NPM_CONFIG_REGISTRY=${PKGREG}/${PROJECT}/npm/
+ARG GIT_CONFIG_COUNT=1
+ARG GIT_CONFIG_KEY_0=url.${PKGREG}/${PROJECT}/git/github.com/.insteadOf
+ARG GIT_CONFIG_VALUE_0=https://github.com/
+# apt and apk read no index variable, but both honour a proxy — and no_proxy is what
+# keeps pip and npm going straight to the bridge instead of through it.
+ARG http_proxy=${APT_PROXY}
+ARG no_proxy=127.0.0.1,localhost</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Two things are worth knowing about that block. <b>Git</b> has no index
+                  variable, but it reads configuration from the environment, so
+                  <code>insteadOf</code> can be expressed as <code>GIT_CONFIG_*</code> — which
+                  means an unmodified <code>https://github.com/…</code> URL is redirected
+                  through the cache, and so are submodules and
+                  <code>pip install git+https://…</code>. <b>Alpine</b> ships an
+                  <code>https</code> repository list, and an <code>https</code> URL ignores
+                  <code>http_proxy</code>, so <code>apk</code> needs one line first:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">RUN sed -i 's/https:/http:/' /etc/apk/repositories \
+ &amp;&amp; apk add --no-cache curl</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  In a <b>multi-stage build</b> an <code>ARG</code> is scoped to its stage, so
+                  repeat the block in each stage that installs packages.
+                </p>
+                <p>
+                  <b>Compose builds</b> need the network on the build itself. Pass the values
+                  through and set <code>network: host</code> on the build:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># compose.yaml
+services:
+  app:
+    build:
+      context: .
+      network: host
+      args:
+        BASE: "${PKGREG_DOCKER_REGISTRY}/dockerhub/library/python:3.13-alpine"
+        PIP_INDEX_URL: "${PIP_INDEX_URL}"</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <div class="callout">
+                  <b>BuildKit changes the network flag, not the idea.</b> With BuildKit
+                  (<code>docker buildx build</code>, or <code>DOCKER_BUILDKIT=1</code>) a
+                  <code>RUN</code> that needs the bridge uses
+                  <code>RUN --network=host …</code> inside the Dockerfile, and the build is
+                  invoked with <code>--allow network.host</code>. The base-image build arg is
+                  unchanged.
+                </div>
+                <div class="callout">
+                  <b>Build arguments are recorded in the image.</b> Passing an address is
+                  fine; never pass a token this way. If the project needs one, build on a
+                  host set up as described below, where credentials stay outside the image.
+                </div>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">C</span>
+              <div>
+                <h3>Docker Desktop, remote builders, Compose and CI</h3>
+                <p>
+                  <b>macOS and Windows are always this case.</b> There the daemon runs inside
+                  a virtual machine with its own loopback interface, so
+                  <code>127.0.0.1</code> is not your machine and the bridge simply is not
+                  there — a pull fails with
+                  <code>dial tcp 127.0.0.1:&lt;port&gt;: connect: connection refused</code>.
+                  The same is true of a remote daemon, a
+                  <code>docker-container</code> builder and a CI runner.
+                  <code>--network=host</code> does not change any of it, so cases A and B do
+                  not apply.
+                </p>
+                <p>
+                  Use the cache’s own address instead. It is stable, so it belongs in a
+                  Dockerfile or a Compose file — but Docker has to trust the cache’s CA
+                  before it will pull over TLS.
+                </p>
+                <p>
+                  <b>On a laptop that is one command and no <code>sudo</code>.</b> The client
+                  verifies the CA against the fingerprint, then installs it for the Docker
+                  daemon alone — one file, nothing else on the machine touched:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">./pkgreg-client -docker-trust -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Add <code>-dry-run</code> to see the exact file first, or
+                  <code>-uninstall</code> to remove it again. Then restart Docker so the
+                  daemon rereads that directory and pull against the cache directly — no
+                  bridge, no <code>--network=host</code>, and the address is stable enough to
+                  commit:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker pull cache.example.com:8443/dockerhub/library/alpine:3.20</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  The same command works on a Linux Docker host, where the daemon reads
+                  <code>/etc/docker/certs.d/</code> and so it needs <code>sudo</code>. On
+                  Windows, Docker Desktop takes registry trust from the Windows certificate
+                  store rather than a directory, so use
+                  <a class="ps-link" href="#persist">persistent setup</a> there — it imports
+                  the CA along with everything else a shared host needs.
+                </p>
+                <p>
+                  A <code>RUN</code> step here is a different problem from the base image.
+                  The base image is Docker’s request, and <code>-docker-trust</code> has
+                  already settled it; a <code>RUN</code> is pip or npm making its own TLS
+                  connection to the cache, and those tools read their own trust store, not
+                  Docker’s. They need the CA.
+                </p>
+                <p>
+                  <b>Mount it, do not copy it.</b> A <code>COPY</code> writes the certificate
+                  into a layer, where it ships with the image to everyone who ever pulls it
+                  and outlives every rotation. A BuildKit secret mount exists for exactly
+                  this: the file is present for the one <code>RUN</code> that needs it and is
+                  in no layer afterwards.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># Dockerfile — the CA is mounted for the step, never written into the image
+# syntax=docker/dockerfile:1
+FROM cache.example.com:8443/dockerhub/library/python:3.13-alpine
+
+RUN --mount=type=secret,id=pkgca,target=/pkgca.crt \
+    PIP_CERT=/pkgca.crt \
+    pip install --no-cache-dir \
+      --index-url https://cache.example.com:8443/global/pypi/root/pypi/+simple/ six
+
+RUN --mount=type=secret,id=pkgca,target=/pkgca.crt \
+    SSL_CERT_FILE=/pkgca.crt \
+    uv pip install --system \
+      --default-index https://cache.example.com:8443/global/pypi/root/pypi/+simple/ six
+
+RUN --mount=type=secret,id=pkgca,target=/pkgca.crt \
+    npm install --cafile /pkgca.crt \
+      --registry https://cache.example.com:8443/global/npm/ left-pad
+
+RUN --mount=type=secret,id=pkgca,target=/pkgca.crt \
+    GIT_SSL_CAINFO=/pkgca.crt \
+    git clone https://cache.example.com:8443/global/git/github.com/pallets/click.git</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  The source file is the one <code>-docker-trust</code> already wrote, and it
+                  printed the path when it ran:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># macOS, Docker Desktop
+docker build --secret id=pkgca,src="$HOME/.docker/certs.d/cache.example.com:8443/ca.crt" \
+  -t myapp:dev .
+
+# Linux Docker host
+docker build --secret id=pkgca,src=/etc/docker/certs.d/cache.example.com:8443/ca.crt \
+  -t myapp:dev .
+
+# inside the pkgreg shell, or on a host with persistent setup, it is already named
+docker build --secret id=pkgca,src="$PKGREG_CA_FILE" -t myapp:dev .</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  <b>apt and apk need none of this.</b> Their proxy is plain HTTP at the
+                  cache’s own address, so there is no certificate in the path at all — the
+                  same two lines work in any build, on any daemon:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">ARG APT_PROXY
+RUN apt-get -o Acquire::http::Proxy="$APT_PROXY" update \
+ && apt-get -o Acquire::http::Proxy="$APT_PROXY" install -y --no-install-recommends curl
+
+# Alpine: same proxy, but switch its repository list to http:// first
+RUN sed -i 's/https/http/' /etc/apk/repositories \
+ && http_proxy="$APT_PROXY" apk add --no-cache curl</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  A base image that already trusts the cache is the other way to avoid the
+                  mount, and is worth building once if your team builds often. On a host with
+                  persistent setup the settings are also available as a file to source, so CI
+                  jobs need no per-pipeline configuration:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">source /etc/pkgreg/projects/global/env.sh
+docker compose build</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Because the address is stable, it belongs directly in a
+                  <b>Compose file</b> — images pull from the cache, and builds read package
+                  indexes from it:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># compose.yaml — cache address is stable, so it can be committed
+services:
+  db:
+    image: cache.example.com:8443/dockerhub/library/postgres:16
+  app:
+    build:
+      context: .
+      # the same mounted CA, declared once for the build
+      secrets: [pkgca]
+      args:
+        BASE: cache.example.com:8443/dockerhub/library/python:3.13-alpine
+        PIP_INDEX_URL: https://cache.example.com:8443/global/pypi/root/pypi/+simple/
+
+secrets:
+  pkgca:
+    file: /etc/docker/certs.d/cache.example.com:8443/ca.crt</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  <b>CI runners</b> are case C by definition. Trust the CA once in the job
+                  (or bake it into the runner image), then pull and build against the cache’s
+                  address — no <code>--network=host</code>, no per-pipeline registry config:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># GitHub Actions step
+- name: Build through pkgreg
+  run: |
+    sudo ./pkgreg-client -docker-trust -server https://cache.example.com:8443 \
+      -project global -ca-sha256 "${{ secrets.PKGREG_CA_SHA256 }}"
+    # -docker-trust prints where it wrote the CA; that file is the build secret,
+    # so the runner's image never contains one.
+    docker build \
+      --secret id=pkgca,src=/etc/docker/certs.d/cache.example.com:8443/ca.crt \
+      --build-arg BASE=cache.example.com:8443/dockerhub/library/python:3.13-alpine \
+      --build-arg PIP_INDEX_URL=https://cache.example.com:8443/global/pypi/root/pypi/+simple/ \
+      -t myapp:ci .</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <div class="callout">
+                  <b>A <code>docker-container</code> buildx builder is also case C.</b> It runs
+                  in its own container, so <code>127.0.0.1</code> and
+                  <code>--network=host</code> do not reach the bridge. Use the cache’s address
+                  and hand the CA to the steps that need it with
+                  <code>--secret id=pkgca,src="$PKGREG_CA_FILE"</code>, exactly as above — a
+                  builder that runs elsewhere is no reason to bake a certificate into the
+                  image. Pin images by digest in CI so a moved tag never changes a build.
+                </div>
+              </div>
+            </li>
+          </ol>
+
+          <div class="info-strip rv">
+            <b>Which case is mine?</b> Docker on this Linux machine and you are in the
+            pkgreg shell → A and B. Docker Desktop on macOS or Windows, a
+            <code>docker-container</code> builder, a remote daemon, or a CI runner → C.
+            When unsure, run case A: if the pull succeeds you are in A, and if it cannot
+            reach the registry you are in C.
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================== SHARED HOSTS ========================= -->
+      <section class="sec" id="persist">
+        <div class="wrap">
+          <p class="eyebrow rv">shared machines · needs administrator access</p>
+          <h2 class="rv">Persistent setup, for hosts rather than people.</h2>
+          <p class="lede rv">
+            <code>--persist</code> is the other mode, and it is not part of normal
+            developer setup. Use it when a CI runner, Docker host or shared build machine
+            must keep using pkgreg after every terminal closes. It installs the public CA
+            into the system trust store and Docker’s trust directory, and writes
+            system-wide tool settings — so applying or removing it needs root, and it is
+            the machine’s owner who should do it.
+          </p>
+          <ul class="check-list rv">
+            <li>the public CA in the OS trust store and in <code>/etc/docker/certs.d/</code>, so Docker and every other tool trust the cache’s real address</li>
+            <li><code>/etc/pkgreg/projects/&lt;project&gt;/env.sh</code> — the same variables as the temporary shell, but pointing at the cache directly and surviving reboots</li>
+            <li><code>PKGREG_CA_FILE</code>, for tools that want an explicit CA path rather than the system store</li>
+            <li>optionally a managed <code>hosts</code> entry, with <code>-cache-ip</code>, when site DNS does not resolve the cache name</li>
+          </ul>
+
+          <details class="advanced rv">
+            <summary>Show persistent install and uninstall commands</summary>
+            <div class="advanced-body">
+              <h3>1. Preview without changing anything</h3>
+              <p>Prints every file it would touch. Safe to run unprivileged, and worth reading before the real run.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">./pkgreg-client --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -dry-run</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+
+              <h3>2. Apply on Linux or macOS</h3>
+              <p><code>sudo</code> is required because the CA and the configuration go to protected system locations.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">sudo ./pkgreg-client --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT"
+source /etc/pkgreg/projects/global/env.sh</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+
+              <h3>Windows</h3>
+              <p>Preview in a normal PowerShell. To apply, run it without <code>-dry-run</code> in an Administrator PowerShell, then open a new terminal so the machine-wide variables are picked up.</p>
+              <div class="term term-block">
+                <code class="term-cmd">.\pkgreg-client.exe --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -dry-run</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+
+              <h3>3. Remove it</h3>
+              <p>Reverses exactly what was applied, including the CA and the trust refresh. Run the Windows form in an Administrator PowerShell.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">sudo ./pkgreg-client --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -uninstall</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+              <div class="term term-block">
+                <code class="term-cmd">.\pkgreg-client.exe --persist -server https://cache.example.com:8443 -project global -ca-sha256 "PASTE_FINGERPRINT" -uninstall</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+              <p>
+                The generated <code>setup.sh</code> and <code>setup.ps1</code> are what these
+                commands run, and both are downloadable from
+                <a class="ps-link" href="/console#/connect">Console → Connect</a> if you want
+                to read or review them before running anything.
+              </p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- ======================= TROUBLESHOOTING ======================= -->
+      <section class="sec tint" id="help">
+        <div class="wrap">
+          <p class="eyebrow rv">troubleshooting</p>
+          <h2 class="rv">When something does not work.</h2>
+          <div class="faq-grid">
+            <article class="faq rv">
+              <h3>No download is listed above</h3>
+              <p>
+                Nothing has been published on this instance yet. On the cache host the
+                operator runs <code>pkgreg publish-client</code>; <code>pkgreg doctor</code>
+                confirms it. Do not work around it with insecure package flags — the client
+                is the supported path.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>CA fingerprint mismatch</code></h3>
+              <p>
+                The certificate served does not match the value you passed. Stop and confirm
+                the fingerprint with the operator over a trusted channel. This is the one
+                check that would catch someone impersonating the cache, so do not bypass it.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>server must use https</code></h3>
+              <p>
+                The <code>-server</code> value must be the cache’s origin with its scheme and
+                port and nothing else — no path, no trailing slash, no credentials. The
+                command in step 2 is already in that form.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>401</code> on every package request</h3>
+              <p>
+                The project requires an access token. Create a read token in
+                <a class="ps-link" href="/console#/connect">Connect</a> and pass it with
+                <code>-token-file</code>, as described in step 2.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>connection refused</code> inside <code>docker build</code></h3>
+              <p>
+                A <code>RUN</code> step cannot see your loopback interface. Add
+                <code>--network=host</code> to the build, or, if the daemon is not on this
+                machine, use case C under <a class="ps-link" href="#docker">Docker</a>.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>connection refused</code> on <code>docker pull</code></h3>
+              <p>
+                If the address is <code>127.0.0.1</code> and you are on macOS or Windows,
+                this is expected rather than broken: the daemon runs in a virtual machine
+                whose loopback is not yours. Run
+                <code>pkgreg-client -docker-trust</code> and pull from the cache’s own
+                address instead — case C under
+                <a class="ps-link" href="#docker">Docker</a>. On macOS that needs no
+                <code>sudo</code> and changes nothing outside Docker.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>A tool ignores the cache and goes upstream</h3>
+              <p>
+                Something is overriding the session — a <code>pip.conf</code>,
+                <code>.npmrc</code>, or <code>uv.toml</code> in your project or home
+                directory, or a corporate <code>HTTP_PROXY</code>. The client keeps
+                <code>127.0.0.1</code> and <code>localhost</code> in
+                <code>NO_PROXY</code>, but a file that pins an index URL wins over the
+                environment. Compare <code>env | grep ^PIP_</code> against what the tool
+                reports it is using.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>How do I undo the normal setup?</h3>
+              <p>
+                Type <code>exit</code>. There is nothing to uninstall, and any second shell
+                you opened from another terminal was never affected. Only
+                <code>--persist</code> changes a machine, and only
+                <code>--persist -uninstall</code> reverses it.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <footer class="foot night">
+        <div class="wrap">
+          <span class="mark mark-big" aria-hidden="true">
+            <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <h2>Download. Start. Exit.</h2>
+          <p class="lede foot-lede">That is the whole developer setup. Docker and shared hosts are the two exceptions, and both are above.</p>
+          <div class="hero-ctas foot-ctas">
+            <a class="btn btn-primary" href="#download">Download client</a>
+            <a class="btn btn-ghost" href="/console#/connect">Open Connect</a>
+          </div>
+          <div class="foot-meta">
+            <span>package-registry · pkgreg</span>
+            <span>verified remote TLS · temporary local bridge · no system changes by default</span>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <script src="/tutorial.js"></script>
+  </body>
+</html>
