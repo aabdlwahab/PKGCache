@@ -1,0 +1,70 @@
+# Isolated retired-Python deployment for the Phase 10 differential gate.
+#
+# This file must be combined with the repository's docker-compose.yml and a
+# non-production project name. Every writable host mount and every published port
+# is replaced, so corpus mutations cannot reach the serving stack's state.
+services:
+  pkgcache:
+    restart: "no"
+    environment:
+      OFFLINE: "1"
+    ports: !override
+      - "127.0.0.1:${DIFF_PYTHON_ORIGIN_PORT:?set DIFF_PYTHON_ORIGIN_PORT}:8443"
+      - "127.0.0.1:${DIFF_PYTHON_PROXY_PORT:?set DIFF_PYTHON_PROXY_PORT}:3142"
+    volumes: !override
+      - type: bind
+        source: "${DIFF_PYTHON_CACHES:?set DIFF_PYTHON_CACHES}"
+        target: /caches
+      - type: bind
+        source: "${DIFF_PYTHON_CONFIG:?set DIFF_PYTHON_CONFIG}"
+        target: /config
+        read_only: true
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/ca.crt"
+        target: /certs/ca.crt
+        read_only: true
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/server.crt"
+        target: /certs/server.crt
+        read_only: true
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/server.key"
+        target: /certs/server.key
+        read_only: true
+
+  webui:
+    image: package-registry-webui
+    restart: "no"
+    environment:
+      # The parity corpus covers the historical unauthenticated contract. Never
+      # inherit production break-glass credentials into this disposable stack.
+      UI_ROOT_USER: ""
+      UI_ROOT_PASSWORD: ""
+      UI_ANON_READ: "1"
+    volumes: !override
+      - type: bind
+        source: "${DIFF_PYTHON_CACHES:?set DIFF_PYTHON_CACHES}"
+        target: /app/caches
+      - type: bind
+        source: "${DIFF_PYTHON_CONFIG:?set DIFF_PYTHON_CONFIG}"
+        target: /app/config
+      - type: bind
+        source: "${DIFF_PYTHON_LOCKWARM:?set DIFF_PYTHON_LOCKWARM}"
+        target: /app/lockwarm
+      - type: bind
+        source: "${DIFF_PYTHON_SHUTTLE:?set DIFF_PYTHON_SHUTTLE}"
+        target: /app/shuttle
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/ca.crt"
+        target: /app/certs/ca.crt
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/server.crt"
+        target: /app/certs/server.crt
+      - type: bind
+        source: "${DIFF_PYTHON_CERTS:?set DIFF_PYTHON_CERTS}/server.key"
+        target: /app/certs/server.key
+
+  console:
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:${DIFF_PYTHON_ADMIN_PORT:?set DIFF_PYTHON_ADMIN_PORT}:80"

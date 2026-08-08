@@ -22,12 +22,14 @@ var commands = map[string]struct {
 	summary string
 	run     func(ctx context.Context, args []string) error
 }{
+	"status":  {"is the cache running, and what is in it", runStatus},
+	"stop":    {"stop the cache daemon", runStop},
 	"serve":   {"run the cache in the foreground", runServe},
 	"version": {"print build identity", runVersion},
 }
 
 // order fixes the help text, which a map iteration would shuffle between runs.
-var order = []string{"serve", "version"}
+var order = []string{"status", "stop", "serve", "version"}
 
 func main() {
 	os.Exit(dispatch())

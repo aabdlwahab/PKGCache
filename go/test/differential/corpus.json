@@ -1,0 +1,75 @@
+{
+  "required": [
+    "PYPI_WHEEL_PATH",
+    "PYPI_METADATA_PATH",
+    "NPM_TARBALL_PATH",
+    "NPM_SCOPED_PATH",
+    "OCI_IMAGE",
+    "OCI_TAG",
+    "OCI_CHILD_DIGEST",
+    "OCI_BLOB_DIGEST",
+    "APT_INRELEASE_URL",
+    "APT_INRELEASE_ETAG",
+    "APT_DEB_URL",
+    "APK_URL",
+    "GIT_REPO",
+    "PROJECT"
+  ],
+  "ignore_headers": ["X-Request-Id"],
+  "requests": [
+    {"name":"pypi numpy HTML","method":"GET","path":"/global/pypi/root/pypi/+simple/numpy/","headers":{"Accept":"text/html"},"want_status":200},
+    {"name":"pypi numpy JSON","method":"GET","path":"/global/pypi/root/pypi/+simple/numpy/","headers":{"Accept":"application/vnd.pypi.simple.v1+json"},"compare":"json","want_status":200},
+    {"name":"pypi torch HTML","method":"GET","path":"/global/pypi/root/pypi/+simple/torch/","headers":{"Accept":"text/html"},"want_status":200},
+    {"name":"pypi torch JSON","method":"GET","path":"/global/pypi/root/pypi/+simple/torch/","headers":{"Accept":"application/vnd.pypi.simple.v1+json"},"compare":"json","want_status":200},
+    {"name":"pypi grpcio HTML","method":"GET","path":"/global/pypi/root/pypi/+simple/grpcio/","headers":{"Accept":"text/html"},"want_status":200},
+    {"name":"pypi grpcio JSON","method":"GET","path":"/global/pypi/root/pypi/+simple/grpcio/","headers":{"Accept":"application/vnd.pypi.simple.v1+json"},"compare":"json","want_status":200},
+    {"name":"pypi wheel GET","method":"GET","path":"{{PYPI_WHEEL_PATH}}","want_status":200},
+    {"name":"pypi wheel HEAD","method":"HEAD","path":"{{PYPI_WHEEL_PATH}}","want_status":200},
+    {"name":"pypi wheel Range","method":"GET","path":"{{PYPI_WHEEL_PATH}}","headers":{"Range":"bytes=1000-2000"},"want_status":206},
+    {"name":"pypi metadata sidecar","method":"GET","path":"{{PYPI_METADATA_PATH}}","want_status":200},
+
+    {"name":"npm chalk packument","method":"GET","path":"/global/npm/chalk","compare":"json","want_status":200},
+    {"name":"npm scoped packument","method":"GET","path":"{{NPM_SCOPED_PATH}}","compare":"json","want_status":200},
+    {"name":"npm tarball","method":"GET","path":"{{NPM_TARBALL_PATH}}","want_status":200},
+
+    {"name":"OCI v2","method":"GET","path":"/v2/","want_status":200},
+    {"name":"OCI multiarch tag","method":"GET","path":"/v2/dockerhub/{{OCI_IMAGE}}/manifests/{{OCI_TAG}}","want_status":200},
+    {"name":"OCI child manifest","method":"GET","path":"/v2/dockerhub/{{OCI_IMAGE}}/manifests/{{OCI_CHILD_DIGEST}}","want_status":200},
+    {"name":"OCI blob GET","method":"GET","path":"/v2/dockerhub/{{OCI_IMAGE}}/blobs/{{OCI_BLOB_DIGEST}}","want_status":200},
+    {"name":"OCI blob HEAD","method":"HEAD","path":"/v2/dockerhub/{{OCI_IMAGE}}/blobs/{{OCI_BLOB_DIGEST}}","want_status":200},
+    {"name":"OCI global tags","method":"GET","path":"/v2/dockerhub/{{OCI_IMAGE}}/tags/list","compare":"json","want_status":200},
+    {"name":"OCI project tags","method":"GET","path":"/v2/{{PROJECT}}/dockerhub/{{OCI_IMAGE}}/tags/list","compare":"json","want_status":200},
+
+    {"name":"apt InRelease","method":"GET","mode":"proxy","target":"{{APT_INRELEASE_URL}}","want_status":200},
+    {"name":"apt conditional InRelease","method":"GET","mode":"proxy","target":"{{APT_INRELEASE_URL}}","headers":{"If-None-Match":"{{APT_INRELEASE_ETAG}}"},"want_status":200},
+    {"name":"apt deb","method":"GET","mode":"proxy","target":"{{APT_DEB_URL}}","want_status":200},
+    {"name":"apk package","method":"GET","mode":"proxy","target":"{{APK_URL}}","want_status":200},
+
+    {"name":"files autoindex","method":"GET","path":"/global/files/","want_status":200},
+    {"name":"files offline PUT","method":"PUT","path":"/global/files/differential/probe.txt","headers":{"Content-Type":"text/plain"},"body":"phase-10-differential\n","want_status":403},
+    {"name":"files missing GET","method":"GET","path":"/global/files/differential/probe.txt","want_status":404},
+    {"name":"files offline overwrite","method":"PUT","path":"/global/files/differential/probe.txt?overwrite=1","headers":{"Content-Type":"text/plain"},"body":"phase-10-overwrite\n","want_status":403},
+    {"name":"files offline DELETE","method":"DELETE","path":"/global/files/differential/probe.txt","want_status":403},
+
+    {"name":"git info refs","method":"GET","path":"/global/git/{{GIT_REPO}}/info/refs?service=git-upload-pack","want_status":200},
+
+    {"name":"legacy projects","method":"GET","path":"/api/projects","compare":"json","ignore_json_keys":["ports","repo"],"want_status":200},
+    {"name":"legacy proxies","method":"GET","path":"/api/proxies?project=global","compare":"json","want_status":200},
+    {"name":"legacy downloads","method":"GET","path":"/api/downloads?project=global","compare":"json","ignore_json_keys":["age"],"want_status":200},
+    {"name":"legacy recent","method":"GET","path":"/api/recent?project=global","compare":"json","ignore_json_keys":["pulls"],"want_status":200},
+    {"name":"legacy manifests","method":"GET","path":"/api/manifests?project=global","compare":"json","ignore_json_keys":["ecosystems","checkpointed","age","usage"],"want_status":200},
+    {"name":"legacy stats","method":"GET","path":"/api/stats?project=global","compare":"json","ignore_json_keys":["totals","hit_rate","bytes_saved","time_saved_seconds","by_eco","by_arch","leaderboard","top_largest","recent_added","bandwidth","usage"],"want_status":200},
+    {"name":"legacy history","method":"GET","path":"/api/history?project=global","compare":"json","ignore_json_keys":["head","commits"],"want_status":200},
+    {"name":"legacy endpoints","method":"GET","path":"/api/endpoints?project=global","compare":"json","ignore_json_keys":["url","setup"],"want_status":200},
+    {"name":"legacy shuttle","method":"GET","path":"/api/shuttle?project=global","compare":"json","ignore_json_keys":["export_dir","import_dir"],"want_status":200},
+    {"name":"legacy packages","method":"GET","path":"/api/packages?project=global","compare":"json","ignore_json_keys":["ecosystems"],"want_status":200},
+    {"name":"legacy token","method":"GET","path":"/api/token?project=global","compare":"json","want_status":200},
+    {"name":"legacy jobs","method":"GET","path":"/api/jobs","compare":"json","want_status":200},
+    {"name":"legacy me","method":"GET","path":"/api/me","compare":"json","want_status":200}
+  ],
+  "commands": [
+    {"name":"git full clone","args":["git","clone","{{BASE}}/global/git/{{GIT_REPO}}","{{WORK}}/full"],"compare_tree":"full"},
+    {"name":"git shallow clone","args":["git","clone","--depth=1","{{BASE}}/global/git/{{GIT_REPO}}","{{WORK}}/shallow"],"compare_tree":"shallow"},
+    {"name":"git filtered clone","args":["git","clone","--filter=blob:none","{{BASE}}/global/git/{{GIT_REPO}}","{{WORK}}/filtered"],"compare_tree":"filtered"}
+  ]
+}

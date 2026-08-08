@@ -227,8 +227,11 @@ func (s *Snapshot) setLocalAddr(value string) error {
 		return fmt.Errorf("config: empty address")
 	}
 	if !strings.Contains(address, ":") {
+		// Port 0 is accepted and means "any free port". It is what the daemon falls
+		// back to when the fixed port is taken, and what tests use so they never
+		// collide with each other or with a developer's own cache.
 		port, err := strconv.Atoi(address)
-		if err != nil || port < 1 || port > 65535 {
+		if err != nil || port < 0 || port > 65535 {
 			return fmt.Errorf("config: %q is neither a host:port nor a port number", value)
 		}
 		address = net.JoinHostPort(LocalLoopback, address)
