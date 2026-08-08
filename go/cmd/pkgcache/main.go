@@ -22,6 +22,7 @@ var commands = map[string]struct {
 	summary string
 	run     func(ctx context.Context, args []string) error
 }{
+	"setup":              {"point this machine at a cache, once", runSetup},
 	"run":                {"run one command with its tools pointed at the cache", runRun},
 	"shell":              {"open a shell whose tools use the cache", runShell},
 	"env":                {"print the settings that point tools at the cache", runEnv},
@@ -40,7 +41,7 @@ var commands = map[string]struct {
 
 // order fixes the help text, which a map iteration would shuffle between runs.
 var order = []string{
-	"run", "shell", "env", "build", "compose",
+	"setup", "run", "shell", "env", "build", "compose",
 	"persist", "docker-setup", "docker-build-setup",
 	"limit", "status", "prune", "stop", "serve", "version",
 }

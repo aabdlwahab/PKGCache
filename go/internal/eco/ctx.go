@@ -99,6 +99,9 @@ func (c *Ctx) Document(spec engine.DocSpec) (*engine.Document, error) {
 	if spec.Credential == nil {
 		spec.Credential = c.credentialForURL(spec.URL)
 	}
+	if spec.Fallbacks == nil {
+		spec.Fallbacks = c.fallbacksFor(spec.URL)
+	}
 	return c.engine.Document(c.Context(), spec)
 }
 

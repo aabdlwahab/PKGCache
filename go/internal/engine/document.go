@@ -55,6 +55,12 @@ type DocSpec struct {
 	Expect Expect
 	// Headers are sent upstream — an Accept selecting PEP 691 JSON, for instance.
 	Headers http.Header
+	// Fallbacks are the other origins this document can be fetched from, in order.
+	//
+	// Documents need this more than artifacts do: an index is what a cold cache asks
+	// for first, so a chain whose middle tier could not serve indexes would fall back
+	// for tarballs and fail for the packument that names them.
+	Fallbacks []upstream.Fallback
 	// Credential authenticates to a private index.
 	Credential *upstream.Credential
 	// MaxBytes overrides the buffering cap.
@@ -145,6 +151,7 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 		Headers:    cloneHeader(spec.Headers),
 		Credential: spec.Credential,
 		Eco:        spec.Eco,
+		Fallbacks:  spec.Fallbacks,
 	}
 	// 3. conditional revalidation — cheap, and the common case for a stable index.
 	if haveRef && haveCached {

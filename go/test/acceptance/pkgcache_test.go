@@ -133,8 +133,18 @@ func (c *cacheProcess) run(t *testing.T, dir string, args ...string) (string, er
 // loopback API the right shape rather than a gap.
 func (c *cacheProcess) pointAt(t *testing.T, ecosystem, name, url string) {
 	t.Helper()
+	c.pointAtPriority(t, ecosystem, name, url, 0)
+}
+
+// pointAtPriority adds one origin to an index's chain. Two calls with the same name and
+// different priorities is how a chain is expressed.
+func (c *cacheProcess) pointAtPriority(
+	t *testing.T, ecosystem, name, url string, priority int,
+) {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{
-		"eco": ecosystem, "name": name, "url": url, "enabled": true,
+		"eco": ecosystem, "name": name, "url": url,
+		"enabled": true, "priority": priority,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -568,4 +578,74 @@ func namedNPMTarball(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return out.Bytes()
+}
+
+// The headline claim of the merge: a miss goes to the team's cache, and only reaches a
+// public registry when the team's cache cannot serve it.
+//
+// Both tiers are ordinary upstreams at different priorities, which is the design — there
+// is no "team cache" concept in the engine, so this is testing the chain rather than a
+// mode, and a real daemon walks it.
+func TestPkgcacheFallsBackFromTeamToPublic(t *testing.T) {
+	npmBinary := requireBinary(t, "npm")
+	cache := startCache(t)
+
+	var teamMu sync.Mutex
+	teamHits, publicHits := 0, 0
+	packument := func(w http.ResponseWriter, r *http.Request, name string) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"name":%q,"dist-tags":{"latest":"1.0.0"},
+		  "versions":{"1.0.0":{"name":%q,"version":"1.0.0",
+		  "dist":{"tarball":"%s/%s/-/%s-1.0.0.tgz"}}}}`,
+			name, name, originBase(r), name, name)
+	}
+	serve := func(count *int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			teamMu.Lock()
+			*count++
+			teamMu.Unlock()
+			for _, name := range []string{"first-package", "second-package"} {
+				if r.URL.Path == "/"+name {
+					packument(w, r, name)
+					return
+				}
+				if r.URL.Path == "/"+name+"/-/"+name+"-1.0.0.tgz" {
+					w.Header().Set("Content-Type", "application/octet-stream")
+					_, _ = w.Write(namedNPMTarball(t, name))
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}
+	team := httptest.NewServer(serve(&teamHits))
+	defer team.Close()
+	public := httptest.NewServer(serve(&publicHits))
+	defer public.Close()
+
+	// One index name, two origins. Priority is what makes it a chain.
+	cache.pointAtPriority(t, "npm", "registry", team.URL, 10)
+	cache.pointAtPriority(t, "npm", "registry", public.URL, 20)
+
+	install(t, cache, npmBinary, t.TempDir(), "first-package")
+	teamMu.Lock()
+	afterFirst := teamHits
+	publicAfterFirst := publicHits
+	teamMu.Unlock()
+	if afterFirst == 0 {
+		t.Fatal("the team cache was never asked")
+	}
+	if publicAfterFirst != 0 {
+		t.Fatalf("the public registry was used while the team cache was up (%d)",
+			publicAfterFirst)
+	}
+
+	// The team cache goes away. A build must keep working.
+	team.Close()
+	install(t, cache, npmBinary, t.TempDir(), "second-package")
+	teamMu.Lock()
+	defer teamMu.Unlock()
+	if publicHits == 0 {
+		t.Fatal("nothing fell through to the public registry once the team cache was down")
+	}
 }

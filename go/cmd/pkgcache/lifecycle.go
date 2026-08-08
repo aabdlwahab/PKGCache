@@ -87,11 +87,46 @@ func reportBudget(dataDir, blobRoot string) error {
 				local.FormatSize(size), local.FormatSize(budget.LimitBytes))
 		}
 	}
+	if err := reportTiers(dataDir); err != nil {
+		return err
+	}
 	usage, sampled, found := local.ReadUsage(dataDir)
 	if found && usage.Full {
 		fmt.Printf("\nCACHE FULL — %s\n", usage.Reason)
 		fmt.Printf("(measured %s ago)\n", time.Since(sampled).Round(time.Second))
 		return &exitError{code: local.FullExitCode}
+	}
+	return nil
+}
+
+// reportTiers says where a miss goes next.
+//
+// Tiering is only worth having if it is visible: a team cache that has been down for a
+// week is otherwise just "builds got slower", noticed by nobody.
+func reportTiers(dataDir string) error {
+	team, has, err := local.ReadTeam(dataDir)
+	if err != nil {
+		return err
+	}
+	if !has {
+		fmt.Println("team       none")
+		fmt.Println("direct     always")
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	started := time.Now()
+	reachable := local.ReachableTeam(ctx, dataDir, team)
+	if reachable {
+		fmt.Printf("team       %s  reachable, %s\n",
+			team.Server, time.Since(started).Round(time.Millisecond))
+	} else {
+		fmt.Printf("team       %s  UNREACHABLE\n", team.Server)
+	}
+	if team.Direct {
+		fmt.Println("direct     when the team cache is unreachable")
+	} else {
+		fmt.Println("direct     never — the team cache or nothing")
 	}
 	return nil
 }

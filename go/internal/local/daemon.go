@@ -73,6 +73,11 @@ func Run(ctx context.Context, o RunOptions) error {
 	if budgetErr != nil {
 		return budgetErr
 	}
+	// Before the pool is built: a team cache serves TLS with a certificate it minted
+	// itself, and the middle tier is unreachable without this.
+	if err := ApplyTeamTrust(snap); err != nil {
+		return err
+	}
 	guard := NewGuard(nil, snap.DataDir, budget, func(reason string) {
 		Notify("pkgcache: the cache is full", reason)
 	})
