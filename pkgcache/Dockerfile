@@ -1,6 +1,6 @@
 # One slim image for all six roles. The role is chosen at runtime via the
 # PKGCACHE_ROLE env var (oci | npm | pypi | apt | git | files) — see docker-compose.yml.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 # The git role is a mirror-and-serve smart-HTTP server: it shells out to the git
 # binary (clone --mirror / fetch / upload-pack), which python:3.12-slim lacks.
@@ -11,9 +11,12 @@ RUN apt-get update \
 
 # uvicorn[standard] pulls in uvloop/httptools wheels; no build toolchain needed.
 WORKDIR /app
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --upgrade pip==26.1.2 \
+    && pip install --no-cache-dir -r requirements.lock \
+    && pip install --no-cache-dir --no-deps . \
+    && pip check
 
 # Default config baked in. With PKGCACHE_ROLE unset, the entrypoint serves ALL
 # six roles in one process on TWO ports: the unified HTTPS port (docker at /v2 +
