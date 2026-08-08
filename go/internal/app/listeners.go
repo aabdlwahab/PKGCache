@@ -72,9 +72,13 @@ func (a *App) StartListeners() (*Runtime, error) {
 }
 
 func (r *Runtime) bindSingle(cfg config.Server) error {
-	base, err := listenTCP(cfg.UnifiedAddr)
-	if err != nil {
-		return fmt.Errorf("listeners: bind single port %s: %w", cfg.UnifiedAddr, err)
+	base := r.app.inherited
+	if base == nil {
+		bound, err := listenTCP(cfg.UnifiedAddr)
+		if err != nil {
+			return fmt.Errorf("listeners: bind single port %s: %w", cfg.UnifiedAddr, err)
+		}
+		base = bound
 	}
 	r.addrs["single"] = base.Addr().String()
 	if r.certs == nil {

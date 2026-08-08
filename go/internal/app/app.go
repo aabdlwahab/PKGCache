@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,6 +81,9 @@ type App struct {
 	// only because nothing writes it once requests can arrive.
 	Activity func()
 
+	// inherited is a socket the caller already bound; see WithListener.
+	inherited net.Listener
+
 	cancel context.CancelFunc
 
 	listenersExpected atomic.Bool
@@ -91,7 +95,8 @@ type App struct {
 type Option func(*options)
 
 type options struct {
-	guard engine.StoreGuard
+	guard    engine.StoreGuard
+	listener net.Listener
 }
 
 // WithStoreGuard installs a policy deciding whether fills may be kept. See
@@ -99,6 +104,16 @@ type options struct {
 // behaviour of storing everything.
 func WithStoreGuard(g engine.StoreGuard) Option {
 	return func(o *options) { o.guard = g }
+}
+
+// WithListener serves on a socket the caller already holds instead of binding one.
+//
+// This is what socket activation needs: systemd or launchd binds the port, hands the
+// descriptor to the process it starts, and holds the address open between runs — which
+// is the only way persistent client settings can name a fixed port that an on-demand
+// daemon is not always listening on. Single-port mode only.
+func WithListener(l net.Listener) Option {
+	return func(o *options) { o.listener = l }
 }
 
 // Open constructs everything from a validated snapshot. The caller closes it.
@@ -236,6 +251,7 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 		a.Metrics.InitProjectSeries(name)
 	}
 	a.refreshStorageMetrics()
+	a.inherited = settings.listener
 	return a, nil
 }
 

@@ -49,10 +49,19 @@ func Run(ctx context.Context, o RunOptions) error {
 	}
 	defer func() { _ = lock.Close() }()
 
-	// Choosing the port before the engine opens means a busy port costs nothing. The
-	// alternative — open two databases, bind, fail, close them again — is a second of
-	// work to discover something a socket can answer immediately.
-	if err := resolveAddr(snap, o.Notes); err != nil {
+	// A socket handed to us by systemd or launchd is already bound, and its address —
+	// not the configured one — is what clients must be told. Where there is none, the
+	// port is chosen before the engine opens: a busy port then costs nothing, rather
+	// than two database opens discovered to be wasted.
+	activated, err := ActivationListener()
+	if err != nil {
+		return err
+	}
+	if activated != nil {
+		if err := snapSetAddr(snap, activated.Addr().String()); err != nil {
+			return err
+		}
+	} else if err := resolveAddr(snap, o.Notes); err != nil {
 		return err
 	}
 
@@ -60,15 +69,19 @@ func Run(ctx context.Context, o RunOptions) error {
 	// startup rather than on the first download. See ErrNoLimit: choosing a size is a
 	// decision pkgcache asks for once, rather than a default it picks for somebody
 	// else's disk.
-	budget, err := ReadBudget(snap.DataDir)
-	if err != nil {
-		return err
+	budget, budgetErr := ReadBudget(snap.DataDir)
+	if budgetErr != nil {
+		return budgetErr
 	}
 	guard := NewGuard(nil, snap.DataDir, budget, func(reason string) {
 		Notify("pkgcache: the cache is full", reason)
 	})
 
-	a, err := app.Open(snap, app.WithStoreGuard(guard))
+	openOptions := []app.Option{app.WithStoreGuard(guard)}
+	if activated != nil {
+		openOptions = append(openOptions, app.WithListener(activated))
+	}
+	a, err := app.Open(snap, openOptions...)
 	if err != nil {
 		return err
 	}
@@ -106,7 +119,7 @@ func Run(ctx context.Context, o RunOptions) error {
 	defer RemoveState(snap.DataDir)
 
 	a.Log.Info("ready", "address", state.BaseURL(), "cache", snap.DataDir,
-		"idle_timeout", snap.Local.IdleTimeout)
+		"idle_timeout", snap.Local.IdleTimeout, "activated", activated != nil)
 	if o.Ready != nil {
 		close(o.Ready)
 	}
