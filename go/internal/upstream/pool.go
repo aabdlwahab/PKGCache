@@ -9,15 +9,18 @@ package upstream
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/brightskies/pkgreg/internal/config"
 	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/brightskies/pkgreg/internal/trust"
 )
 
 // ErrOffline is returned when a fetch is attempted while the cache is serving from
@@ -65,7 +68,21 @@ type Pool struct {
 }
 
 // New builds a pool from configuration.
+// New builds the pool. A CA file that cannot be read is a startup error rather than a
+// warning: a cache configured to trust a sibling and silently not trusting it would
+// fail every fetch to that sibling with a certificate error nobody could explain.
 func New(cfg config.Upstream, m *obs.Metrics) *Pool {
+	pool, err := NewWithError(cfg, m)
+	if err != nil {
+		// Preserved for the callers that predate the CA option and cannot fail here.
+		// NewWithError is what the composition root uses.
+		panic(err)
+	}
+	return pool
+}
+
+// NewWithError is New, reporting a bad CA file instead of panicking.
+func NewWithError(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   cfg.ConnectTimeout,
@@ -89,6 +106,19 @@ func New(cfg config.Upstream, m *obs.Metrics) *Pool {
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
+	if cfg.CAFile != "" {
+		caPEM, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("upstream: read ca_file %s: %w", cfg.CAFile, err)
+		}
+		roots, err := trust.Pool(caPEM)
+		if err != nil {
+			return nil, fmt.Errorf("upstream: ca_file %s: %w", cfg.CAFile, err)
+		}
+		transport.TLSClientConfig = &tls.Config{ // #nosec G402 -- defaults verify certificates.
+			MinVersion: tls.VersionTLS12, RootCAs: roots,
+		}
+	}
 	ua := cfg.UserAgent
 	if ua == "" {
 		ua = "pkgreg/1"
@@ -105,7 +135,7 @@ func New(cfg config.Upstream, m *obs.Metrics) *Pool {
 		timeout: cfg.RequestTimeout,
 		metrics: m,
 		tokens:  newTokenCache(),
-	}
+	}, nil
 }
 
 // Open issues a request and returns the live response with its body unread.

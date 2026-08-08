@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/brightskies/pkgreg/internal/trust"
 )
 
 func testCA(t *testing.T, serial int64) []byte {
@@ -483,10 +484,10 @@ func TestFetchAptProxyUsesProjectUsername(t *testing.T) {
 func TestResponseLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.CopyN(w, zeroReader{}, maxCABytes+1)
+		_, _ = io.CopyN(w, zeroReader{}, trust.MaxCABytes+1)
 	}))
 	defer server.Close()
-	_, _, err := download(context.Background(), server.Client(), server.URL, "", maxCABytes)
+	_, _, err := download(context.Background(), server.Client(), server.URL, "", trust.MaxCABytes)
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("limit error = %v", err)
 	}

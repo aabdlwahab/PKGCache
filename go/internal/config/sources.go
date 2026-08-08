@@ -260,6 +260,7 @@ func applyEnv(s *Snapshot) error {
 	str("LOG_LEVEL", &s.Log.Level)
 	str("LOG_FORMAT", &s.Log.Format)
 	str("USER_AGENT", &s.Upstream.UserAgent)
+	str("UPSTREAM_CA", &s.Upstream.CAFile)
 	str("ROOT_USER", &s.Auth.RootUser)
 	str("ROOT_PASSWORD", &s.Auth.RootPassword)
 	str("REGISTRY_MIRROR", &s.Server.RegistryMirror)

@@ -196,7 +196,12 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 		_ = cat.Close()
 		return nil, err
 	}
-	pool := upstream.New(snap.Upstream, metrics)
+	pool, err := upstream.NewWithError(snap.Upstream, metrics)
+	if err != nil {
+		_ = controlDB.Close()
+		_ = cat.Close()
+		return nil, err
+	}
 	baseCtx, cancel := context.WithCancel(context.Background())
 	peerService := peerupstream.New(blobs, cfg, pool, tokens)
 	cacheEngine := engine.New(engine.Options{

@@ -184,6 +184,14 @@ type Upstream struct {
 	// Offline makes every ecosystem serve from cache only and never touch upstream.
 	// This is the air-gap hard mode: it overrides every per-project soft flag.
 	Offline bool `yaml:"offline"`
+	// CAFile adds a certificate authority to the ones outbound requests trust, in
+	// addition to the system roots rather than instead of them.
+	//
+	// This is what lets a cache fetch from another cache. A pkgreg serves TLS with a
+	// certificate it mints itself, so a laptop whose middle tier is the team's cache
+	// cannot verify it from the system store — and the last tier in the same chain is a
+	// public registry that must keep verifying normally.
+	CAFile string `yaml:"ca_file"`
 }
 
 // Git tunes managed mirror freshness and CPU-heavy upload-pack negotiation.

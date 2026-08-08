@@ -5,9 +5,6 @@ package clientinstaller
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -20,14 +17,13 @@ import (
 	"path"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/brightskies/pkgreg/internal/clientbridge"
 	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/brightskies/pkgreg/internal/trust"
 )
 
 const (
-	maxCABytes     = 1 << 20
 	maxScriptBytes = 4 << 20
 )
 
@@ -239,16 +235,12 @@ func Fetch(ctx context.Context, options Options) (Bundle, error) {
 	}, nil
 }
 
+// fetchTrust establishes the cache's identity and the project this session is for.
+//
+// The pinning itself lives in internal/trust, which pkgcache shares: the exchange is
+// the same one whether a client is opening a session or a local cache is deciding
+// whether to believe the team cache it is about to fetch from.
 func fetchTrust(ctx context.Context, options Options) (verifiedTrust, error) {
-	base, err := parseServer(options.Server)
-	if err != nil {
-		return verifiedTrust{}, err
-	}
-	if base.Scheme != "https" && options.Client == nil {
-		return verifiedTrust{}, errors.New(
-			"server must use https; the client only uses an unverified connection " +
-				"to fetch fingerprint-pinned CA material")
-	}
 	project := options.Project
 	if project == "" {
 		project = "global"
@@ -256,54 +248,23 @@ func fetchTrust(ctx context.Context, options Options) (verifiedTrust, error) {
 	if !onboarding.ValidProject(project) {
 		return verifiedTrust{}, fmt.Errorf("invalid project %q", project)
 	}
-	expected, caForTLS, err := expectedFingerprint(options)
-	if err != nil {
-		return verifiedTrust{}, err
-	}
 	cookie, err := readCookie(options.CookieFile)
 	if err != nil {
 		return verifiedTrust{}, err
 	}
-
-	caClient := options.Client
-	if caClient == nil {
-		switch {
-		case len(caForTLS) > 0:
-			caClient, err = httpClient(caForTLS)
-		case base.Scheme == "https":
-			caClient = bootstrapHTTPClient()
-		}
-		if err != nil {
-			return verifiedTrust{}, err
-		}
-	}
-
-	caURL := *base
-	caURL.Path = path.Join(base.Path, "/api/ca.crt")
-	caPEM, _, err := download(ctx, caClient, caURL.String(), cookie, maxCABytes)
+	verified, err := trust.Fetch(ctx, trust.Options{
+		Server:         options.Server,
+		ExpectedSHA256: options.ExpectedSHA256,
+		CAFile:         options.CAFile,
+		Cookie:         cookie,
+		Client:         options.Client,
+	})
 	if err != nil {
-		return verifiedTrust{}, fmt.Errorf("download CA: %w", err)
-	}
-	actualDisplay, err := onboarding.FingerprintSHA256(caPEM)
-	if err != nil {
-		return verifiedTrust{}, fmt.Errorf("verify downloaded CA: %w", err)
-	}
-	actual := normalizeFingerprint(actualDisplay)
-	if actual != expected {
-		return verifiedTrust{}, fmt.Errorf("CA fingerprint mismatch: got %s, want %s",
-			actualDisplay, displayFingerprint(expected))
-	}
-
-	verifiedClient := options.Client
-	if verifiedClient == nil {
-		verifiedClient, err = httpClient(caPEM)
-		if err != nil {
-			return verifiedTrust{}, fmt.Errorf("trust verified CA: %w", err)
-		}
+		return verifiedTrust{}, err
 	}
 	return verifiedTrust{
-		base: base, project: project, cookie: cookie,
-		caPEM: caPEM, fingerprint: actualDisplay, client: verifiedClient,
+		base: verified.Base, project: project, cookie: cookie,
+		caPEM: verified.CAPEM, fingerprint: verified.Fingerprint, client: verified.Client,
 	}, nil
 }
 
@@ -429,93 +390,17 @@ func command(goos, script string, options Options) (name string, args []string, 
 	}
 }
 
-func parseServer(raw string) (*url.URL, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Hostname() == "" ||
-		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
-		(parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") {
-		return nil, errors.New("server must be an http(s) origin without credentials, query, or fragment")
-	}
-	parsed.Path = ""
-	parsed.RawPath = ""
-	return parsed, nil
+func parseServer(raw string) (*url.URL, error) { return trust.ParseServer(raw) }
+
+func expectedFingerprint(options Options) (string, []byte, error) {
+	return trust.ExpectedFingerprint(options.ExpectedSHA256, options.CAFile)
 }
 
-func expectedFingerprint(options Options) (fingerprint string, caPEMOut []byte, err error) {
-	expected := normalizeFingerprint(options.ExpectedSHA256)
-	var caPEM []byte
-	if options.CAFile != "" {
-		caPEM, err = os.ReadFile(options.CAFile)
-		if err != nil {
-			return "", nil, fmt.Errorf("read CA file: %w", err)
-		}
-		display, err := onboarding.FingerprintSHA256(caPEM)
-		if err != nil {
-			return "", nil, fmt.Errorf("fingerprint CA file: %w", err)
-		}
-		fileFingerprint := normalizeFingerprint(display)
-		if expected == "" {
-			expected = fileFingerprint
-		} else if expected != fileFingerprint {
-			return "", nil, errors.New("CA file does not match the expected fingerprint")
-		}
-	}
-	if len(expected) != 64 {
-		return "", nil, errors.New("ca-sha256 must be the 64-hex SHA-256 fingerprint (colons are optional)")
-	}
-	if _, err := hex.DecodeString(expected); err != nil {
-		return "", nil, errors.New("ca-sha256 contains non-hexadecimal characters")
-	}
-	return expected, caPEM, nil
-}
+func normalizeFingerprint(value string) string { return trust.Normalize(value) }
 
-func normalizeFingerprint(value string) string {
-	value = strings.ToUpper(strings.TrimSpace(value))
-	value = strings.ReplaceAll(value, ":", "")
-	value = strings.ReplaceAll(value, " ", "")
-	return value
-}
+func displayFingerprint(raw string) string { return trust.Display(raw) }
 
-func displayFingerprint(raw string) string {
-	var out strings.Builder
-	for i := 0; i+2 <= len(raw); i += 2 {
-		if i > 0 {
-			out.WriteByte(':')
-		}
-		out.WriteString(raw[i : i+2])
-	}
-	return out.String()
-}
-
-func httpClient(caPEM []byte) (*http.Client, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if len(caPEM) > 0 {
-		roots, err := x509.SystemCertPool()
-		if err != nil {
-			roots = x509.NewCertPool()
-		}
-		if !roots.AppendCertsFromPEM(caPEM) {
-			return nil, errors.New("CA file contains no usable certificate")
-		}
-		transport.TLSClientConfig = &tls.Config{ // #nosec G402 -- defaults enforce certificate verification.
-			MinVersion: tls.VersionTLS12, RootCAs: roots,
-		}
-	}
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
-}
-
-// bootstrapHTTPClient is intentionally limited to fetching the public CA. Fetch
-// verifies that response against the out-of-band SHA-256 fingerprint, constructs a
-// normally verifying client from it, and uses that second client for the executable
-// setup script.
-func bootstrapHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{ // #nosec G402 -- fingerprint pinning authenticates the only downloaded bytes.
-		MinVersion: tls.VersionTLS12, InsecureSkipVerify: true,
-	}
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
-}
+func httpClient(caPEM []byte) (*http.Client, error) { return trust.ClientFor(caPEM) }
 
 func readCookie(file string) (string, error) {
 	if file == "" {
@@ -534,7 +419,9 @@ func readCookie(file string) (string, error) {
 
 // errUnauthorized marks a refusal the caller can respond to by presenting a session,
 // as distinct from a transport failure or a refusal no credential would fix.
-var errUnauthorized = errors.New("server requires authentication")
+// One sentinel, shared with internal/trust, so a 401 on the CA leg and a 401 on the
+// script leg are the same error to anyone testing for it.
+var errUnauthorized = trust.ErrUnauthorized
 
 func isUnauthorized(err error) bool { return errors.Is(err, errUnauthorized) }
 

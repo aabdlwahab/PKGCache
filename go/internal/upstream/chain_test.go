@@ -2,9 +2,12 @@ package upstream
 
 import (
 	"context"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -252,5 +255,62 @@ func TestNoFallbacksIsUnchangedBehaviour(t *testing.T) {
 				t.Errorf("origin hits = %d, want exactly one attempt", *hits)
 			}
 		})
+	}
+}
+
+// A pkgreg serves TLS with a certificate it mints itself, so a laptop whose middle tier
+// is the team's cache cannot verify it from the system store. This is the setting that
+// unblocks that, and its absence is what made the tier impossible before.
+func TestPoolTrustsAConfiguredCA(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer server.Close()
+
+	caPath := filepath.Join(t.TempDir(), "ca.crt")
+	certificate := server.Certificate()
+	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: certificate.Raw,
+	}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without it, the same request fails to verify.
+	plain := chainPool(t)
+	if _, err := open(t, plain, Request{URL: server.URL, Eco: "pypi"}); err == nil {
+		t.Fatal("a self-signed origin verified against the system roots alone")
+	}
+
+	trusting, err := NewWithError(config.Upstream{
+		RequestTimeout: 10 * time.Second, ConnectTimeout: 2 * time.Second,
+		ResponseHeaderTimeout: 2 * time.Second, MaxIdlePerHost: 4, CAFile: caPath,
+	}, obs.NewMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := open(t, trusting, Request{URL: server.URL, Eco: "pypi"})
+	if err != nil {
+		t.Fatalf("a configured CA did not make the origin reachable: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+}
+
+// A CA file that cannot be read is a startup error, not a warning. Silently not
+// trusting a sibling fails every fetch to it with a certificate error nobody could
+// explain from the configuration.
+func TestPoolRefusesAnUnreadableCA(t *testing.T) {
+	if _, err := NewWithError(config.Upstream{
+		CAFile: filepath.Join(t.TempDir(), "missing.crt"),
+	}, obs.NewMetrics()); err == nil {
+		t.Fatal("a missing ca_file was accepted")
+	}
+	bad := filepath.Join(t.TempDir(), "bad.crt")
+	if err := os.WriteFile(bad, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWithError(config.Upstream{CAFile: bad}, obs.NewMetrics()); err == nil {
+		t.Fatal("a ca_file with no certificate in it was accepted")
 	}
 }
