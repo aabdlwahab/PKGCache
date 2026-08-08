@@ -43,16 +43,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_download(self, path, filename):
+    def send_download(self, path, filename, content_type="application/octet-stream",
+                      headers=None):
         try:
             body = path.read_bytes()
         except OSError:
             self.send_error(404)
             return
         self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
+        for name, value in headers or ():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 

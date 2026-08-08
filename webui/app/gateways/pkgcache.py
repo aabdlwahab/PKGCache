@@ -1,8 +1,8 @@
 """The pkgcache-container HTTP boundary: the one gateway for talking to the running
 proxies (at settings.PKGCACHE_HOST — the compose-network alias by default, or
 wherever the cache runs when the backend is outside that network). Owns the internal
-(unverified) TLS context — the roles terminate TLS in-process with the private CA,
-so internal calls skip verification — and builds every project-prefixed URL through
+(private-CA-verified) TLS context — the roles terminate TLS in-process with the
+deployment CA — and builds every project-prefixed URL through
 the projects service so the prefix rules live in one place.
 
 Read feeds (progress/health/ledger) go through fetch_json; the checkpoint's git
@@ -19,9 +19,11 @@ from concurrent.futures import ThreadPoolExecutor
 from app import manifest, settings
 from app.services import projects
 
-# Internal polls/among roles that serve HTTPS with the private CA — skip verification
-# (same context the live poller and the lock warmer use).
-INTERNAL_TLS = ssl._create_unverified_context()
+# Verify internal role certificates against the deployment CA. The certificate is
+# minted for client-facing hostnames rather than the compose alias `pkgcache`, so
+# chain verification stays on while hostname verification is disabled internally.
+INTERNAL_TLS = ssl.create_default_context(cafile=str(settings.ROOT / "certs" / "ca.crt"))
+INTERNAL_TLS.check_hostname = False
 
 # eco label → pkgcache role. The apt subdir/ledger carries BOTH apt and apk, so both
 # resolve to the apt role (distinguished by the `eco` filter on the ledger query).

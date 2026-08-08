@@ -11,7 +11,7 @@ Two layers:
 from __future__ import annotations
 
 import hashlib
-import os
+from pathlib import Path
 
 from pkgcache.core.cache import Cache
 from pkgcache.core.inflight import InflightRegistry
@@ -82,6 +82,41 @@ def test_link_from_is_idempotent(tmp_path):
     first_ino = st.cas_path(hexd).stat().st_ino
     st.cas_link_from(a, hexd)  # second publish leaves the existing entry untouched
     assert st.cas_path(hexd).stat().st_ino == first_ino
+
+
+def test_cas_directory_failure_stays_best_effort(tmp_path, monkeypatch):
+    st = _storage(tmp_path)
+    hexd = _sha(_BODY)
+    source = st.root / "source.whl"
+    source.write_bytes(_BODY)
+    cas_parent = st.cas_path(hexd).parent
+    original = Path.mkdir
+
+    def fail(path, *args, **kwargs):
+        if path == cas_parent:
+            raise OSError("simulated read-only CAS")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail)
+    st.cas_link_from(source, hexd)
+
+
+def test_materialize_directory_failure_returns_false(tmp_path, monkeypatch):
+    st = _storage(tmp_path)
+    hexd = _sha(_BODY)
+    source = st.root / "source.whl"
+    source.write_bytes(_BODY)
+    st.cas_link_from(source, hexd)
+    target = st.root / "blocked" / "package.whl"
+    original = Path.mkdir
+
+    def fail(path, *args, **kwargs):
+        if path == target.parent:
+            raise OSError("simulated read-only project tree")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail)
+    assert st.cas_materialize(hexd, target) is False
 
 
 # ---- Cache.fetch download-avoidance --------------------------------------

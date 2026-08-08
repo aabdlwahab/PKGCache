@@ -305,6 +305,22 @@ def test_global_soft_flag_applies_to_global_only(tmp_path, monkeypatch):
     assert cfgs["gamma"].offline is False
 
 
+def test_corrupt_registry_fails_instead_of_clearing_routes(tmp_path, monkeypatch):
+    from pkgcache.core.config import RegistryError, load_roles
+
+    reg = tmp_path / "projects.json"
+    reg.write_text("{not valid json")
+    monkeypatch.setenv("PKGCACHE_PROJECTS", str(reg))
+    monkeypatch.setenv("PKGCACHE_CACHE_ROOT", str(tmp_path / "caches"))
+
+    with pytest.raises(RegistryError):
+        load_roles()
+
+    reg.write_text('{"projects": []}')
+    with pytest.raises(RegistryError):
+        load_roles()
+
+
 @pytest.mark.asyncio
 async def test_reconcile_applies_offline_flip_live(tmp_path, monkeypatch):
     """Flipping a project's registry offline flag between polls changes what its

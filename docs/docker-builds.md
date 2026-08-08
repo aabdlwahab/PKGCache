@@ -1,5 +1,12 @@
 # Using the Docker cache in builds
 
+> **Legacy Python-stack reference.** The zot/devpi/Verdaccio/apt-cacher-ng
+> directions below do not describe the Go server in `go/`. For the current Go
+> frontend and client workflow, use the live [`/tutorial`](../go/internal/web/dist/tutorial.html),
+> [client onboarding](client-onboarding.md), and the
+> [Go OCI/apt implementation notes](phase4-oci-apt.md). In particular, start with
+> `pkgreg-client`; do not copy the old service-specific setup into a new deployment.
+
 The `docker-cache` service is **[zot](https://zotregistry.dev)**, a multi-upstream
 pull-through cache on port **5000**:
 

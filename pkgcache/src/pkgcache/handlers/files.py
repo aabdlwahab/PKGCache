@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import logging
 import mimetypes
 import time
 from collections.abc import Iterable
@@ -34,6 +35,7 @@ from ..core.ledger import ArtifactRecord
 from ..core.storage import UnsafePath
 from .common import external_base
 
+_LOG = logging.getLogger(__name__)
 _CHUNK = 1 << 16
 # Names the role owns under its cache root — never writable/deletable via the API.
 _RESERVED = ("ledger.db", "ledger.db-wal", "ledger.db-shm")
@@ -274,8 +276,8 @@ class _TooLarge(Exception):
 def _cleanup(fh, tmp: Path) -> None:
     try:
         fh.close()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - cleanup must preserve the request error
+        _LOG.debug("failed to close temporary upload", exc_info=True)
     try:
         Path(tmp).unlink()
     except OSError:

@@ -14,6 +14,7 @@ import threading
 
 from app import settings
 from app.errors import ApiError
+from app.gateways import private_json
 
 # The API server is multi-threaded (ThreadingHTTPServer), so two concurrent
 # creates/deletes would race on the registry read-modify-write. Callers hold this
@@ -37,6 +38,11 @@ def load():
     if p.is_file():
         try:
             data = json.loads(p.read_text()) or {}
+            if not isinstance(data, dict):
+                raise ValueError("top-level value must be an object")
+            for key in ("projects", "tokens", "offline", "owners"):
+                if key in data and not isinstance(data[key], dict):
+                    raise ValueError(f"'{key}' must be an object")
         except (OSError, ValueError) as exc:
             raise ApiError(
                 f"project registry {p} is unreadable/corrupt ({exc}); refusing to "
@@ -54,8 +60,4 @@ def save(data):
     half-written file the other process would fail to parse. The temp name is unique
     per writer so two concurrent saves can't corrupt a shared .new file (the rename
     is atomic; the write to the temp is not)."""
-    p = path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.new")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    os.replace(tmp, p)
+    private_json.save(path(), data)

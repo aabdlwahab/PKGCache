@@ -10,11 +10,10 @@ The React console (webui/console, served by the separate `console` nginx contain
 calls the JSON endpoints; nginx reverse-proxies /api here. webui is reached over the
 compose network as webui:8088 and publishes no host port of its own.
 
-SECURITY: account auth (Phase 2) gates login and account management; the cache/ops
-endpoints are NOT yet ownership-gated (that is a later phase), so treat this as a
-trusted-network service. The server binds 0.0.0.0 — set UI_HOST=127.0.0.1 to restrict
-it to localhost. The break-glass superuser comes from UI_ROOT_USER/UI_ROOT_PASSWORD;
-without them no one can sign in and no accounts can be managed."""
+SECURITY: account auth and project ownership gate the control API once configured.
+The data-plane caches remain readable to trusted clients, and the console is plain
+HTTP by default, so deploy the stack only on a trusted network or behind a TLS
+reverse proxy. The break-glass superuser comes from UI_ROOT_USER/UI_ROOT_PASSWORD."""
 from http.server import ThreadingHTTPServer
 
 from app import settings
@@ -51,7 +50,7 @@ def main():
     if settings.HOST not in ("127.0.0.1", "localhost"):
         print(f"WARNING: bound to {settings.HOST} — these endpoints run real commands.")
     if not settings.ROOT_USER or not settings.ROOT_PASSWORD:
-        print("WARNING: UI_ROOT_USER/UI_ROOT_PASSWORD unset — no one can sign in.")
+        print("WARNING: root credentials unset — auth is off unless stored accounts exist.")
     live = build()
     live.start()  # poll proxy downloads in the background
     ThreadingHTTPServer((settings.HOST, settings.PORT), Handler).serve_forever()

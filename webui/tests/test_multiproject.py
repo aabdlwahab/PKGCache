@@ -397,24 +397,32 @@ class _FakeHandler:
     ops and these tests see the pre-auth behaviour."""
 
     def __init__(self, body=b"", jobs=None, live=None, reads=None):
-        from app.gateways import users
         from app.services.accounts import Accounts
         from app.services.passwords import PasswordHasher
         from app.services.sessions import Sessions
         self.jobs, self.live, self.reads = jobs, live, reads
-        self.accounts = Accounts(users, PasswordHasher(), None, None)  # disabled
+        self.accounts = Accounts(_EmptyUsers(), PasswordHasher(), None, None)  # disabled
         self.sessions = Sessions(ttl=100)
         self.client_address = ("127.0.0.1", 0)
         self.headers = {"Content-Length": str(len(body))}
         self.rfile = io.BytesIO(body)
         self.sent = None       # (code, obj) from send_json
-        self.downloaded = None  # (path, filename) from send_download
+        self.downloaded = None  # (path, filename, content type, headers)
 
     def send_json(self, obj, code=200, headers=None):
         self.sent = (code, obj)
 
-    def send_download(self, path, filename):
-        self.downloaded = (str(path), filename)
+    def send_download(self, path, filename, content_type="application/octet-stream",
+                      headers=None):
+        self.downloaded = (str(path), filename, content_type, list(headers or []))
+
+
+class _EmptyUsers:
+    """Environment-independent empty account store for auth-disabled route tests."""
+
+    @staticmethod
+    def load():
+        return {"users": {}}
 
 
 class DispatchContractTests(unittest.TestCase):
@@ -429,6 +437,22 @@ class DispatchContractTests(unittest.TestCase):
         h = _FakeHandler()
         self.assertTrue(routes.dispatch(h, "GET", "/healthz"))
         self.assertEqual(h.sent, (200, {"status": "ok"}))
+
+    def test_ca_certificate_is_anonymous_downloadable_public_material(self):
+        with tempfile.TemporaryDirectory() as td:
+            ca = Path(td) / "ca.crt"
+            ca.write_text("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n")
+            original = routes.settings.CA_CERT
+            routes.settings.CA_CERT = ca
+            try:
+                h = _FakeHandler()
+                self.assertTrue(routes.dispatch(h, "GET", "/api/ca.crt"))
+            finally:
+                routes.settings.CA_CERT = original
+        self.assertIsNone(h.sent)
+        self.assertEqual(h.downloaded[:3],
+                         (str(ca), "pkgcache-ca.crt", "application/x-pem-file"))
+        self.assertIn(("Cache-Control", "no-store"), h.downloaded[3])
 
     def test_unknown_path_is_a_miss(self):
         h = _FakeHandler()
@@ -449,6 +473,17 @@ class DispatchContractTests(unittest.TestCase):
 
     def test_bad_json_body_is_a_400_not_a_500(self):
         h = _FakeHandler(body=b"{not json")
+        self.assertTrue(routes.dispatch(h, "POST", "/api/projects"))
+        self.assertEqual(h.sent[0], 400)
+
+    def test_non_object_json_body_is_a_400_not_a_500(self):
+        h = _FakeHandler(body=b"[]")
+        self.assertTrue(routes.dispatch(h, "POST", "/api/projects"))
+        self.assertEqual(h.sent[0], 400)
+
+    def test_bad_content_length_is_a_400_not_a_500(self):
+        h = _FakeHandler()
+        h.headers["Content-Length"] = "nope"
         self.assertTrue(routes.dispatch(h, "POST", "/api/projects"))
         self.assertEqual(h.sent[0], 400)
 
@@ -500,10 +535,8 @@ class ProjectModeTests(unittest.TestCase):
 
 
 class OriginGuardTests(unittest.TestCase):
-    """The CSRF Origin check on mutating requests compares HOSTNAMES, so a reverse
-    proxy that rewrites the Host (nginx `$host` drops the port while the browser's
-    Origin keeps it) doesn't wrongly reject same-site requests — but a genuinely
-    cross-site Origin is still refused."""
+    """The CSRF Origin check requires the browser origin and request authority to
+    match exactly; cookies are shared across ports, so a sibling port is cross-origin."""
 
     def _post(self, origin=None, host=None):
         h = _FakeHandler(body=b'{"username":"x","password":"y"}')
@@ -519,9 +552,12 @@ class OriginGuardTests(unittest.TestCase):
         code, _ = self._post(host="cache:8088")
         self.assertNotEqual(code, 403)
 
-    def test_same_hostname_different_port_allowed(self):
-        # The real bug: browser Origin carries :8088, nginx forwarded Host without it.
-        code, obj = self._post(origin="http://cache:8088", host="cache")
+    def test_same_hostname_different_port_refused(self):
+        code, _ = self._post(origin="http://cache:8088", host="cache:8089")
+        self.assertEqual(code, 403)
+
+    def test_same_authority_allowed(self):
+        code, obj = self._post(origin="http://cache:8088", host="cache:8088")
         self.assertNotEqual(code, 403)
         self.assertNotIn("cross-origin", obj.get("error", ""))
 

@@ -11,6 +11,8 @@ an internal lock so the single writer never trips SQLITE_BUSY against itself.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import functools
 import json
 import sqlite3
 import threading
@@ -25,6 +27,9 @@ _BUSY_TIMEOUT_MS = 5000
 # Cap the rolling bandwidth-sample log per ledger (passive miss throughput + active
 # speed-test points). Plenty for an over-time chart; pruned on every flush.
 _BANDWIDTH_KEEP = 2000
+# Polling the ledger-owned executor avoids depending on an event loop's implicit
+# cross-thread wakeup mechanism, which is not reliable in every constrained runtime.
+_EXECUTOR_POLL_SECONDS = 0.001
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -113,6 +118,10 @@ class Ledger:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="pkgcache-ledger",
+        )
         self._conn = sqlite3.connect(
             self.db_path, check_same_thread=False, isolation_level=None
         )
@@ -154,7 +163,7 @@ class Ledger:
                 "DELETE FROM artifacts WHERE ecosystem=? AND name=?", (ecosystem, name))
 
     async def adelete_artifact(self, ecosystem: str, name: str) -> None:
-        await asyncio.to_thread(self.delete_artifact, ecosystem, name)
+        await self._run(self.delete_artifact, ecosystem, name)
 
     def set_tag(self, upstream: str, repo: str, tag: str, digest: str, media_type: str | None) -> None:
         with self._lock:
@@ -218,7 +227,7 @@ class Ledger:
                 raise
 
     async def async_sync_git_refs(self, *a) -> None:
-        await asyncio.to_thread(self.sync_git_refs, *a)
+        await self._run(self.sync_git_refs, *a)
 
     def query(self, ecosystem: str | None = None, q: str | None = None,
               sort: str = "name", page: int = 1, page_size: int = 200) -> list[dict]:
@@ -390,22 +399,38 @@ class Ledger:
 
     # ---- async wrappers (keep sqlite off the event loop) --------------------
     async def arecord(self, rec: ArtifactRecord) -> None:
-        await asyncio.to_thread(self.record, rec)
+        await self._run(self.record, rec)
 
     async def aset_tag(self, *a) -> None:
-        await asyncio.to_thread(self.set_tag, *a)
+        await self._run(self.set_tag, *a)
 
     async def aget_tag(self, *a):
-        return await asyncio.to_thread(self.get_tag, *a)
+        return await self._run(self.get_tag, *a)
 
     async def alist_tags(self, *a):
-        return await asyncio.to_thread(self.list_tags, *a)
+        return await self._run(self.list_tags, *a)
 
     async def aquery(self, **kw):
-        return await asyncio.to_thread(lambda: self.query(**kw))
+        return await self._run(self.query, **kw)
 
     async def astats(self):
-        return await asyncio.to_thread(self.stats)
+        return await self._run(self.stats)
+
+    async def aapply_stats(self, access, traffic, bandwidth) -> None:
+        await self._run(self.apply_stats, access, traffic, bandwidth)
+
+    async def aclose(self) -> None:
+        try:
+            await self._run(self.close)
+        finally:
+            self._executor.shutdown(wait=True)
+
+    async def _run(self, function, *args, **kwargs):
+        call = functools.partial(function, *args, **kwargs)
+        future = self._executor.submit(call)
+        while not future.done():
+            await asyncio.sleep(_EXECUTOR_POLL_SECONDS)
+        return future.result()
 
 
 def _now_iso() -> str:

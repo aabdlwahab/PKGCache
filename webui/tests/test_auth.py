@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # webui/ → `app` importable
 
@@ -67,6 +68,8 @@ class AccountsTests(unittest.TestCase):
         self.accounts.create(admin, "bob", "bobsecret1", "user")
         self.assertIsNotNone(self.accounts.authenticate("bob", "bobsecret1"))
         self.assertIsNone(self.accounts.authenticate("bob", "nope"))
+        store_path = Path(os.environ["UI_USERS"])
+        self.assertEqual(store_path.stat().st_mode & 0o777, 0o600)
 
     # ---- create policy -------------------------------------------------------
     def test_admin_creates_user_reporting_to_self(self):
@@ -250,7 +253,8 @@ class _FakeHandler:
         self.sent = (code, obj)
         self.sent_headers = list(headers or [])
 
-    def send_download(self, path, filename):
+    def send_download(self, path, filename, content_type="application/octet-stream",
+                      headers=None):
         pass
 
 
@@ -335,6 +339,77 @@ class AuthRoutesTests(unittest.TestCase):
             headers={"Cookie": cookie, "Origin": "http://console.local", "Host": "console.local"})
         self.routes.dispatch(h, "POST", "/api/users")
         self.assertEqual(h.sent[0], 201)
+
+    def test_proxy_client_ip_is_used_for_login_throttling(self):
+        h = self._handler(headers={"X-Forwarded-For": "192.0.2.10"})
+        req = self.routes.Request(h, "/api/login")
+        self.assertEqual(req.client_ip, "192.0.2.10")
+
+    def test_spoofed_proxy_chain_falls_back_to_peer_ip(self):
+        h = self._handler(headers={"X-Forwarded-For": "198.51.100.8, 192.0.2.10"})
+        req = self.routes.Request(h, "/api/login")
+        self.assertEqual(req.client_ip, "127.0.0.1")
+
+    def test_configured_public_origin_handles_tls_termination(self):
+        h = self._handler(headers={
+            "Host": "console:8088",
+            "Origin": "https://packages.example.com",
+            "X-Forwarded-Proto": "http",
+        })
+        with mock.patch.object(self.routes.settings, "PUBLIC_ORIGIN",
+                               "https://packages.example.com"):
+            self.assertTrue(self.routes._same_origin(h))
+
+    def test_configured_public_origin_rejects_another_origin(self):
+        h = self._handler(headers={
+            "Host": "console:8088",
+            "Origin": "https://attacker.example",
+            "X-Forwarded-Proto": "http",
+        })
+        with mock.patch.object(self.routes.settings, "PUBLIC_ORIGIN",
+                               "https://packages.example.com"):
+            self.assertFalse(self.routes._same_origin(h))
+
+    # ---- anonymous read-only (UI_ANON_READ) ---------------------------------
+    def _req(self, path, method="GET", headers=None):
+        req = self.routes.Request(self._handler(headers=headers), path)
+        req.method = method
+        return req
+
+    def test_anon_read_allows_session_less_safe_reads(self):
+        """With UI_ANON_READ on, a caller with no session may pass the read guards on
+        a GET — the whole instance is browsable read-only."""
+        with mock.patch.object(self.routes.settings, "ANON_READ", True):
+            self.assertIsNone(self._req("/api/proxies", "GET").require_view("global"))
+            self.assertIsNone(self._req("/api/jobs", "GET").require_authed())
+
+    def test_anon_read_still_blocks_mutations(self):
+        """A view-level MUTATION (artifact upload is POST /api/artifacts) is not a safe
+        read, so anonymous read-only must not open it — a login is still required."""
+        with mock.patch.object(self.routes.settings, "ANON_READ", True):
+            with self.assertRaises(self.routes.AuthError):
+                self._req("/api/artifacts", "POST").require_view("global")
+            with self.assertRaises(self.routes.AuthError):
+                self._req("/api/jobs", "POST").require_authed()
+
+    def test_anon_read_off_blocks_session_less_reads(self):
+        """Default (strict) auth: a session-less read is still a 401."""
+        with self.assertRaises(self.routes.AuthError):
+            self._req("/api/proxies", "GET").require_view("global")
+
+    def test_me_reports_anonymous_read_only_state(self):
+        with mock.patch.object(self.routes.settings, "ANON_READ", True):
+            h = self._handler()
+            self.routes.dispatch(h, "GET", "/api/me")
+            self.assertEqual(
+                h.sent,
+                (200, {"auth_enabled": True, "authenticated": False, "anon_read": True}),
+            )
+
+    def test_me_is_401_for_anonymous_when_anon_read_off(self):
+        h = self._handler()
+        self.routes.dispatch(h, "GET", "/api/me")
+        self.assertEqual(h.sent[0], 401)
 
 
 if __name__ == "__main__":

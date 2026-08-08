@@ -4,6 +4,42 @@
 
 # package-registry — a versioned, air-gap-portable package cache
 
+> **Current implementation:** use the static Go server in [`go/`](go/) and its
+> [beginner setup tutorial](go/internal/web/dist/tutorial.html). The Python,
+> Docker Compose, DVC, insecure-TLS, and `--trusted-host` directions later in this
+> file describe the retired implementation and must not be used to configure a Go
+> deployment.
+
+## Current Go quick start
+
+```bash
+cd go
+make build
+./bin/pkgreg init -data-dir /tmp/pkgreg -hostnames localhost,127.0.0.1
+make client-publish DATA_DIR=/tmp/pkgreg
+./bin/pkgreg serve -config /tmp/pkgreg/pkgreg.yaml
+```
+
+Open `https://localhost:8443/tutorial`, download `pkgreg-client`, and copy the
+fingerprint-verified command shown by the page. The default client opens a temporary
+child shell and needs no `sudo`; type `exit` to remove its settings. Use
+`--persist` only for a managed CI or Docker host that intentionally needs
+machine-wide CA and tool configuration.
+
+Current documentation:
+
+- [Go server overview and commands](go/README.md)
+- [System overview](docs/system-overview.md)
+- [Running and testing](docs/running-and-testing.md)
+- [Client design and release status](docs/client-onboarding.md)
+
+---
+
+## Archived Python implementation
+
+Everything below this heading is retained as migration history. It is not current
+client or deployment guidance.
+
 A single host runs **one Python service** that serves six package ecosystems at
 once — **container images (OCI/Docker), npm, PyPI (pip/uv), apt + apk, git
 repositories** (all pull-through-cached), and **generic file artifacts** (a
@@ -27,7 +63,7 @@ standard-library API.
 
 ---
 
-## TL;DR
+## Legacy Python-stack TL;DR
 
 **Run it** (online host — fills the cache on demand; add `--profile ui` for the console on `:8088`):
 
@@ -38,37 +74,51 @@ docker compose --profile online --profile ui up -d     # one process, 6 roles + 
 
 Air-gapped host: `OFFLINE=1 docker compose --profile offline --profile ui up -d` (serves from cache only).
 
-**Pull from it** — `HOST` = cache host; trust `certs/ca.crt` on the client for the HTTPS roles (docker/pip/uv/npm). apt/apk need no CA.
+**Pull from it** — `HOST` = cache host. The HTTPS roles use a private CA, so each
+client is either handed `certs/ca.crt` or told to trust this one host without
+verifying. **The recipes below take the second route: no cert file on any client
+machine.** apt/apk need neither — they use the plain-HTTP proxy. See
+[Trusting the TLS cert](#trusting-the-caches-tls-certificate-fixes-x509-certificate-signed-by-unknown-authority)
+for the CA variant and for the one client that needs a host change either way.
 
 ```bash
 # docker  (dockerhub | ghcr | quay; official images are under library/)
-sudo openssl s_client -showcerts -connect 172.17.21.107:8443 </dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /etc/docker/certs.d/172.17.21.107:8443/ca.crt > /dev/null
-
+#   Docker has no per-command flag — one of these, once per build host:
+#   "insecure-registries": ["HOST:8443"]  in /etc/docker/daemon.json  (+ restart), or
+#   sudo cp certs/ca.crt /etc/docker/certs.d/HOST:8443/ca.crt        (no restart)
 docker pull HOST:8443/dockerhub/library/python:3.12-slim
 
 # pip     (root/pypi, or root/pytorch-cu124 etc. for PyTorch wheels)
-pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --trusted-host HOST numpy
+pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --trusted-host HOST:8443 numpy
 
 # uv
-UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ uv pip install  --trusted-host Host numpy
+UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ UV_INSECURE_HOST=HOST:8443 uv pip install numpy
 
 # npm
 npm install --registry https://HOST:8443/global/npm/ --strict-ssl=false left-pad
 
-# apt     (forward proxy — keep http mirror lines)
+# apt     (forward proxy — keep http mirror lines; no TLS at all)
 echo 'Acquire::http::Proxy "http://HOST:3142";' | sudo tee /etc/apt/apt.conf.d/01proxy
 
 # apk     (Alpine — reads http_proxy; switch repos to http)
 http_proxy=http://HOST:3142 apk add --no-cache curl
 
 # git     (mirror-and-serve; real upstream host in the path — read-only)
-git clone https://HOST:8443/global/git/github.com/pallets/click.git
-#   transparent: git config --global url."https://HOST:8443/global/git/github.com/".insteadOf "https://github.com/"
+git -c http."https://HOST:8443/".sslVerify=false clone https://HOST:8443/global/git/github.com/pallets/click.git
+#   persist once, plus transparent rewriting of hardcoded github.com URLs:
+#   git config --global http."https://HOST:8443/".sslVerify false
+#   git config --global url."https://HOST:8443/global/git/github.com/".insteadOf "https://github.com/"
 
 # files   (generic artifacts — wget to download; PUT with the write token to upload)
-wget --ca-certificate=certs/ca.crt https://HOST:8443/global/files/builds/v1.2/app.tar.gz
-curl --cacert certs/ca.crt -T app.tar.gz -H "Authorization: Bearer $TOKEN" https://HOST:8443/global/files/builds/v1.2/app.tar.gz
+wget --no-check-certificate https://HOST:8443/global/files/builds/v1.2/app.tar.gz
+curl -k -T app.tar.gz -H "Authorization: Bearer $TOKEN" https://HOST:8443/global/files/builds/v1.2/app.tar.gz
 ```
+
+> These flags skip **verification**, not encryption, and are scoped to the cache
+> host (except npm's, which is global to npm). That is the same posture as the rest
+> of this stack — no-auth console, open apt proxy, isolated network. Note the
+> `files` write token rides an `Authorization` header, so on a network where you do
+> not trust the path to the host, use the CA variant instead.
 
 For a **named project**, keep the same port and add the project prefix — for
 npm/pip/git/files a `/<project>/<role>/…` path segment, for Docker the project is
@@ -93,17 +143,23 @@ git init                                            # the code repo (the cache r
 docker compose --profile online --profile ui up -d  # cache (one process, 6 roles) + console on :8088
 ```
 
-**2 — Point your build/CI tools at it** (install `certs/ca.crt` so HTTPS is trusted
-— see [Trusting the TLS cert](#trusting-the-caches-tls-certificate-fixes-x509-certificate-signed-by-unknown-authority)):
+**2 — Point your build/CI tools at it.** The third column is all the TLS setup each
+client needs — **no cert file goes on any client machine**; see
+[Trusting the TLS cert](#trusting-the-caches-tls-certificate-fixes-x509-certificate-signed-by-unknown-authority)
+for the CA variant.
 
-| Tool | Point it at |
-|---|---|
-| docker | `<host>:8443/{dockerhub,ghcr,quay}/<image>` |
-| pip / uv | `--index-url https://<host>:8443/global/pypi/root/pypi/+simple/` |
-| npm | `--registry https://<host>:8443/global/npm/` |
-| apt / apk | HTTP proxy `http://<host>:3142/` |
-| git | `https://<host>:8443/global/git/<upstream-host>/<owner>/<repo>.git` |
-| files | `wget https://<host>:8443/global/files/<path>` · upload `curl -T … -H "Authorization: Bearer <token>"` |
+| Tool | Point it at | TLS |
+|---|---|---|
+| docker | `<host>:8443/{dockerhub,ghcr,quay}/<image>` | `insecure-registries` in `daemon.json`, **or** a CA file — no per-command flag exists |
+| pip | `--index-url https://<host>:8443/global/pypi/root/pypi/+simple/` | `--trusted-host <host>:8443` |
+| uv | `UV_INDEX_URL=https://<host>:8443/global/pypi/root/pypi/+simple/` | `UV_INSECURE_HOST=<host>:8443` |
+| npm | `--registry https://<host>:8443/global/npm/` | `--strict-ssl=false` (global to npm) |
+| apt / apk | HTTP proxy `http://<host>:3142/` | none — no TLS involved |
+| git | `https://<host>:8443/global/git/<upstream-host>/<owner>/<repo>.git` | `http.<cache-url>.sslVerify false` |
+| files | `wget https://<host>:8443/global/files/<path>` · upload `curl -T … -H "Authorization: Bearer <token>"` | `--no-check-certificate` / `curl -k` |
+
+A worked port of an existing Dockerfile using exactly these flags:
+[examples/porting/](examples/porting/).
 
 The cache fills automatically on the first request for each package, and the
 console at **http://&lt;host&gt;:8088** shows it live (downloads, hit/miss feed, disk).
@@ -695,35 +751,24 @@ flowchart LR
     what projects exist (names + files write tokens) and where their trees live.
 
   webui is **internal only** — reached as `webui:8088` on the compose network.
-- **console** ([webui/console/](webui/console/)) — a full **React + TypeScript (Vite)** SPA with **no
-  runtime dependencies**, built to static assets and served by a small **nginx**
-  container that reverse-proxies `/api` to webui (the public entry on `:8088`). It is
-  a **three-page** app behind a top bar with a **project switcher** (select / create /
-  delete; selection persisted in `localStorage`):
-  - **Overview** — a health-strip of KPIs (packages, cache size, hit rate, active
-    downloads, uncommitted-since-checkpoint, proxies up), a live **downloads** panel
-    (fixed-height, scrollable), a **HIT / MISS / FAIL** recent feed, a maintenance
-    **Actions** panel with a streaming job console, **git history + rollback**, a
-    **storage monitor** (cache share vs other vs free, with low-space warnings), and
-    copy-paste pull endpoints.
-  - **Statistics** — headline cards (**time saved**, bytes served from cache, hit
-    rate, requests, packages, cache size), a per-ecosystem table (counts / size /
-    hits / misses), a **most-requested leaderboard** per ecosystem, largest + recently
-    cached, a platform/arch breakdown, and an upstream-speed sparkline. Backed by the
-    native usage stats (`/api/stats`); the tallies accumulate from when the feature
-    was deployed.
-  - **Packages** — an **Artifacts** panel on top (generate/rotate the project's
-    files write token; drag-drop upload with a progress bar and a copy-paste `wget`
-    line) above a full-height browse of cached artifacts by ecosystem (each group
-    scrolls on its own; server-side filter / sort / paginate).
+- **console** — retired as a separate service. The operator console is now hand-written
+  HTML/CSS/ES-modules compiled into the `pkgreg` binary and served by the Go server at
+  `/console`, so there is no React bundle, no Node in the build, and no nginx container
+  in front of it. See [go/internal/web/dist/console/](go/internal/web/dist/console/) for
+  the source and [docs/system-overview.md](docs/system-overview.md) for what it shows.
+  `pkgreg serve --headless` turns it off entirely.
 
-  OKLCH dark/light theming, IBM Plex Mono throughout. nginx defers DNS to request
-  time, so the SPA still loads (and `/api` returns 502) even if webui is down.
-
-> **No auth, binds all interfaces** — run only on a trusted network. The webui runs
-> real `git`/`dvc` commands against the mounted repo. It has **no docker socket and
-> no docker CLI**: mode changes are registry writes the cache process applies live,
-> and container lifecycle stays a host concern.
+> **Trusted-network deployment** — bootstrap enables control-plane auth by default,
+> but the console is plain HTTP on `:8088` and data-plane cache reads are anonymous.
+> The console binds to `127.0.0.1` by default. Put it behind TLS and network access
+> controls outside an isolated environment; set `UI_BIND=0.0.0.0` only when direct
+> LAN access is intentional.
+> When TLS terminates at a reverse proxy, set `UI_PUBLIC_ORIGIN` to its exact
+> browser-facing origin (for example, `https://packages.example.com`); this also
+> makes the session cookie `Secure`.
+> The webui runs real `git`/`dvc` commands against the mounted cache-state repos.
+> Its application source is immutable in the image, and it has **no
+> docker socket and no docker CLI**.
 
 ### 8. Scripts (the glue we own)
 
@@ -750,7 +795,7 @@ git init                                               # the CODE repo (cache re
 ./scripts/bootstrap.sh                                 # .env from this host's ids + host-owned dirs + TLS certs (idempotent)
 docker compose --profile online up -d                  # bring up the cache (one process, six roles)
 docker compose --profile online --profile ui up -d     # + the operator console on :8088
-# install certs/ca.crt on each build host so HTTPS is trusted (see below)
+# no cert files needed on build hosts — each client takes a skip-verify flag (see below)
 ```
 
 Point build tools at the roles, then version and ship:
@@ -809,8 +854,9 @@ above and use the rest of each recipe verbatim.
 
 ### Pulling from the cache (per ecosystem)
 
-`HOST` = the cache host (name or IP). The three HTTPS roles use the private CA, so
-each client must trust `certs/ca.crt` first (see
+`HOST` = the cache host (name or IP). The HTTPS roles use the private CA, so each
+client needs either a skip-verify flag (shown inline below — no cert file anywhere)
+or `certs/ca.crt` (see
 [Trusting the TLS cert](#trusting-the-caches-tls-certificate-fixes-x509-certificate-signed-by-unknown-authority));
 apt/apk need nothing — they use the plain-HTTP proxy. For a **named project**, keep
 the same port and add the project prefix (path segment, image-name segment, or apt
@@ -840,9 +886,11 @@ ARG REGISTRY=HOST:8443/dockerhub
 FROM ${REGISTRY}/library/python:3.12-slim
 ```
 
-> Docker trusts a registry CA **per `host:port`** — add `certs/ca.crt` under
-> `/etc/docker/certs.d/HOST:8443/`. Projects share this port (the project is in the
-> image name), so one entry covers global and every project.
+> **Docker is the one client with no per-command TLS flag**, so it needs a one-time
+> host change either way: `"insecure-registries": ["HOST:8443"]` in
+> `/etc/docker/daemon.json` (needs a daemon restart), or `certs/ca.crt` under
+> `/etc/docker/certs.d/HOST:8443/` (no restart). Projects share this port (the
+> project is in the image name), so one entry covers global and every project.
 
 #### pip / uv — unified port 8443, /<project>/pypi (HTTPS)
 
@@ -851,11 +899,11 @@ PyTorch CUDA 12.4 wheels, `root/pytorch-cpu` → CPU wheels, etc.
 
 ```bash
 # pip (one-off):
-pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --cert ca.crt numpy
+pip install --index-url https://HOST:8443/global/pypi/root/pypi/+simple/ --trusted-host HOST:8443 numpy
 # PyTorch CUDA wheels (off PyPI):
-pip install --index-url https://HOST:8443/global/pypi/root/pytorch-cu124/+simple/ --cert ca.crt torch
+pip install --index-url https://HOST:8443/global/pypi/root/pytorch-cu124/+simple/ --trusted-host HOST:8443 torch
 # uv:
-UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ SSL_CERT_FILE=ca.crt uv pip install numpy
+UV_INDEX_URL=https://HOST:8443/global/pypi/root/pypi/+simple/ UV_INSECURE_HOST=HOST:8443 uv pip install numpy
 ```
 
 Persist it in `~/.config/pip/pip.conf` (`PIP_CERT` covers the cert):
@@ -863,16 +911,16 @@ Persist it in `~/.config/pip/pip.conf` (`PIP_CERT` covers the cert):
 ```ini
 [global]
 index-url = https://HOST:8443/global/pypi/root/pypi/+simple/
-cert = /path/to/ca.crt
+trusted-host = HOST:8443           # or: cert = /path/to/ca.crt
 ```
 
 #### npm — unified port 8443, /<project>/npm (HTTPS)
 
 ```bash
-npm install --registry https://HOST:8443/global/npm/ --cafile ca.crt <pkg>
+npm install --registry https://HOST:8443/global/npm/ --strict-ssl=false <pkg>
 # or persist it:
 npm config set registry https://HOST:8443/global/npm/
-npm config set cafile /path/to/ca.crt        # or: export NODE_EXTRA_CA_CERTS=/path/to/ca.crt
+npm config set strict-ssl false              # or, to keep verification: npm config set cafile /path/to/ca.crt
 ```
 
 #### apt (Debian/Ubuntu) — port 3142 (HTTP forward proxy)
@@ -905,13 +953,14 @@ RUN sed -i 's/https/http/' /etc/apk/repositories \
 
 Put the real upstream host in the path. The cache mirrors the repo server-side on
 first request and serves clones/fetches from the mirror (offline too). No CA is
-needed if `certs/ca.crt` is in the system store; otherwise point git at it.
+needed if you turn verification off for the cache URL (below); to keep it on, put
+`certs/ca.crt` in the system store or point `http.<url>.sslCAInfo` at it.
 
 ```bash
 # one-off:
-GIT_SSL_CAINFO=/path/to/ca.crt git clone https://HOST:8443/global/git/github.com/pallets/click.git
+git -c http."https://HOST:8443/".sslVerify=false clone https://HOST:8443/global/git/github.com/pallets/click.git
 # transparent (once per machine/CI image — covers submodules, pip git+https, CPM, …):
-git config --global http."https://HOST:8443/".sslCAInfo /path/to/ca.crt
+git config --global http."https://HOST:8443/".sslVerify false   # or .sslCAInfo /path/to/ca.crt
 git config --global url."https://HOST:8443/global/git/github.com/".insteadOf "https://github.com/"
 git config --global url."https://HOST:8443/global/git/gitlab.com/".insteadOf  "https://gitlab.com/"
 ```
@@ -926,8 +975,8 @@ LFS all work. Details: [docs/git-cache.md](docs/git-cache.md).
 ### Trusting the cache's TLS certificate (fixes `x509: certificate signed by unknown authority`)
 
 The HTTPS roles terminate TLS in-process with a **private CA** minted by
-`gen-certs.sh`. A client that hasn't been told to trust `certs/ca.crt` rejects the
-connection, e.g.:
+`gen-certs.sh`. A client that has been told neither to trust `certs/ca.crt` nor to
+skip verification rejects the connection:
 
 ```
 Error response from daemon: failed to resolve reference
@@ -935,10 +984,52 @@ Error response from daemon: failed to resolve reference
 verify certificate: x509: certificate signed by unknown authority
 ```
 
+There are two ways to fix it, and you only need one.
+
+#### Route 1 (default) — skip verification for this one host, no cert files
+
+Nothing is copied to any client machine; each tool takes one flag or env var. The
+`host:port` is the same one you pull from — the port is shared across projects, so
+this is per host:port, never per project.
+
+| Client | Flag | Env / persistent form |
+|---|---|---|
+| pip | `--trusted-host <host>:8443` | `PIP_TRUSTED_HOST`, or `trusted-host =` in `pip.conf` |
+| uv | `--allow-insecure-host <host>:8443` | `UV_INSECURE_HOST` |
+| npm | `--strict-ssl=false` | `NPM_CONFIG_STRICT_SSL=false`, or `npm config set strict-ssl false` |
+| git | `-c http."https://<host>:8443/".sslVerify=false` | `git config --global http."https://<host>:8443/".sslVerify false` |
+| curl / wget | `-k` / `--no-check-certificate` | — |
+| apt / apk | *nothing* — the proxy is plain HTTP | — |
+| **docker** | *no flag exists* | `"insecure-registries": ["<host>:8443"]` in `/etc/docker/daemon.json`, then restart the daemon |
+
+```bash
+pip install --index-url https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/ \
+            --trusted-host 172.17.21.107:8443  <pkg>
+```
+
+```ini
+# ~/.config/pip/pip.conf (pip.ini on Windows)
+[global]
+index-url = https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/
+trusted-host = 172.17.21.107:8443
+```
+
+These skip **verification**, not encryption. Every one of them is scoped to the
+cache host except npm's, which is global to npm. Two things to keep in mind: the
+`files` role's write token rides an `Authorization` header, so use Route 2 if you do
+not trust the network path to the host; and **pip before v26 cannot use an
+IP-literal HTTPS index at all** (its vendored urllib3 omits SNI for IP addresses and
+pip's trust backend refuses the socket with `ValueError: check_hostname requires
+server_hostname`) — `--trusted-host` is in fact one of the three ways out of that,
+alongside a DNS name in the cert or pip >= 26.
+
+A worked port of a real Dockerfile using this route: [examples/porting/](examples/porting/).
+
+#### Route 2 — distribute `certs/ca.crt` and keep verification on
+
 Copy `certs/ca.crt` to the build host, then trust it. **Docker trusts a registry CA
-per `host:port`** — and since every project now shares the one unified port (`8443`,
-with the project in the image name), a **single** entry covers global and all
-projects:
+per `host:port`** — and since every project shares the one unified port (`8443`, with
+the project in the image name), a **single** entry covers global and all projects:
 
 ```bash
 # Docker — one entry for the shared OCI port (no daemon restart needed):
@@ -961,42 +1052,27 @@ pip and npm don't use the system store — point them at the CA directly:
 ```bash
 export PIP_CERT=/path/to/ca.crt
 npm config set cafile /path/to/ca.crt          # or: export NODE_EXTRA_CA_CERTS=/path/to/ca.crt
+export GIT_SSL_CAINFO=/path/to/ca.crt          # git does use the system store; this overrides it
+export SSL_CERT_FILE=/path/to/ca.crt           # uv
 ```
 
-**Skip verification per host (`--trusted-host`, no CA needed).** If you can't
-distribute the CA, you can tell the client to trust the cache host without
-verifying its certificate — the TLS-level equivalent of Docker's
-`insecure-registries`. For pip (use the *same* `host:port` you pull from — the port
-is shared across projects, so `--trusted-host` is per host:port, not per project):
+**Name/IP must be in the cert.** A cert is only valid for names in its SANs. If you
+reach the cache by an IP or hostname that wasn't covered when the cert was minted,
+re-run `./scripts/gen-certs.sh <that-ip-or-host>` (the CA is reused, so existing
+trust stays valid) and restart the cache.
 
-```bash
-pip install --index-url https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/ \
-            --trusted-host 172.17.21.107:8443  <pkg>
-```
+#### Removing cert distribution entirely, including for Docker
 
-Or make it permanent in `pip.conf` (`~/.config/pip/pip.conf`, or `pip.ini` on
-Windows):
-
-```ini
-[global]
-index-url = https://172.17.21.107:8443/projA/pypi/root/pypi/+simple/
-trusted-host = 172.17.21.107:8443
-```
-
-The npm equivalent is `npm config set strict-ssl false` (global, not per-host —
-prefer `cafile` above). For Docker, the equivalent is `insecure-registries` (see
-the last bullet below). These skip verification, so prefer trusting the CA on
-networks where you can.
-
-Two related gotchas:
-
-- **Name/IP must be in the cert.** A cert is only valid for names in its SANs. If
-  you reach the cache by an IP or hostname that wasn't covered when the cert was
-  minted, re-run `./scripts/gen-certs.sh <that-ip-or-host>` (the CA is reused, so
-  existing trust stays valid) and restart the cache.
-- **Last resort (not recommended):** add the `host:port` to Docker's
-  `insecure-registries` in `/etc/docker/daemon.json` to skip verification entirely.
-  Prefer trusting the CA — it keeps TLS verification on.
+Routes 1 and 2 both leave Docker needing a one-time host change, because it has no
+per-command flag. The only way to get to *zero* client-side setup is a certificate
+the clients already trust — your organisation's internal CA if it is already deployed
+to machines, or a publicly-trusted cert for a real DNS name (ACME DNS-01 works with
+no inbound internet). That moves cert handling from N clients to 1 server. Point
+`PKGCACHE_TLS_CERT`/`PKGCACHE_TLS_KEY` at the new pair, or terminate TLS in a proxy
+in front — `external_base()` already honours `X-Forwarded-Proto`/`X-Forwarded-Host`
+and `X-outside-url`, so rewritten links stay correct. Note that npm/Node uses its own
+bundled root store, so an internal CA still needs `NODE_EXTRA_CA_CERTS` there, while
+a publicly-trusted cert needs nothing anywhere.
 
 ---
 
@@ -1071,8 +1147,5 @@ cd pkgcache && pip install -e '.[test]' && python -m pytest -q
 A working rewrite, exercised end-to-end through each of the six roles / seven
 ecosystem views (including the git mirror-and-serve role with Git LFS and the
 generic `files` write path), with multi-project serving, usage statistics, and
-air-gap shuttle in place and the control plane unit/integration-tested. Pin image digests before production. The retired upstream
-projects remain in the tree (untracked) for reference and for serving any
-pre-rewrite checkpoints.
-</content>
-</invoke>
+air-gap shuttle in place and the control plane unit/integration-tested. Production
+base images are digest-pinned and dependency installs use committed lockfiles.

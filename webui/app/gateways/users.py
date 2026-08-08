@@ -17,6 +17,7 @@ import threading
 
 from app import settings
 from app.errors import ApiError
+from app.gateways import private_json
 
 # The account server is multi-threaded (ThreadingHTTPServer); a mutation holds this
 # across the whole load→mutate→save so concurrent writes can't clobber each other.
@@ -38,6 +39,10 @@ def load():
     if p.is_file():
         try:
             data = json.loads(p.read_text()) or {}
+            if not isinstance(data, dict) or (
+                "users" in data and not isinstance(data["users"], dict)
+            ):
+                raise ValueError("top-level value and 'users' must be objects")
         except (OSError, ValueError) as exc:
             raise ApiError(
                 f"users store {p} is unreadable/corrupt ({exc}); refusing to proceed "
@@ -51,8 +56,4 @@ def save(data):
     """Persist the store atomically (temp→rename) so a crash never leaves a
     half-written file. The temp name is unique per writer so two concurrent saves
     can't corrupt a shared .new file (the rename is atomic; the write is not)."""
-    p = path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.new")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    os.replace(tmp, p)
+    private_json.save(path(), data)

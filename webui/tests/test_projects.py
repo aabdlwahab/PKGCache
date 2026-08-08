@@ -56,9 +56,11 @@ class RegistryTests(unittest.TestCase):
     def test_create_persists_name_only_entry(self):
         p = self.projects
         p.create("proja")
-        data = json.loads(Path(os.environ["PKGCACHE_PROJECTS"]).read_text())
+        registry_path = Path(os.environ["PKGCACHE_PROJECTS"])
+        data = json.loads(registry_path.read_text())
         self.assertEqual(data["projects"]["proja"], {})   # no ports stored
         self.assertNotIn("pool", data)                    # allocator gone
+        self.assertEqual(registry_path.stat().st_mode & 0o777, 0o600)
 
     def test_role_prefix_scheme(self):
         p = self.projects
@@ -198,6 +200,13 @@ class RegistryTests(unittest.TestCase):
             registry.load()
         with self.assertRaises(ApiError):
             self.projects.load_registry()  # the re-export goes through the gateway too
+
+    def test_non_object_registry_fails_loudly(self):
+        from app.errors import ApiError
+        from app.gateways import registry
+        Path(os.environ["PKGCACHE_PROJECTS"]).write_text('{"projects": []}')
+        with self.assertRaises(ApiError):
+            registry.load()
 
     def test_registry_path_follows_the_env(self):
         # The gateway resolves the path per call, so no import-time capture leaks the

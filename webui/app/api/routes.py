@@ -15,6 +15,7 @@ Controllers reach the stateful services (jobs, live, reads) through the request'
 handler, which app.main wires once via handler.configure(); the stateless helpers
 (projects, urls, operations) are imported directly."""
 import http.cookies
+import ipaddress
 import json
 import re
 import urllib.parse
@@ -39,6 +40,9 @@ class Request:
         self._url = urllib.parse.urlparse(path)
         self.query = urllib.parse.parse_qs(self._url.query)
         self.match = {}  # path-capture groups, filled by dispatch()
+        # The HTTP method; dispatch() sets it authoritatively. Defaulted from the
+        # handler so a directly-constructed Request (tests) still has one.
+        self.method = getattr(handler, "command", "GET")
         self._user = _UNSET  # resolved lazily + cached (see .user)
 
     @property
@@ -58,12 +62,22 @@ class Request:
     def body(self):
         """The JSON request body (empty object when absent). A malformed body is a
         client error, not a server crash — surfaced as a 400."""
-        length = int(self.handler.headers.get("Content-Length", 0))
+        try:
+            length = int(self.handler.headers.get("Content-Length", 0))
+        except (TypeError, ValueError) as exc:
+            raise ApiError("invalid Content-Length", 400) from exc
+        if length < 0:
+            raise ApiError("invalid Content-Length", 400)
+        if length > settings.MAX_JSON_BYTES:
+            raise ApiError("JSON request body too large", 413)
         raw = self.handler.rfile.read(length) or b"{}"
         try:
-            return json.loads(raw)
+            body = json.loads(raw)
         except ValueError as exc:
             raise ApiError(f"invalid JSON body: {exc}", 400) from exc
+        if not isinstance(body, dict):
+            raise ApiError("JSON request body must be an object", 400)
+        return body
 
     # Wired services (set on the handler by handler.configure()).
     @property
@@ -98,6 +112,13 @@ class Request:
 
     @property
     def client_ip(self):
+        if settings.TRUST_PROXY:
+            forwarded = self.handler.headers.get("X-Forwarded-For", "").strip()
+            if forwarded:
+                try:
+                    return str(ipaddress.ip_address(forwarded))
+                except ValueError:
+                    pass
         addr = getattr(self.handler, "client_address", None)
         return addr[0] if addr else "?"
 
@@ -132,16 +153,30 @@ class Request:
     # superuser turns enforcement on. When enabled they require a session and the
     # right relationship to the project's owner, else raise Auth/Forbidden.
 
+    def anon_read_ok(self):
+        """Whether this request may proceed WITHOUT a session as a read: anonymous
+        read-only is enabled AND the method is safe (never a write). Mutations — even
+        the view-level ones (artifact upload, lockwarm) — are POST/DELETE, so they
+        fall through to require_user() and still need a login."""
+        return settings.ANON_READ and self.method in ("GET", "HEAD")
+
     def require_authed(self):
-        """Any signed-in caller (used for instance-wide reads like the job list)."""
+        """Any signed-in caller (used for instance-wide reads like the job list).
+        Under anonymous read-only a session-less safe read is allowed (returns None)."""
         if not self.accounts.enabled():
+            return None
+        if self.user is None and self.anon_read_ok():
             return None
         return self.require_user()
 
     def require_view(self, project):
         """The caller must be able to view `project` — its owner, one of the owner's
-        reports, or a superuser."""
+        reports, or a superuser. Under anonymous read-only a session-less safe read is
+        allowed (the whole instance is readable; ownership scoping applies only once a
+        caller signs in)."""
         if not self.accounts.enabled():
+            return None
+        if self.user is None and self.anon_read_ok():
             return None
         actor = self.require_user()
         if not self.accounts.can_view(actor, projects.owner(project)):
@@ -226,8 +261,14 @@ def list_projects(req):
     own; a user sees their admin's. Open (all) when auth is not configured."""
     visible = projects.list_projects()
     if req.accounts.enabled():
-        actor = req.require_user()
-        visible = [p for p in visible if req.accounts.can_view(actor, p["owner"])]
+        actor = req.user
+        if actor is None:
+            # Anonymous read-only sees every project; a session-less caller without
+            # anon-read still gets the 401 require_user would raise.
+            if not req.anon_read_ok():
+                req.require_user()
+        else:
+            visible = [p for p in visible if req.accounts.can_view(actor, p["owner"])]
     return Response({"projects": visible})
 
 
@@ -299,6 +340,24 @@ def get_lockfile(req):
     if not lock.is_file():
         return Response({"error": "no rewritten lock for this project yet"}, 404)
     req.handler.send_download(lock, "uv.lock")
+    return None
+
+
+def get_ca_certificate(req):
+    """Download the public CA used by the cache's HTTPS endpoint.
+
+    This route is intentionally anonymous: a CA certificate is public trust
+    material, not a credential. Only the CA certificate is exposed; the CA signing
+    key is never mounted in either network-facing service.
+    """
+    if not settings.CA_CERT.is_file():
+        return Response({"error": "PKGCache CA certificate is not available"}, 404)
+    req.handler.send_download(
+        settings.CA_CERT,
+        "pkgcache-ca.crt",
+        "application/x-pem-file",
+        headers=[("Cache-Control", "no-store")],
+    )
     return None
 
 
@@ -435,12 +494,21 @@ def logout(req):
 def me(req):
     """The current caller — the console bootstraps its role-gated UI from this. When
     auth is not configured it reports so (auth_enabled False), letting the console skip
-    the login screen entirely rather than get a bare 401."""
+    the login screen entirely rather than get a bare 401. When auth is on but the
+    caller has no session, it reports authenticated False plus whether anonymous
+    read-only is available, so the console can render a read-only view (with a Log in
+    affordance) instead of forcing the login screen."""
     if not req.accounts.enabled():
         return Response({"auth_enabled": False, "authenticated": False})
-    user = req.require_user()
+    user = req.user
+    if user is None:
+        if not settings.ANON_READ:
+            req.require_user()  # → 401; strict auth still forces the login screen
+        return Response({
+            "auth_enabled": True, "authenticated": False, "anon_read": True,
+        })
     return Response({
-        "auth_enabled": True, "authenticated": True,
+        "auth_enabled": True, "authenticated": True, "anon_read": settings.ANON_READ,
         "username": user.username, "role": user.role, "reports_to": user.reports_to,
     })
 
@@ -514,6 +582,7 @@ ROUTES = [
     _route("GET", "/api/packages", get_packages),
     _route("GET", "/api/token", get_token),
     _route("GET", "/api/lockfile", get_lockfile),
+    _route("GET", "/api/ca.crt", get_ca_certificate),
     _route("GET", "/api/me", me),
     _route("GET", "/api/users", list_users),
     _route("GET", "/", index),
@@ -533,28 +602,39 @@ ROUTES = [
 ]
 
 
-def _hostname(value):
-    """The bare hostname from a `host[:port]` or a full URL — port and IPv6 brackets
-    handled by urlsplit. None if there's nothing parseable."""
-    if not value:
+def _authority(value):
+    """Normalized (scheme, hostname, port) for an HTTP(S) URL."""
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        scheme = parsed.scheme.lower()
+        if scheme not in ("http", "https") or parsed.hostname is None:
+            return None
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except ValueError:
         return None
-    part = value if "//" in value else "//" + value
-    return urllib.parse.urlsplit(part).hostname
+    return scheme, parsed.hostname.rstrip(".").lower(), port
 
 
 def _same_origin(handler):
     """Reject a cross-site mutating request. When the browser sends an Origin, its
-    HOSTNAME must match the request's Host hostname; an absent Origin (curl, and the
-    same-origin navigations some browsers omit it on) is allowed. We compare hostnames
-    rather than full host:port because a reverse proxy routinely rewrites the Host —
-    nginx `$host`, for one, drops the port while the browser's Origin keeps it — and a
-    strict netloc match would then reject legitimate same-site requests. The
-    SameSite=Lax cookie is the primary CSRF defense; this is belt-and-braces."""
+    scheme, hostname, and effective port must match the request authority. An absent
+    Origin (curl, and same-origin navigations some browsers omit it on) is allowed.
+    The console proxy forwards the browser's exact Host, including its port."""
     origin = handler.headers.get("Origin")
     if not origin:
         return True
-    origin_host = _hostname(origin)
-    return origin_host is not None and origin_host == _hostname(handler.headers.get("Host", ""))
+    origin_authority = _authority(origin)
+    if origin_authority is None:
+        return False
+    if settings.PUBLIC_ORIGIN:
+        return origin_authority == _authority(settings.PUBLIC_ORIGIN)
+    scheme = origin_authority[0]
+    if settings.TRUST_PROXY:
+        forwarded = handler.headers.get("X-Forwarded-Proto", "").strip().lower()
+        if forwarded and forwarded != scheme:
+            return False
+    request_authority = _authority(f"{scheme}://{handler.headers.get('Host', '')}")
+    return request_authority == origin_authority
 
 
 def dispatch(handler, method, raw_path):
@@ -573,6 +653,7 @@ def dispatch(handler, method, raw_path):
             handler.send_json({"error": "cross-origin request refused"}, 403)
             return True
         req = Request(handler, raw_path)
+        req.method = method
         req.match = found.groupdict()
         try:
             resp = fn(req)

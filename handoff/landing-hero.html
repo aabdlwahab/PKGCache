@@ -1,0 +1,98 @@
+<!--
+  pkgcache — hero band markup (redesign).
+  Replaces the existing hero + .scene block in landing.html.
+  No inline styles, no inline scripts, no event handlers: CSP-clean.
+  The scene is decorative — aria-hidden, and it says nothing the copy doesn't.
+-->
+<section class="hero night">
+  <!-- ---------------- copy column ---------------- -->
+  <div class="hero-copy">
+    <p class="hero-eyebrow"><b>[■]</b> pkgcache</p>
+
+    <h1>Fetch it once.<br>Serve it forever.<br><em>Even across the air gap.</em></h1>
+
+    <p class="hero-sub">
+      One process pull-through-caches Docker, PyPI, npm, apt/apk, git and files
+      on a single port. A hit serves from disk. A miss streams once — to everyone.
+    </p>
+
+    <!-- KEEP: the typed command line -->
+    <p class="hero-cmd"><span class="prompt">$</span><span id="typed"></span><span class="caret" aria-hidden="true"></span></p>
+
+    <div class="hero-cta">
+      <a class="btn-primary" href="/console">Open the console →</a>
+      <a class="btn-ghost" href="/docs">Read the docs</a>
+    </div>
+
+    <div class="hero-kpis">
+      <div><div class="v ok" id="kpi-hitrate">93%</div><div class="k">served from disk</div></div>
+      <div><div class="v accent">1</div><div class="k">upstream fetch per artifact</div></div>
+      <div><div class="v">6</div><div class="k">ecosystems, one port</div></div>
+    </div>
+  </div>
+
+  <!-- ---------------- the scene ---------------- -->
+  <div class="scene" aria-hidden="true">
+    <div class="upzone"></div>
+
+    <!-- lane rails. Endpoints are written by landing-hero.js from measurement;
+         the values below are only a sane pre-JS resting state. -->
+    <svg class="rails" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <line class="rail" x1="18" y1="6"  x2="37" y2="6"></line>
+      <line class="rail" x1="18" y1="23" x2="37" y2="23"></line>
+      <line class="rail" x1="18" y1="40" x2="37" y2="40"></line>
+      <line class="rail" x1="18" y1="57" x2="37" y2="57"></line>
+      <line class="rail" x1="18" y1="74" x2="37" y2="74"></line>
+      <line class="rail" x1="18" y1="91" x2="37" y2="91"></line>
+      <g class="rails-up">
+        <line class="rail" x1="50" y1="6"  x2="74" y2="6"></line>
+        <line class="rail" x1="50" y1="23" x2="74" y2="23"></line>
+        <line class="rail" x1="50" y1="40" x2="74" y2="40"></line>
+        <line class="rail" x1="50" y1="57" x2="74" y2="57"></line>
+        <line class="rail" x1="50" y1="74" x2="74" y2="74"></line>
+        <line class="rail" x1="50" y1="91" x2="74" y2="91"></line>
+      </g>
+    </svg>
+
+    <div class="gapline"></div>
+    <div class="gaplabel">air gap</div>
+
+    <!-- the cache: left face serves hits, right face fetches misses -->
+    <div class="wall">
+      <div class="wall-h">cas</div>
+      <div class="cas" id="cas"></div>
+      <div class="wall-ckpt">ckpt<br>v13</div>
+    </div>
+
+    <!-- moving dots are appended here; z-order puts them BEHIND the wall -->
+    <div class="flow"></div>
+
+    <!-- clients: order here defines the lane order the JS uses -->
+    <div class="clients">
+      <div class="fnode fclient e-docker" data-node="c-docker"><span class="fdot"></span>docker</div>
+      <div class="fnode fclient e-pip"    data-node="c-pip"><span class="fdot"></span>pip / uv</div>
+      <div class="fnode fclient e-npm"    data-node="c-npm"><span class="fdot"></span>npm</div>
+      <div class="fnode fclient e-apt"    data-node="c-apt"><span class="fdot"></span>apt / apk</div>
+      <div class="fnode fclient e-git"    data-node="c-git"><span class="fdot"></span>git</div>
+      <div class="fnode fclient e-files"  data-node="c-files"><span class="fdot"></span>files</div>
+    </div>
+
+    <!-- upstreams: same order, one per lane -->
+    <div class="ups">
+      <div class="fnode fup e-docker" data-node="u-docker">registry-1.docker.io</div>
+      <div class="fnode fup e-pip"    data-node="u-pip">pypi.org</div>
+      <div class="fnode fup e-npm"    data-node="u-npm">registry.npmjs.org</div>
+      <div class="fnode fup e-apt"    data-node="u-apt">deb.debian.org</div>
+      <div class="fnode fup e-git"    data-node="u-git">github.com</div>
+      <div class="fnode fup e-files"  data-node="u-files">artifacts.internal</div>
+    </div>
+
+    <div class="scene-key">
+      <div class="items">
+        <span class="item"><span class="swatch"></span>hit → disk · 0 ms</span>
+        <span class="item item-miss"><span class="swatch"></span>miss → one stream</span>
+      </div>
+      <div class="scene-status"><span class="dot"></span><span class="label">online</span></div>
+    </div>
+  </div>
+</section>

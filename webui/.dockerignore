@@ -1,0 +1,5 @@
+**/__pycache__
+**/*.pyc
+console/node_modules
+console/dist
+tests

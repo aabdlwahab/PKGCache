@@ -13,7 +13,7 @@ import asyncio
 import contextlib
 import hashlib
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 

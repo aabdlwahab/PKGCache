@@ -6,9 +6,9 @@ the /+ledger/* routes wired into the app (and NOT shadowed by the handler routes
 """
 from __future__ import annotations
 
+import json
 import time
-
-from starlette.testclient import TestClient
+import urllib.parse
 
 from pkgcache.app import build_app
 from pkgcache.core.config import Config
@@ -69,13 +69,54 @@ def _app(tmp_path):
     return app
 
 
-def test_ledger_routes_are_served_and_not_shadowed(tmp_path):
+async def test_ledger_routes_are_served_and_not_shadowed(tmp_path):
     app = _app(tmp_path)
-    with TestClient(app) as client:
-        r = client.get("/+ledger/artifacts")
-        assert r.status_code == 200
-        assert len(r.json()["artifacts"]) == 3                 # default = all rows
-        assert [a["name"] for a in client.get("/+ledger/artifacts?eco=pip&q=num").json()["artifacts"]] == ["numpy"]
-        s = client.get("/+ledger/stats").json()
-        assert s["by_eco"]["pip"]["count"] == 3
-        assert s["by_eco"]["pip"]["hit_bytes"] == 500
+    try:
+        code, body = await _get(app, "/+ledger/artifacts")
+        assert code == 200
+        assert len(body["artifacts"]) == 3                         # default = all rows
+        _, filtered = await _get(app, "/+ledger/artifacts?eco=pip&q=num")
+        assert [a["name"] for a in filtered["artifacts"]] == ["numpy"]
+        _, stats = await _get(app, "/+ledger/stats")
+        assert stats["by_eco"]["pip"]["count"] == 3
+        assert stats["by_eco"]["pip"]["hit_bytes"] == 500
+    finally:
+        await app.state.core.aclose()
+
+
+async def _get(app, target):
+    """Drive one ASGI GET, including the disconnect event Starlette waits for."""
+    parsed = urllib.parse.urlsplit(target)
+    sent = []
+    request_pending = True
+
+    async def receive():
+        nonlocal request_pending
+        if request_pending:
+            request_pending = False
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": parsed.path,
+        "raw_path": parsed.path.encode(),
+        "query_string": parsed.query.encode(),
+        "root_path": "",
+        "headers": [(b"host", b"pkgcache")],
+        "client": ("127.0.0.1", 1),
+        "server": ("pkgcache", 80),
+    }
+    await app(scope, receive, send)
+    status = next(message["status"] for message in sent
+                  if message["type"] == "http.response.start")
+    payload = b"".join(message.get("body", b"") for message in sent
+                       if message["type"] == "http.response.body")
+    return status, json.loads(payload)

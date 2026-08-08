@@ -131,14 +131,16 @@ class Storage:
         cp = self.cas_path(sha256_hex)
         if cp is None or cp.exists():
             return
+        tmp = None
         try:
             cp.parent.mkdir(parents=True, exist_ok=True)
             tmp = cp.parent / (cp.name + f".{os.getpid()}.{id(final_path):x}{PART_SUFFIX}")
             os.link(final_path, tmp)          # hardlink the committed inode
             os.replace(tmp, cp)               # atomic publish (last writer wins; same bytes)
         except OSError:
-            with contextlib.suppress(OSError):
-                tmp.unlink()
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
 
     def cas_materialize(self, sha256_hex: str, final_path: Path) -> bool:
         """If the CAS holds this content, hardlink it into place at `final_path` and
@@ -150,6 +152,7 @@ class Storage:
         cp = self.cas_path(sha256_hex)
         if cp is None or not cp.exists():
             return False
+        tmp = None
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = final_path.parent / (final_path.name + f".{os.getpid()}.{id(final_path):x}{PART_SUFFIX}")
@@ -161,8 +164,9 @@ class Storage:
                 pass
             return True
         except OSError:
-            with contextlib.suppress(OSError):
-                tmp.unlink()
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
             return False
 
     # ---- serving -------------------------------------------------------------

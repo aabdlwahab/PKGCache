@@ -1,0 +1,63 @@
+{
+  "title": "pkgreg",
+  "uid": "pkgreg",
+  "schemaVersion": 39,
+  "time": {"from": "now-6h", "to": "now"},
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Cache hit rate",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(rate(pkgreg_requests_total{outcome=~\"hit|dedup|peer\"}[5m])) / clamp_min(sum(rate(pkgreg_requests_total{outcome!=\"fail\"}[5m])), 1)",
+        "legendFormat": "hit rate"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "Bytes saved",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(rate(pkgreg_bytes_served_total[5m])) - sum(rate(pkgreg_upstream_bytes_total[5m]))",
+        "legendFormat": "bytes/s saved"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "In-flight fetches",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum by (eco) (pkgreg_inflight_fetches)",
+        "legendFormat": "{{eco}}"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "Blob store size",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "pkgreg_blob_store_bytes",
+        "legendFormat": "bytes"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Upstream fetch latency p95",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le, eco) (rate(pkgreg_fetch_duration_seconds_bucket[5m])))",
+        "legendFormat": "{{eco}}"
+      }]
+    },
+    {
+      "id": 6,
+      "title": "Maintenance reclaimed bytes",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "rate(pkgreg_gc_reclaimed_bytes_total[5m])",
+        "legendFormat": "bytes/s"
+      }]
+    }
+  ]
+}

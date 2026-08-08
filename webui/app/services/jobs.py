@@ -9,6 +9,8 @@ worker thread, and accumulates its output into a log the HTTP layer polls."""
 import itertools
 import threading
 
+from app.errors import OpError
+
 
 class Jobs:
     """Owns the in-memory job table and the single-runner lock. Given an Operations
@@ -22,14 +24,15 @@ class Jobs:
         self._lock = threading.Lock()
 
     def start(self, action, params):
-        if self._busy():
-            raise RuntimeError("another operation is already running")
         # Eager validation: build raises OpError on bad input here, on the request
         # thread, so the POST returns 400 instead of failing asynchronously.
         gen = self._operations.build(action, params)
-        jid = next(self._ids)
-        job = {"id": jid, "action": action, "status": "running", "log": ""}
-        self._jobs[jid] = job
+        with self._lock:
+            if self._busy():
+                raise OpError("another operation is already running", 409)
+            jid = next(self._ids)
+            job = {"id": jid, "action": action, "status": "running", "log": ""}
+            self._jobs[jid] = job
         threading.Thread(target=self._run, args=(job, gen), daemon=True).start()
         return jid
 

@@ -32,7 +32,7 @@ class Core:
     async def aclose(self) -> None:
         await self.stats.flush(self.ledger)  # persist the final window before closing
         await self.upstream.aclose()
-        self.ledger.close()
+        await self.ledger.aclose()
 
 
 def build_core(config: Config) -> Core:

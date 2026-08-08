@@ -1,0 +1,3 @@
+# Only needed if you follow the CA variant in README.md (a local copy of
+# certs/ca.crt in the build context). The default port needs no cert file.
+ca.crt

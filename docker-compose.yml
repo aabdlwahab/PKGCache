@@ -17,12 +17,57 @@
 # checkout directory's basename.
 name: package-registry
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
+  # ---- optional client/build DNS -----------------------------------------
+  # This forwarding resolver makes the stable pkgcache.internal name visible to
+  # machines and build containers that use it as DNS. It is deliberately opt-in:
+  #
+  #   PKGCACHE_DNS_IP=10.20.30.40 docker compose --profile dns up -d dns
+  #
+  # Non-pkgreg names are forwarded through Docker's resolver. Publish on a specific
+  # interface with PKGCACHE_DNS_BIND when the host has more than one network.
+  dns:
+    build: ./dnsmasq
+    image: package-registry/dnsmasq:local
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /run
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE", "SETGID", "SETUID"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+    environment:
+      PKGCACHE_DNS_NAME: "${PKGCACHE_DNS_NAME:-pkgcache.internal}"
+      PKGCACHE_DNS_IP: "${PKGCACHE_DNS_IP:-}"
+    ports:
+      - "${PKGCACHE_DNS_BIND:-0.0.0.0}:53:53/udp"
+      - "${PKGCACHE_DNS_BIND:-0.0.0.0}:53:53/tcp"
+    healthcheck:
+      test: ["CMD", "nslookup", "${PKGCACHE_DNS_NAME:-pkgcache.internal}", "127.0.0.1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    profiles: ["dns"]
+
   # ---- the cache (all four roles, one process) ---------------------------
   pkgcache:
     build: ./pkgcache
     image: package-registry/pkgcache:local
     restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
     # Run as the host user so everything written under ./caches is host-owned, not
     # root — this is what lets the webui's `dvc add`/`dvc checkout` and the operator
     # manage the cache without permission fights. All ports are >1024, so a non-root
@@ -48,16 +93,20 @@ services:
       # npm/pypi/git/files at https://<host>:8443/<project>/<role>/… ("global" is the
       # default project). Publish "443:8443" instead for port-less docker URLs (the
       # container binds >1024 because it runs as a non-root host uid).
-      - "8443:8443"
+      - "${PKGCACHE_BIND:-0.0.0.0}:8443:8443"
       # apt + apk (HTTP forward proxy; project = proxy username <project>@host)
-      - "3142:3142"
+      - "${PKGCACHE_BIND:-0.0.0.0}:3142:3142"
       # Projects are NOT separate ports: every project shares the two ports above and
       # is reached by a URL prefix (/<project>/<role>/… ; the OCI project rides the
       # image name, the apt project the proxy username). See pkgcache/unified.py.
     volumes:
       - ./caches:/caches        # global → /caches/<eco>; projects → /caches/projects/<name>/<eco>
       - ./config:/config:ro     # the project registry (config/projects.json), webui-managed
-      - ./certs:/certs:ro
+      # The serving process gets only public trust material + its leaf key. Never
+      # mount the CA signing key into a network-facing container.
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - ./certs/server.crt:/certs/server.crt:ro
+      - ./certs/server.key:/certs/server.key:ro
     networks:
       default:
         aliases: ["pkgcache"]
@@ -75,6 +124,13 @@ services:
   webui:
     build: ./webui
     restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
     expose: ["8088"]       # internal only — the console proxies /api to it
     # Same host-user mapping as pkgcache, so the cache repo's git objects, the DVC
     # store and manifests this service writes are owned by the operator, never root
@@ -92,29 +148,42 @@ services:
       # login + account/ownership enforcement. Leave unset to keep the API open.
       UI_ROOT_USER: "${UI_ROOT_USER:-}"
       UI_ROOT_PASSWORD: "${UI_ROOT_PASSWORD:-}"
-      # Shuttle staging dir (from .env). Forwarded into the process env so the backend's
-      # os.environ.get("PKGCACHE_SHUTTLE") sees it; empty falls back to ./shuttle.
-      PKGCACHE_SHUTTLE: "${PKGCACHE_SHUTTLE:-}"
-    working_dir: /repo
+      # Set to the browser-facing origin when TLS terminates at a host proxy. This
+      # also makes session cookies Secure by default.
+      UI_PUBLIC_ORIGIN: "${UI_PUBLIC_ORIGIN:-}"
+      UI_COOKIE_SECURE: "${UI_COOKIE_SECURE:-}"
+      UI_SESSION_TTL: "${UI_SESSION_TTL:-43200}"
+      UI_MAX_JSON_MB: "${UI_MAX_JSON_MB:-64}"
+      # On by default; the console proxy sanitizes X-Forwarded-For. Set 0 only if
+      # webui is exposed without a trusted proxy in front.
+      UI_TRUST_PROXY: "${UI_TRUST_PROXY:-1}"
+      # Let un-authenticated callers browse the console read-only (writes still need a
+      # login). Off by default; set UI_ANON_READ=1 to enable.
+      UI_ANON_READ: "${UI_ANON_READ:-0}"
+      PKGCACHE_SHUTTLE: /app/shuttle
+      # HOME/USER/LOGNAME above already give dvc a writable home under the read-only
+      # rootfs; also disable its analytics id write — a serving host shouldn't phone
+      # home, and it removes one more write off the happy path.
+      DVC_NO_ANALYTICS: "1"
+    working_dir: /app
     volumes:
-      # The repo at a FIXED container path — no ${PWD} coupling. The backend resolves
-      # every path relative to its own source tree (webui/app/settings.py ROOT), and
-      # nothing in it talks to the host docker daemon anymore, so container paths no
-      # longer need to mirror host paths. The mount includes ./caches, ./config and
-      # ./shuttle.
-      - .:/repo
-      # The shuttle staging dir defaults to ./shuttle (inside the repo mount above).
-      # If you relocate it with PKGCACHE_SHUTTLE to a path OUTSIDE the repo, mount
-      # that path here too, e.g.:  - ${PKGCACHE_SHUTTLE}:${PKGCACHE_SHUTTLE}
+      # Mount mutable state only; the application source is baked into the image.
+      - ./caches:/app/caches
+      - ./config:/app/config
+      - ./lockwarm:/app/lockwarm
+      - "${PKGCACHE_SHUTTLE:-./shuttle}:/app/shuttle"
+      # Offline export/import needs the serving cert and leaf key, never ca.key.
+      - ./certs/ca.crt:/app/certs/ca.crt
+      - ./certs/server.crt:/app/certs/server.crt
+      - ./certs/server.key:/app/certs/server.key
     profiles: ["ui"]
 
-  # The React + TS console (full frontend). Built by a multi-stage image (Node →
-  # nginx); nginx serves the static bundle and reverse-proxies /api to webui.
-  # Public UI port (no auth — trusted nets only).
-  console:
-    build: ./webui/console
-    image: package-registry/console:local
-    restart: unless-stopped
-    ports: ["8088:80"]
-    depends_on: ["webui"]
-    profiles: ["ui"]
+  # There is no console service any more.
+  #
+  # The browser console used to be a React bundle served by its own nginx container,
+  # built from ./webui/console. It is now written by hand and compiled into the pkgreg
+  # binary, so the Go server serves it at /console with no extra image, no Node in the
+  # build, and no reverse proxy in front. `pkgreg serve --headless` turns it off for
+  # deployments that only ever talk to the API.
+  #
+  # The `webui` service above remains the Python API backend for this legacy stack.

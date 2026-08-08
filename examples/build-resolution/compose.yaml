@@ -1,0 +1,8 @@
+services:
+  resolution-check:
+    build:
+      context: .
+      args:
+        CACHE_NAME: "${CACHE_NAME:-pkgcache.internal}"
+      extra_hosts:
+        - "${CACHE_NAME:-pkgcache.internal}:${CACHE_IP:?set CACHE_IP to the cache address}"

@@ -1,0 +1,330 @@
+/* =====================================================================
+   pkgcache — hero band + "membrane" scene  (redesign, replaces the
+   hub-and-spoke scene block in landing.css)
+
+   Drop-in notes
+   -------------
+   • Everything here is token-based; the block is designed to sit inside the
+     existing `.night` band, so it is theme-aware with no extra rules.
+   • No inline styles are used or required. JS only sets `transform` on the
+     moving dots and toggles the state classes marked  [JS]  below.
+   • Eco hue is carried by one custom property (`--h`) per client/upstream/dot,
+     so a new ecosystem is one class, not a new rule set.
+   ===================================================================== */
+
+/* ---------- eco hues (single source of truth) ---------------------- */
+.hero {
+  --h-docker: oklch(0.66 0.16 248);
+  --h-pip:    oklch(0.72 0.13 92);
+  --h-npm:    oklch(0.62 0.20 12);
+  --h-apt:    oklch(0.70 0.16 42);
+  --h-git:    oklch(0.66 0.17 300);
+  --h-files:  oklch(0.78 0.15 152);
+}
+.e-docker { --h: var(--h-docker); }
+.e-pip    { --h: var(--h-pip); }
+.e-npm    { --h: var(--h-npm); }
+.e-apt    { --h: var(--h-apt); }
+.e-git    { --h: var(--h-git); }
+.e-files  { --h: var(--h-files); }
+
+/* ---------- split hero -------------------------------------------- */
+.hero {
+  display: grid;
+  grid-template-columns: 39% 61%;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.hero-copy {
+  position: relative;
+  padding: 52px 40px 46px 48px;
+  border-right: 1px solid var(--line);
+  background:
+    radial-gradient(720px 480px at -6% -6%, oklch(0.66 0.16 248 / 0.16), transparent 62%),
+    var(--bg2);
+}
+/* faint HUD ruling behind the copy */
+.hero-copy::before {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(oklch(0.66 0.16 248 / 0.06) 1px, transparent 1px);
+  background-size: 100% 44px;
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 70%);
+          mask-image: linear-gradient(to bottom, #000, transparent 70%);
+}
+.hero-copy > * { position: relative; }
+
+.hero-eyebrow {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 20px;
+  font-size: 10.5px; letter-spacing: var(--tspace); text-transform: uppercase;
+  color: var(--muted);
+}
+.hero-eyebrow b { color: var(--ok); letter-spacing: 0; font-weight: 400; }
+.hero h1 {
+  margin: 0 0 20px;
+  font-size: clamp(28px, 3.1vw, 38px); line-height: 1.16;
+  font-weight: 500; letter-spacing: -0.012em; color: var(--fg);
+}
+.hero h1 em { font-style: normal; color: var(--ok); }
+.hero-sub {
+  margin: 0 0 20px; max-width: 40ch;
+  font-size: 13px; line-height: 1.7; color: var(--fg2);
+  text-wrap: pretty;
+}
+.hero-cmd {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 20px; padding: 10px 13px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--inset);
+  font-size: 12px; color: var(--fg2);
+  overflow: hidden; white-space: nowrap;
+}
+.hero-cmd .prompt { color: var(--ok); }
+.hero-cmd .caret {
+  display: inline-block; width: 7px; height: 14px; vertical-align: -2px;
+  background: var(--ok); animation: caretBlink 1.05s step-end infinite;
+}
+@keyframes caretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+.hero-cta { display: flex; gap: 10px; }
+.hero-cta a {
+  padding: 11px 18px; border-radius: var(--radius);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  text-decoration: none;
+}
+.hero-cta .btn-primary {
+  background: var(--accent); color: oklch(0.14 0.02 254);
+  box-shadow: 0 0 24px rgb(var(--glow) / 0.35);
+}
+.hero-cta .btn-primary:hover { filter: brightness(1.08); }
+.hero-cta .btn-ghost { border: 1px solid var(--line2); color: var(--fg2); }
+.hero-cta .btn-ghost:hover { border-color: var(--fg2); color: var(--fg); }
+
+.hero-kpis {
+  display: grid; grid-template-columns: repeat(3, auto); gap: 22px;
+  margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line);
+}
+.hero-kpis .v { font-size: 20px; line-height: 1; color: var(--fg); }
+.hero-kpis .v.ok { color: var(--ok); }
+.hero-kpis .v.accent { color: var(--accent); }
+.hero-kpis .k {
+  margin-top: 6px; max-width: 11ch;
+  font-size: 9px; line-height: 1.5; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- the scene --------------------------------------------- */
+.scene {
+  position: relative; height: 540px; overflow: hidden;
+  background: linear-gradient(100deg,
+    oklch(0.142 0.014 254) 0%,
+    oklch(0.168 0.016 254) 46%,
+    oklch(0.125 0.014 254) 100%);
+}
+
+/* region beyond the air gap */
+.upzone {
+  position: absolute; left: 70%; right: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, oklch(0.66 0.16 248 / 0.06));
+  transition: opacity 0.7s var(--ease);
+}
+
+/* lane rails — endpoints are written by JS (measured), see landing-hero.js */
+.rails { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rail { stroke: var(--line2); stroke-width: 0.22; stroke-dasharray: 1.2 2; opacity: 0.8; }
+.rails-up { transition: opacity 0.7s var(--ease); }
+.rails-up .rail { stroke-width: 0.18; stroke-dasharray: 0.8 2.6; opacity: 0.55; }
+
+/* the air-gap seam */
+.gapline {
+  position: absolute; left: 70%; top: 0; bottom: 0; width: 1px; z-index: 5;
+  background: repeating-linear-gradient(to bottom, var(--line2) 0 7px, transparent 7px 15px);
+  transition: background 0.5s var(--ease), box-shadow 0.5s var(--ease);
+}
+.gaplabel {
+  position: absolute; left: 70%; top: 50%; z-index: 6;
+  transform: translate(-50%, -50%);
+  writing-mode: vertical-rl;
+  padding: 8px 3px; background: var(--inset);
+  font-size: 8.5px; letter-spacing: 0.28em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap;
+  transition: color 0.4s var(--ease);
+}
+
+/* the wall = the cache. Left face serves hits, right face fetches misses. */
+.wall {
+  position: absolute; left: 38%; top: 20px; bottom: 20px; width: 74px; z-index: 4;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 11px 0 9px;
+  background: color-mix(in oklab, var(--panel) 97%, transparent);
+  border: 1px solid var(--line2); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg), 0 0 44px rgb(var(--glow) / 0.16);
+  transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.wall::before, .wall::after {
+  content: ""; position: absolute; top: -1px; bottom: -1px; width: 2px; border-radius: 2px;
+}
+.wall::before { left: -1px;  background: linear-gradient(to bottom, transparent, oklch(0.78 0.15 152 / 0.55), transparent); }
+.wall::after  { right: -1px; background: linear-gradient(to bottom, transparent, oklch(0.70 0.15 248 / 0.50), transparent); }
+.wall-h {
+  font-size: 8.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--fg); text-align: center;
+}
+.wall-ckpt {
+  margin-top: auto;
+  font-size: 8px; line-height: 1.6; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); text-align: center;
+  transition: color 0.35s var(--ease);
+}
+.wall.commit { border-color: var(--ok); box-shadow: var(--shadow-lg), 0 0 50px rgb(var(--glow-ok) / 0.35); }  /* [JS] checkpoint beat */
+.wall.commit .wall-ckpt { color: var(--ok); }
+
+/* content-addressed store */
+.cas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.cas-tile {
+  width: 12px; height: 12px; border-radius: 2px;
+  background: var(--inset); border: 1px solid var(--line);
+  transition: background 0.35s var(--ease), border-color 0.35s var(--ease),
+              box-shadow 0.35s var(--ease), transform 0.3s var(--ease);
+}
+.cas-tile.lit {                                     /* [JS] freshly cached blob */
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: 0 0 10px rgb(var(--glow) / 0.55);
+}
+.cas-tile.committed {                               /* [JS] included in a checkpoint */
+  background: color-mix(in oklab, var(--ok) 52%, var(--inset));
+  border-color: color-mix(in oklab, var(--ok) 48%, var(--line));
+}
+.cas-tile.ping { animation: tilePing 0.42s var(--ease); }   /* [JS] a cached blob was served */
+@keyframes tilePing {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.55); filter: brightness(1.7); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- nodes -------------------------------------------------- */
+.flow { position: absolute; inset: 0; z-index: 2; }   /* dots live here → they pass BEHIND the wall */
+.clients, .ups {
+  position: absolute; top: 20px; bottom: 34px; z-index: 5;
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+.clients { left: 14px; }
+.ups { right: 12px; transition: opacity 0.7s var(--ease); }
+
+.fnode {
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
+  padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 11px;
+  transition: border-color 0.3s var(--ease), color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.fclient {
+  color: var(--fg2);
+  background: color-mix(in oklab, var(--panel) 94%, transparent);
+  box-shadow: var(--shadow-md);
+}
+.fclient .fdot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--h); }
+.fup { color: var(--muted); background: color-mix(in oklab, var(--inset) 90%, transparent); font-size: 10.5px; }
+
+.fnode.served { border-color: var(--ok); color: var(--fg); box-shadow: 0 0 16px rgb(var(--glow-ok) / 0.35); }   /* [JS] */
+.fnode.busy   { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 16px rgb(var(--glow) / 0.35); }   /* [JS] */
+.fnode.failed { border-color: var(--bad); color: var(--fg); box-shadow: 0 0 16px rgb(240 90 90 / 0.35); }        /* [JS] */
+
+/* ---------- moving parts ------------------------------------------ */
+.req-dot {
+  position: absolute; top: 0; left: 0; width: 9px; height: 9px;
+  margin: -4.5px 0 0 -4.5px; border-radius: 50%;
+  z-index: 3; pointer-events: none;
+  background: var(--h); box-shadow: 0 0 12px var(--h);
+}
+.rd-hit    { --h: var(--ok); }
+.rd-fail   { --h: var(--bad); }
+.rd-stream { width: 14px; height: 14px; margin: -7px 0 0 -7px; }   /* the one upstream stream */
+
+/* the wall's two faces reacting */
+.face {
+  position: absolute; width: 3px; height: 18px; border-radius: 2px;
+  z-index: 6; pointer-events: none; opacity: 1;
+  transition: opacity 0.4s var(--ease);
+}
+.face-hit  { background: var(--ok);     box-shadow: 0 0 14px rgb(var(--glow-ok) / 0.8); }
+.face.out  { opacity: 0; }
+.slit {                                   /* miss: the wall opens for one lane */
+  position: absolute; height: 2px; z-index: 6; pointer-events: none;
+  background: var(--accent); box-shadow: 0 0 16px rgb(var(--glow) / 0.75);
+  opacity: 0; transition: opacity 0.2s var(--ease);
+}
+.slit.on { opacity: 1; }
+.sealed {                                 /* offline: a miss dies at the seam */
+  position: absolute; width: 2px; height: 18px; z-index: 7; pointer-events: none;
+  background: var(--bad); box-shadow: 0 0 16px rgb(240 90 90 / 0.6);
+  transition: opacity 0.4s var(--ease);
+}
+.sealed.out { opacity: 0; }
+
+/* floating labels */
+.tag {
+  position: absolute; z-index: 8; pointer-events: none; white-space: nowrap;
+  font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  opacity: 0; transition: opacity 0.28s var(--ease);
+}
+.tag.on { opacity: 1; }
+.tag-ms { padding: 2px 5px; background: var(--inset); color: var(--ok); }
+.tag-sf {
+  padding: 3px 7px; background: var(--inset);
+  border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent);
+  border-radius: var(--radius); color: var(--warn);
+}
+
+/* ---------- key + status ------------------------------------------ */
+.scene-key {
+  position: absolute; left: 14px; right: 12px; bottom: 9px; z-index: 7;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 9px; letter-spacing: var(--tspace); text-transform: uppercase;
+  pointer-events: none;
+}
+.scene-key .items { display: flex; gap: 14px; color: var(--muted); }
+.scene-key .item { display: flex; align-items: center; gap: 6px; transition: opacity 0.5s var(--ease); }
+.scene-key .swatch { width: 14px; height: 2px; background: var(--ok); }
+.scene-key .item-miss .swatch { background: var(--accent); }
+.scene-status { display: flex; align-items: center; gap: 7px; color: var(--ok); }
+.scene-status .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+  animation: statusPulse 2.2s var(--ease) infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--glow-ok) / 0.55); }
+  55% { box-shadow: 0 0 0 8px rgb(var(--glow-ok) / 0); }
+}
+
+/* ---------- the air-gap beat (one class on .scene) ---------------- */
+.scene.offline .ups { opacity: 0.2; }
+.scene.offline .upzone { opacity: 0.25; }
+.scene.offline .rails-up { opacity: 0.15; }
+.scene.offline .item-miss { opacity: 0.25; }
+.scene.offline .gapline {
+  background: var(--bad);
+  box-shadow: 0 0 22px rgb(240 90 90 / 0.35);
+}
+.scene.offline .gaplabel { color: var(--bad); }
+.scene.offline .scene-status { color: var(--warn); }
+.scene.offline .scene-status .dot { background: var(--warn); animation: none; }
+
+/* ---------- responsive ------------------------------------------- */
+@media (max-width: 980px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-copy { border-right: 0; border-bottom: 1px solid var(--line); padding: 40px 28px 34px; }
+  .scene { height: 420px; }
+}
+@media (max-width: 720px) {
+  .scene { height: 340px; }
+  .ups, .rails-up, .gapline, .gaplabel { display: none; }
+  .wall { left: 62%; width: 56px; }
+  .hero-kpis { grid-template-columns: repeat(2, auto); }
+}
+
+/* ---------- reduced motion --------------------------------------- */
+/* JS renders a static end-state (see landing-hero.js); kill the idles too. */
+@media (prefers-reduced-motion: reduce) {
+  .cas-tile.ping, .scene-status .dot, .hero-cmd .caret { animation: none; }
+}

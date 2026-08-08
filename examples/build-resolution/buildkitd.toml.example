@@ -1,0 +1,12 @@
+# docker-container buildx builders have their own resolver configuration. Replace
+# the address below, then create the builder with:
+#
+# docker buildx create --name pkgreg --driver docker-container --use --bootstrap \
+#   --buildkitd-config buildkitd.toml
+
+[dns]
+  nameservers = ["10.20.30.40"]
+
+# BuildKit also needs the private CA when FROM references the pkgreg registry.
+[registry."pkgcache.internal:8443"]
+  ca = ["/etc/buildkit/pkgreg-ca.crt"]

@@ -139,9 +139,9 @@ class Proxy:
 
     def __init__(self, base: str, context: ssl.SSLContext | None = None) -> None:
         self._base = base.rstrip("/")
-        # Internal call to a role that terminates TLS with the private CA; the live
-        # poller skips verification the same way (see services/livefeed.py).
-        self._context = context or ssl._create_unverified_context()
+        # Callers pass the deployment-CA context for internal pkgcache HTTPS.
+        # The default remains normal system verification for standalone use.
+        self._context = context or ssl.create_default_context()
 
     def offline(self) -> bool:
         with self._open("/healthz", _READ_TIMEOUT) as resp:

@@ -1,0 +1,52 @@
+# Build context filter for builds that use the REPO ROOT as their context — today
+# that is examples/Dockerfile (the six-role smoke test), which needs only
+# certs/ca.crt. The per-service images build from their own directories
+# (./pkgcache, ./webui, ./webui/console) and are unaffected by this file.
+#
+# Two reasons this file is not optional:
+#   1. Size — caches/ is the cache tree itself (can be hundreds of GB) and
+#      shuttle/ stages air-gap exports. Without these lines `docker build .`
+#      uploads the entire cache to the daemon.
+#   2. Secrets — private keys, .env and the control-plane stores must never
+#      enter a build context, even if no Dockerfile COPYs them.
+
+# ---- the cache state (its own git + DVC repo) and air-gap staging -----------
+caches/
+shuttle/
+lockwarm/
+dvcstore/
+*.bundle
+
+# ---- secrets ---------------------------------------------------------------
+# certs/ca.crt is public and IS needed by the example build — everything else in
+# certs/ is a private key or CA serial state and stays on the host.
+certs/*.key
+certs/*.srl
+.env
+.env.*
+!.env.example
+config/users.json
+config/htpasswd
+config/projects.json
+
+# ---- build/scratch output --------------------------------------------------
+.git/
+.gitignore
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.venv-*/
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# ---- docs and local working files ------------------------------------------
+docs/
+handoff/
+handoffs/
+design_handoff_checkpoint_transfer/
+demo/
+engineering-conventions/
+*.md
+inde2x.html

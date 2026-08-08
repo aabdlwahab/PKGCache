@@ -46,6 +46,10 @@ _PROJECTS_SUBDIR = "projects"
 _CAS_SUBDIR = ".cas"
 
 
+class RegistryError(ValueError):
+    """The project registry exists but cannot be read safely."""
+
+
 @dataclass(frozen=True)
 class Config:
     role: str                      # oci | npm | pypi | apt
@@ -135,14 +139,21 @@ def load() -> Config:
 def _registry() -> dict:
     """The parsed project registry the control UI manages (PKGCACHE_PROJECTS, JSON):
     the "projects" name map plus the webui-owned side maps we consume ("offline").
-    Missing/unreadable → empty (just global, online). Read fresh on each call so the
-    supervisor in __main__ picks up changes made at runtime."""
+    A missing file means first run (just global, online). A present but unreadable
+    file is an error: the supervisor keeps serving its last-known configuration
+    instead of silently dropping projects or clearing offline flags."""
     path = os.environ.get("PKGCACHE_PROJECTS")
     if path and Path(path).is_file():
         try:
-            return json.loads(Path(path).read_text()) or {}
-        except (OSError, ValueError):
-            return {}
+            data = json.loads(Path(path).read_text()) or {}
+            if not isinstance(data, dict):
+                raise ValueError("top-level value must be an object")
+            for key in ("projects", "tokens", "offline"):
+                if key in data and not isinstance(data[key], dict):
+                    raise ValueError(f"'{key}' must be an object")
+            return data
+        except (OSError, ValueError) as exc:
+            raise RegistryError(f"project registry {path} is unreadable or corrupt") from exc
     return {}
 
 
@@ -168,7 +179,8 @@ def files_token(project: str) -> str | None:
     if _TOKENS_CACHE["key"] != key:
         try:
             data = json.loads(p.read_text()) or {}
-            _TOKENS_CACHE["tokens"] = data.get("tokens", {}) or {}
+            tokens = data.get("tokens", {}) if isinstance(data, dict) else {}
+            _TOKENS_CACHE["tokens"] = tokens if isinstance(tokens, dict) else {}
         except (OSError, ValueError):
             _TOKENS_CACHE["tokens"] = {}
         _TOKENS_CACHE["key"] = key

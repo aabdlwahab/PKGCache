@@ -1,11 +1,17 @@
 # Control-UI API reference
 
+> **Legacy Python-stack reference.** The routes below describe `webui`, not the Go
+> control API used by the embedded console. The current route table is
+> [`go/internal/control/api/v1.go`](../go/internal/control/api/v1.go); its console
+> client is [`console/api.js`](../go/internal/web/dist/console/api.js). See the
+> [Go system overview](system-overview.md) for the current contract.
+
 The webui backend exposes a small JSON HTTP API that the React console (and
 `scripts/pkgops.py`, in-process) drive. It is **standard-library only** — there is
 no framework and no generated OpenAPI schema, so this document is the contract.
 Keep it in sync with [webui/app/api/routes.py](../webui/app/api/routes.py) (the
-declarative route table) and [webui/console/src/lib/types.ts](../webui/console/src/lib/types.ts)
-(the client-side shapes).
+declarative route table). The browser client now lives in the Go tree at
+[go/internal/web/dist/console/api.js](../go/internal/web/dist/console/api.js).
 
 The console reaches the API through the `console` nginx container, which
 reverse-proxies `/api` and `/healthz` to `webui:8088`. All paths below are relative.

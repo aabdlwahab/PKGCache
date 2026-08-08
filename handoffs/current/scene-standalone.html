@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgcache hero animation — standalone playground</title>
+    <!--
+      ISOLATED design playground for the hero animation ONLY.
+      Everything is inlined so you can open this file directly (double-click) and
+      iterate with no build step and no server. This copy intentionally inlines
+      CSS/JS for convenience; the PRODUCTION page (landing.*) must keep CSS/JS in
+      separate same-origin files because it is served under a strict CSP
+      (style-src 'self'; script-src 'self'). See HANDOFF.md.
+    -->
+    <style>
+      /* ---- design tokens (the "night" band the scene lives in) ---------- */
+      :root {
+        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        --radius: 3px; --tspace: 0.12em;
+        --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+        --glow: 74 128 240;      /* accent (blue), rgb for shadows */
+        --glow-ok: 69 217 138;   /* HIT green, rgb for shadows */
+        color-scheme: dark;
+        --bg: oklch(0.16 0.014 254); --bg2: oklch(0.13 0.014 254);
+        --panel: oklch(0.205 0.016 254); --panel2: oklch(0.245 0.016 254);
+        --inset: oklch(0.135 0.014 254);
+        --line: oklch(0.30 0.016 254); --line2: oklch(0.40 0.016 254);
+        --fg: oklch(0.95 0.006 250); --fg2: oklch(0.82 0.01 250); --muted: oklch(0.68 0.014 252);
+        --ok: oklch(0.78 0.15 152); --accent: oklch(0.70 0.15 248);
+        --shadow-md: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.34);
+        --shadow-lg: 0 12px 40px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.4);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center; gap: 18px;
+        font-family: var(--mono); color: var(--fg);
+        background:
+          radial-gradient(1100px 520px at 12% -12%, oklch(0.66 0.16 248 / 0.20), transparent 60%),
+          radial-gradient(900px 480px at 90% 118%, oklch(0.78 0.15 152 / 0.10), transparent 62%),
+          var(--bg);
+        padding: 40px;
+      }
+      .playground-note { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+      .stage { width: min(1080px, 100%); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); }
+
+      /* ====== SCENE (verbatim from landing.css — keep in sync) ============ */
+      .scene {
+        position: relative; height: 340px; overflow: hidden;
+        background:
+          radial-gradient(560px 300px at 50% 52%, oklch(0.66 0.16 248 / 0.10), transparent 70%),
+          linear-gradient(to bottom, transparent, oklch(0.66 0.16 248 / 0.05));
+      }
+      .rails { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+      .rail { stroke: var(--line2); stroke-width: 0.35; stroke-dasharray: 1.4 1.8; opacity: 0.7; }
+      .rail-up { stroke-dasharray: 1 2.2; opacity: 0.5; }
+      .flow { position: absolute; inset: 0; z-index: 2; }
+
+      .fnode {
+        position: absolute; transform: translate(-50%, -50%);
+        display: flex; align-items: center; gap: 7px; white-space: nowrap;
+        font-size: 11.5px; color: var(--fg2);
+        background: color-mix(in oklab, var(--panel) 90%, transparent);
+        border: 1px solid var(--line); border-radius: var(--radius);
+        padding: 6px 10px; box-shadow: var(--shadow-md);
+        transition: border-color .3s var(--ease), color .3s var(--ease), box-shadow .3s var(--ease);
+      }
+      .fclient .fdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .n-docker { left: 11%; top: 16%; } .n-docker .fdot { background: oklch(0.66 0.16 248); }
+      .n-pip    { left: 11%; top: 38%; } .n-pip .fdot    { background: oklch(0.72 0.13 92); }
+      .n-npm    { left: 11%; top: 62%; } .n-npm .fdot    { background: oklch(0.62 0.20 12); }
+      .n-git    { left: 11%; top: 84%; } .n-git .fdot    { background: oklch(0.66 0.17 300); }
+      .fclient.hit { border-color: var(--ok); color: var(--fg); box-shadow: 0 0 16px rgb(var(--glow-ok) / 0.4); }
+
+      .fup { left: 89%; font-size: 10.5px; color: var(--muted); background: color-mix(in oklab, var(--inset) 85%, transparent); }
+      .u-docker { top: 16%; } .u-pip { top: 40%; } .u-npm { top: 62%; } .u-git { top: 84%; }
+      .fup.busy { border-color: var(--accent); color: var(--fg2); box-shadow: 0 0 14px rgb(var(--glow) / 0.3); }
+
+      .fcache {
+        left: 50%; top: 50%; flex-direction: column; align-items: stretch; gap: 8px;
+        padding: 12px; min-width: 148px;
+        background: color-mix(in oklab, var(--panel) 94%, transparent);
+        border-color: var(--line2);
+        box-shadow: var(--shadow-lg), 0 0 34px rgb(var(--glow) / 0.14);
+      }
+      .fcache.flash { border-color: var(--ok); box-shadow: var(--shadow-lg), 0 0 0 1px var(--ok), 0 0 40px rgb(var(--glow-ok) / 0.4); }
+      .fcache-h { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: var(--fg); letter-spacing: 0.04em; text-transform: uppercase; }
+      .cas { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+      .cas-tile { width: 14px; height: 14px; border-radius: 2px; background: var(--inset); border: 1px solid var(--line); transition: background .3s var(--ease), border-color .3s var(--ease); }
+      .cas-tile.lit { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px rgb(var(--glow) / 0.5); }
+      .cas-tile.committed { background: color-mix(in oklab, var(--ok) 55%, var(--inset)); border-color: color-mix(in oklab, var(--ok) 50%, var(--line)); }
+      .cas-tile.ping { animation: tileping .5s var(--ease); }
+      @keyframes tileping { 0% { transform: scale(1); } 40% { transform: scale(1.5); filter: brightness(1.6); } 100% { transform: scale(1); } }
+
+      .req-dot {
+        position: absolute; top: 0; left: 0; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+        border-radius: 50%; z-index: 3; pointer-events: none;
+        background: currentColor; box-shadow: 0 0 10px currentColor;
+      }
+      .rd-docker { color: oklch(0.66 0.16 248); } .rd-pip { color: oklch(0.72 0.13 92); }
+      .rd-npm { color: oklch(0.62 0.20 12); } .rd-git { color: oklch(0.66 0.17 300); }
+      .rd-hit { color: var(--ok); }
+      .rd-stream { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; }
+
+      .scene-readout {
+        position: absolute; left: 26px; bottom: 12px; z-index: 4;
+        display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--muted); letter-spacing: 0.03em;
+      }
+      .scene-readout b { color: var(--fg); font-weight: 600; }
+      .scene-readout .dot { display: inline-block; margin-right: 5px; vertical-align: 1px; }
+      .ro-sep { width: 1px; height: 12px; background: var(--line2); }
+      .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+      .dot-ok { background: var(--ok); animation: pulse 2.2s var(--ease) infinite; }
+      @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgb(var(--glow-ok) / 0.55); } 55% { box-shadow: 0 0 0 8px rgb(var(--glow-ok) / 0); } }
+
+      @media (max-width: 720px) {
+        .scene { height: 300px; }
+        .fup, .rail-up { display: none; }
+        .fcache { min-width: 120px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dot-ok, .cas-tile.ping { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <p class="playground-note">pkgcache hero animation — isolated playground · resize the window to test responsiveness · toggle OS "reduce motion" to see the static fallback</p>
+
+    <div class="stage">
+      <!-- ===== SCENE MARKUP (verbatim from landing.html) ===== -->
+      <div class="scene" aria-hidden="true">
+        <svg class="rails" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line class="rail" x1="11" y1="16" x2="50" y2="50" />
+          <line class="rail" x1="11" y1="38" x2="50" y2="50" />
+          <line class="rail" x1="11" y1="62" x2="50" y2="50" />
+          <line class="rail" x1="11" y1="84" x2="50" y2="50" />
+          <line class="rail rail-up" x1="50" y1="50" x2="89" y2="16" />
+          <line class="rail rail-up" x1="50" y1="50" x2="89" y2="40" />
+          <line class="rail rail-up" x1="50" y1="50" x2="89" y2="62" />
+          <line class="rail rail-up" x1="50" y1="50" x2="89" y2="84" />
+        </svg>
+
+        <div class="flow" id="flow">
+          <div class="fnode fclient n-docker" data-node="c-docker"><span class="fdot"></span>docker</div>
+          <div class="fnode fclient n-pip" data-node="c-pip"><span class="fdot"></span>pip / uv</div>
+          <div class="fnode fclient n-npm" data-node="c-npm"><span class="fdot"></span>npm</div>
+          <div class="fnode fclient n-git" data-node="c-git"><span class="fdot"></span>git</div>
+
+          <div class="fnode fup u-docker" data-node="u-docker">registry-1.docker.io</div>
+          <div class="fnode fup u-pip" data-node="u-pip">pypi.org</div>
+          <div class="fnode fup u-npm" data-node="u-npm">registry.npmjs.org</div>
+          <div class="fnode fup u-git" data-node="u-git">github.com</div>
+
+          <div class="fnode fcache" data-node="cache">
+            <div class="fcache-h"><span class="dot dot-ok"></span>pkgcache · CAS</div>
+            <div class="cas" id="cas"></div>
+          </div>
+        </div>
+
+        <div class="scene-readout">
+          <span><b id="hitrate">—</b> hit rate</span>
+          <span class="ro-sep"></span>
+          <span><b id="cached">0</b> blobs cached</span>
+          <span class="ro-sep"></span>
+          <span><span class="dot dot-ok"></span>online</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      /* ===== SCENE ENGINE (verbatim logic from landing.js) ===== */
+      (function () {
+        "use strict";
+        var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        var scene = document.querySelector(".scene");
+        var flow = document.getElementById("flow");
+        var casEl = document.getElementById("cas");
+        var hitrateEl = document.getElementById("hitrate");
+        var cachedEl = document.getElementById("cached");
+        if (!(scene && flow && casEl)) return;
+
+        var TILES = 24, LIT_MAX = 15;
+        var tiles = [];
+        for (var t = 0; t < TILES; t++) {
+          var tile = document.createElement("div");
+          tile.className = "cas-tile";
+          casEl.appendChild(tile);
+          tiles.push(tile);
+        }
+
+        if (reduce || typeof flow.animate !== "function") {
+          for (var s0 = 0; s0 < 13; s0++) tiles[s0].classList.add("committed");
+          if (hitrateEl) hitrateEl.textContent = "93%";
+          if (cachedEl) cachedEl.textContent = "1,284";
+          return;
+        }
+
+        var clients = ["docker", "pip", "npm", "git"];
+        var centers = {}, cacheL = null, cacheR = null;
+        var measure = function () {
+          var s = scene.getBoundingClientRect();
+          flow.querySelectorAll(".fnode").forEach(function (n) {
+            var r = n.getBoundingClientRect();
+            centers[n.getAttribute("data-node")] = { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+          });
+          var c = flow.querySelector(".fcache").getBoundingClientRect();
+          cacheL = { x: c.left - s.left, y: c.top - s.top + c.height / 2 };
+          cacheR = { x: c.right - s.left, y: c.top - s.top + c.height / 2 };
+        };
+        measure();
+        if ("ResizeObserver" in window) new ResizeObserver(measure).observe(scene);
+        else window.addEventListener("resize", measure);
+
+        var hits = 0, misses = 0, cachedTotal = 0, committed = 0, live = 0;
+        var readout = function () {
+          var tot = hits + misses;
+          if (tot >= 4 && hitrateEl) hitrateEl.textContent = Math.round((hits / tot) * 100) + "%";
+          if (cachedEl) cachedEl.textContent = cachedTotal.toLocaleString();
+        };
+        var replay = function (el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+        var pingTile = function () {
+          var on = tiles.filter(function (x) { return x.classList.contains("lit") || x.classList.contains("committed"); });
+          if (on.length) replay(on[(Math.random() * on.length) | 0], "ping");
+        };
+        var checkpoint = function () {
+          replay(flow.querySelector(".fcache"), "flash");
+          setTimeout(function () { flow.querySelector(".fcache").classList.remove("flash"); }, 720);
+          tiles.forEach(function (x) { if (x.classList.contains("lit")) { x.classList.remove("lit"); x.classList.add("committed"); committed++; } });
+          if (committed >= TILES) setTimeout(function () { tiles.forEach(function (x) { x.classList.remove("committed"); }); committed = 0; }, 1500);
+        };
+        var lightTile = function () {
+          var empty = tiles.filter(function (x) { return !x.classList.contains("lit") && !x.classList.contains("committed"); });
+          if (!empty.length) return;
+          empty[0].classList.add("lit");
+          cachedTotal++;
+          if (tiles.filter(function (x) { return x.classList.contains("lit"); }).length >= LIT_MAX) checkpoint();
+        };
+        var move = function (el, from, to, dur, ease) {
+          el.style.transform = "translate(" + from.x + "px," + from.y + "px)";
+          return el.animate(
+            [{ transform: "translate(" + from.x + "px," + from.y + "px)" }, { transform: "translate(" + to.x + "px," + to.y + "px)" }],
+            { duration: dur, easing: ease || "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+          ).finished;
+        };
+        var dot = function (cls) { var d = document.createElement("div"); d.className = "req-dot " + cls; flow.appendChild(d); return d; };
+        var flash = function (sel, cls, ms) { var n = flow.querySelector(sel); if (!n) return; n.classList.add(cls); setTimeout(function () { n.classList.remove(cls); }, ms); };
+
+        var request = function () {
+          var eco = clients[(Math.random() * clients.length) | 0];
+          var from = centers["c-" + eco];
+          if (!from) return;
+          var d = dot("rd-" + eco);
+          live++;
+          move(d, from, cacheL, 620, "cubic-bezier(.5,0,.5,1)").then(function () {
+            if (Math.random() >= 0.42) {
+              hits++; pingTile(); flash(".fcache", "flash", 300);
+              var r = dot("rd-hit");
+              return move(r, cacheL, from, 520, "cubic-bezier(.2,.7,.3,1)").then(function () {
+                flash(".n-" + eco, "hit", 500); r.remove(); d.remove(); live--; readout();
+              });
+            }
+            misses++;
+            var up = centers["u-" + eco];
+            flash(".u-" + eco, "busy", 1500);
+            return move(d, cacheL, cacheR, 200)
+              .then(function () { return move(d, cacheR, up, 560, "cubic-bezier(.5,0,.5,1)"); })
+              .then(function () {
+                d.remove();
+                var st = dot("rd-" + eco + " rd-stream");
+                return move(st, up, cacheR, 820, "cubic-bezier(.4,0,.6,1)").then(function () {
+                  lightTile();
+                  var r = dot("rd-" + eco);
+                  return move(r, cacheL, from, 520, "cubic-bezier(.2,.7,.3,1)").then(function () {
+                    flash(".n-" + eco, "hit", 400); st.remove(); r.remove(); live--; readout();
+                  });
+                });
+              });
+          });
+        };
+        var loop = function () {
+          if (!document.hidden && live < 7) request();
+          setTimeout(loop, 620 + Math.random() * 640);
+        };
+        setTimeout(loop, 500);
+      })();
+    </script>
+  </body>
+</html>

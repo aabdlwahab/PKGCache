@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgcache hero — membrane redesign · standalone playground</title>
+    <!--
+      Isolated playground. Open it directly (double-click) — no build, no server.
+      It loads the REAL landing-hero.css / landing-hero.js from this folder, so
+      whatever you tweak here is what ships. The only inlined thing is the token
+      block below, which in production comes from landing.css (:root / .night).
+    -->
+    <style>
+      /* ---- tokens: production copy lives at the top of landing.css ------- */
+      :root {
+        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        --radius: 3px; --tspace: 0.12em;
+        --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+        --glow: 74 128 240;     /* accent, rgb for shadows */
+        --glow-ok: 69 217 138;  /* HIT green, rgb for shadows */
+        color-scheme: dark;
+        --bg: oklch(0.16 0.014 254); --bg2: oklch(0.148 0.014 254);
+        --panel: oklch(0.205 0.016 254); --panel2: oklch(0.245 0.016 254);
+        --inset: oklch(0.135 0.014 254);
+        --line: oklch(0.30 0.016 254); --line2: oklch(0.40 0.016 254);
+        --fg: oklch(0.95 0.006 250); --fg2: oklch(0.82 0.01 250); --muted: oklch(0.68 0.014 252);
+        --ok: oklch(0.78 0.15 152); --accent: oklch(0.66 0.16 248);
+        --bad: oklch(0.62 0.20 28); --warn: oklch(0.74 0.15 82);
+        --shadow-md: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.34);
+        --shadow-lg: 0 12px 40px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.4);
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        src: local("IBM Plex Mono"), url("/fonts/IBMPlexMono.woff2") format("woff2");
+        font-weight: 100 700; font-display: swap;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; padding: 36px;
+        display: flex; flex-direction: column; align-items: center; gap: 16px;
+        font-family: var(--mono); color: var(--fg); background: var(--bg);
+      }
+      .note { font-size: 12px; letter-spacing: 0.04em; color: var(--muted); text-align: center; max-width: 90ch; line-height: 1.6; }
+      .frame { width: min(1120px, 100%); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); }
+      a { color: var(--accent); }
+    </style>
+    <link rel="stylesheet" href="landing-hero.css" />
+  </head>
+  <body>
+    <p class="note">
+      pkgcache hero — “membrane” redesign · resize the window to test responsiveness ·
+      toggle your OS “reduce motion” setting to see the static fallback ·
+      the air-gap beat fires every 24 s
+    </p>
+
+    <div class="frame" id="frame"></div>
+
+    <p class="note">markup is loaded from <code>landing-hero.html</code> — edit that file, not this one</p>
+
+    <script>
+      /* Playground-only loader: injects the production markup fragment.
+         In the real page the fragment is part of landing.html and no fetch
+         happens (which also keeps it working under file:// — see fallback). */
+      (function () {
+        var frame = document.getElementById("frame");
+        function boot() {
+          var s = document.createElement("script");
+          s.src = "landing-hero.js";
+          document.body.appendChild(s);
+        }
+        fetch("landing-hero.html")
+          .then(function (r) { return r.text(); })
+          .then(function (html) { frame.innerHTML = html; boot(); })
+          .catch(function () {
+            frame.innerHTML =
+              '<p class="note" style="padding:24px">Opened via file:// — the browser blocked reading ' +
+              'landing-hero.html. Run <code>python3 -m http.server 8000</code> in this folder and open ' +
+              '<a href="http://localhost:8000/scene-standalone.html">localhost:8000/scene-standalone.html</a>.</p>';
+          });
+      })();
+    </script>
+  </body>
+</html>

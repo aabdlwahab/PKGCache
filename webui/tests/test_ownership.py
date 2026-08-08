@@ -58,7 +58,8 @@ class _Handler:
     def send_json(self, obj, code=200, headers=None):
         self.sent = (code, obj)
 
-    def send_download(self, path, filename):
+    def send_download(self, path, filename, content_type="application/octet-stream",
+                      headers=None):
         self.sent = (200, {"download": str(path)})
 
 

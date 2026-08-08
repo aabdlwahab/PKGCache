@@ -23,7 +23,6 @@ import os
 import pathlib
 import re
 import shutil
-import ssl
 import subprocess
 import time
 import urllib.error
@@ -32,7 +31,7 @@ import urllib.request
 from app import settings
 from app.errors import OpError
 from app.gateways import proc
-from app.gateways.pkgcache import fetch_json
+from app.gateways.pkgcache import INTERNAL_TLS, fetch_json
 from app.gateways.pkgcache import git_maintain_url as _git_maintain_url
 from app.gateways.proc import run
 from app.services import projects
@@ -304,7 +303,7 @@ class Operations:
             try:
                 req = urllib.request.Request(url, method="POST")
                 with urllib.request.urlopen(
-                    req, timeout=1800, context=ssl._create_unverified_context()
+                    req, timeout=1800, context=INTERNAL_TLS
                 ) as resp:
                     data = json.loads(resp.read().decode("utf-8") or "{}")
                 yield _echo(f"  repacked {data.get('maintained', 0)} mirror(s) via the live git role")
@@ -369,7 +368,7 @@ class Operations:
 
         yield _echo("regenerating the cross-ecosystem manifest")
         # Point gen_manifest at THIS project's ledgers (global → caches/ by default).
-        yield from run(["python3", "scripts/gen_manifest.py"], cwd=ROOT,
+        yield from run(["python3", "-m", "app.manifest"], cwd=ROOT / "webui",
                        env={"PKGCACHE_MANIFEST_ROOT": str(repo)})
 
         # The ONE deliberate git-mirror file rewrite per checkpoint: geometric repack
@@ -638,7 +637,7 @@ class Operations:
         file would break an offline `uv sync`."""
         base, prefix = pypi_internal(project)
         public_base = f"https://{host}:{projects.ROLE_PORT['pypi']}{prefix}"
-        proxy = Proxy(base)
+        proxy = Proxy(base, context=INTERNAL_TLS)
 
         yield _echo("parsing the uploaded uv.lock")
         packages = LockParser().parse(lock_text)

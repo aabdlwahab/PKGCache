@@ -1,5 +1,12 @@
 # Generic artifacts (the `files` ecosystem)
 
+> **Legacy Python-stack reference.** This page documents the retired `pkgcache` +
+> `webui` storage and token model, not the Go server. For current client directions,
+> use the live [`/tutorial`](../go/internal/web/dist/tutorial.html) and the Connect
+> page. For the implemented Go API and storage model, see
+> [system overview](system-overview.md) and
+> [`internal/eco/files`](../go/internal/eco/files/).
+
 The `files` role (on the unified HTTPS port, `8443`) is a **generic artifact
 store** — a home for things with no package protocol: build outputs, datasets,
 installers, tarballs. It's the system's only **write** path.

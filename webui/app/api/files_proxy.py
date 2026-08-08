@@ -9,10 +9,13 @@ project-prefix rules live in one place.
 `proxy(handler, method)` operates on the live BaseHTTPRequestHandler so it can stream
 the socket body with no buffering; it's a free function (not a handler method) to
 keep the controller thin and this streaming logic isolated."""
+import logging
 import urllib.parse
 
 from app.gateways import pkgcache
 from app.services import projects
+
+_LOG = logging.getLogger(__name__)
 
 
 class LimitedReader:
@@ -54,7 +57,12 @@ def proxy(handler, method):
     headers = {"Authorization": f"Bearer {token}"}
     body = None
     if method == "PUT":
-        length = int(handler.headers.get("Content-Length", 0))
+        try:
+            length = int(handler.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            return handler.send_json({"error": "invalid Content-Length"}, 400)
+        if length < 0:
+            return handler.send_json({"error": "invalid Content-Length"}, 400)
         headers["Content-Length"] = str(length)
         headers["Content-Type"] = "application/octet-stream"
         body = LimitedReader(handler.rfile, length)
@@ -71,8 +79,8 @@ def proxy(handler, method):
         if conn is not None:
             try:
                 conn.close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - cleanup must not mask the response
+                _LOG.debug("failed to close files proxy connection", exc_info=True)
     handler.send_response(code)
     handler.send_header("Content-Type", ctype)
     handler.send_header("Content-Length", str(len(payload)))

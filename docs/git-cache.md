@@ -1,11 +1,16 @@
 # Caching git repositories
 
+> **Legacy Python-stack reference.** This page describes the retired Python Git
+> cache. The Go implementation differs in storage, maintenance, and control-plane
+> behavior. Use [phase 5 — managed Git](phase5-git.md) and the live Connect page for
+> current behavior and client commands.
+
 The `git` role is a **mirror-and-serve** smart-HTTP git server (on the unified
 HTTPS port `8443`, under `/<project>/git/…`).
 Unlike the other ecosystems it can't byte-cache responses — a git fetch is a
-negotiation — so it keeps a real bare mirror on disk (`git clone --mirror`),
-revalidates it online, and serves `git upload-pack` from it. Offline it serves the
-mirror as-is.
+negotiation — so it keeps a real bare mirror on disk (bare init plus a heads/tags
+fetch), revalidates it online, and serves `git upload-pack` from it. Offline it serves
+the mirror as-is.
 
 It caches whatever pulls code from git: `pip install git+https://…`, CMake
 CPM/FetchContent, vcpkg ports, submodules, ansible roles.
@@ -55,13 +60,18 @@ CI one-liner: `GIT_SSL_CAINFO=certs/ca.crt git clone https://cache.local:8443/gl
   tags, and any commit reachable from them (including `--depth`, `--filter=blob:none`,
   and SHA-pinned `fetch <sha>`) works.
 - **Freshness.** A mirror is re-fetched from upstream at most once per `refs_ttl`
-  (default 60 s, see `pkgcache/pkgcache.yaml`). Within that window clones are served
-  from the mirror with no upstream contact (a cache hit).
+  (default 60 s, configured as `git.refs_ttl`). Within that window clones are
+  served from the mirror with no upstream contact (a cache hit).
 - **Offline.** With `OFFLINE=1`, cloning a mirrored repo works with no upstream; an
   un-mirrored repo returns 404 (the expected air-gap miss).
 - **First clone of a large repo** makes the first requester wait for the server-side
-  `clone --mirror` (single-flight — concurrent requesters share it); progress shows
-  in the console's Downloads panel.
+  mirror initialization and fetch (single-flight — concurrent requesters share it).
+- **Bounded negotiation.** CPU-heavy `upload-pack` processes are capped by
+  `git.max_upload_packs` (default 8). A disconnected client cancels and reaps its
+  subprocess.
+- **Git LFS.** Download batches are forwarded to the origin, then the sha256-addressed
+  object is served through the shared CAS. Repeated and offline pulls reuse the
+  cached object; LFS uploads are refused with the rest of the read-only protocol.
 
 ## Pre-seeding for the air gap
 
@@ -81,10 +91,8 @@ clone. Then `pkgops.py checkpoint` versions the mirrors into DVC.
 - **Local filesystem only.** Serving `upload-pack` while a fetch/repack runs relies
   on POSIX unlink-while-open semantics; the cache tree must not be on NFS.
 
-## Not yet cached
+## Limitations
 
-- **Git LFS** objects (phase 2) — repos that store large binaries in LFS will fetch
-  those objects direct from upstream until the LFS cache lands (fails offline).
 - Very large mirrors (e.g. `torvalds/linux` ≈ 3–4 GB) are cached whole; there is no
   eviction (by design — the stats tab's per-repo request counts inform a future
   policy).

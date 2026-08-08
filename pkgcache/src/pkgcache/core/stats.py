@@ -13,8 +13,11 @@ views the stats tab renders:
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
+
+_LOG = logging.getLogger(__name__)
 
 
 class Stats:
@@ -60,13 +63,11 @@ class Stats:
 
     async def flush(self, ledger) -> None:
         """Persist accumulated deltas. Run off the event loop (sqlite is blocking)."""
-        import asyncio
-
         access, traffic, bandwidth = self._drain()
         if not (access or traffic or bandwidth):
             return
         try:
-            await asyncio.to_thread(ledger.apply_stats, access, traffic, bandwidth)
+            await ledger.aapply_stats(access, traffic, bandwidth)
         except Exception:  # noqa: BLE001 — never let a flush failure crash the loop
             # Best-effort: drop this window rather than re-buffer (avoids unbounded growth).
-            pass
+            _LOG.exception("failed to persist usage stats; dropping the current window")

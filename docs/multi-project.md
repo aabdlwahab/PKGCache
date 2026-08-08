@@ -1,5 +1,11 @@
 # Multi-project caches on one central instance
 
+> **Legacy Python-stack reference.** The DVC repositories, shuttle layout, and
+> `webui` behavior below are not the Go implementation. For the current shared-CAS,
+> project routing, quotas, tokens, snapshots, and ownership model, use
+> [system overview](system-overview.md), [phase 7](phase7-control-plane.md), and
+> [phase 8](phase8-air-gap.md).
+
 ## Goal
 
 Let the **single** central pkgcache instance serve multiple isolated *projects*,
@@ -199,7 +205,7 @@ Per route, with enforcement on:
 | Operate a project (checkpoint, rollback, export/import, per-project offline, rotate token, delete artifact, delete project) | owner or superuser |
 | Create a project (becomes its owner) | admin or superuser |
 | Reassign a project's owner (`POST /api/projects/<name>/owner`) | superuser |
-| Instance-wide mode recreate (`action=mode` job) | superuser |
+| Instance-wide mode switch (`action=mode` job) | superuser |
 | Account management (`/api/users`) | superuser (any account); admin (own users only) |
 
 An absent owner (global, pre-auth projects) reads as superuser-owned, so only a

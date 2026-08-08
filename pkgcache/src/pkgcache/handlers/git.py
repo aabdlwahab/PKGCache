@@ -14,8 +14,11 @@ Read-only: push (git-receive-pack) is always refused. Anonymous/public repos onl
 from __future__ import annotations
 
 import gzip
+import io
+import logging
 import re
 import subprocess
+import zlib
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -29,6 +32,7 @@ from ..core.ledger import ArtifactRecord
 from ..core.storage import UnsafePath
 from .common import external_base
 
+_LOG = logging.getLogger(__name__)
 _LFS_CT = "application/vnd.git-lfs+json"
 _OID_RE = re.compile(r"^[0-9a-f]{64}$")   # LFS oids are sha256 hex
 
@@ -42,6 +46,19 @@ _NOCACHE = {
 }
 _MAX_BODY = 64 << 20  # buffer cap on the upload-pack POST negotiation body
 _HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", re.I)
+
+
+class _NegotiationTooLarge(ValueError):
+    pass
+
+
+def _gunzip_limited(data: bytes, limit: int = _MAX_BODY) -> bytes:
+    """Inflate one request without allowing a small gzip body to exhaust memory."""
+    with gzip.GzipFile(fileobj=io.BytesIO(data)) as compressed:
+        body = compressed.read(limit + 1)
+    if len(body) > limit:
+        raise _NegotiationTooLarge
+    return body
 
 
 class GitRepo:
@@ -131,7 +148,12 @@ class GitRepo:
         if len(body) > _MAX_BODY:
             return PlainTextResponse("negotiation body too large", status_code=413)
         if request.headers.get("content-encoding", "").lower() == "gzip":
-            body = gzip.decompress(body)
+            try:
+                body = _gunzip_limited(body)
+            except _NegotiationTooLarge:
+                return PlainTextResponse("negotiation body too large", status_code=413)
+            except (OSError, EOFError, zlib.error):
+                return PlainTextResponse("invalid gzip body", status_code=400)
 
         # A POST usually follows a fresh info/refs; if the mirror somehow isn't here
         # (direct POST), materialize it now.
@@ -181,7 +203,7 @@ class GitRepo:
                 await self._mirror.maintain(repo, mirror)
                 maintained += 1
             except Exception:  # noqa: BLE001 — one bad mirror shouldn't abort the rest
-                pass
+                _LOG.exception("failed to maintain git mirror %s", mirror)
         return JSONResponse({"maintained": maintained})
 
     # ---- Git LFS (phase 2) --------------------------------------------------

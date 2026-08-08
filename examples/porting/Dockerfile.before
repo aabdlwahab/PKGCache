@@ -1,0 +1,21 @@
+# A perfectly ordinary Dockerfile, before it knows the cache exists.
+# Every line here reaches the public internet: Docker Hub, deb.debian.org,
+# pypi.org, registry.npmjs.org, github.com.
+#
+# `diff Dockerfile.before Dockerfile` is the whole porting guide.
+FROM python:3.12-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git nodejs npm ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY package.json ./
+RUN npm install --omit=dev
+
+COPY app.py ./
+CMD ["python", "app.py"]

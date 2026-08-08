@@ -1,0 +1,62 @@
+package-registry / pkgreg
+Copyright 2026 Brightskies
+
+This product includes software developed at Brightskies.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY SOFTWARE
+--------------------------------------------------------------------------------
+
+The `pkgreg` server binary statically links the modules listed below. The list is
+derived from the linked module set reported by `go version -m bin/pkgreg`, not
+from `go.mod`, so it names what is actually distributed rather than what is
+merely required for development or testing.
+
+`pkgreg-client` and `pkgreg-bridge` link no third-party modules at all — they are
+standard-library only.
+
+  Apache License 2.0
+    github.com/prometheus/client_golang
+    github.com/prometheus/client_model
+    github.com/prometheus/common
+    github.com/prometheus/procfs
+
+  BSD 3-Clause "New" or "Revised" License
+    github.com/google/uuid
+    github.com/munnerz/goautoneg
+    github.com/remyoudompheng/bigfft
+    golang.org/x/sync
+    golang.org/x/sys
+    google.golang.org/protobuf
+    modernc.org/libc
+    modernc.org/mathutil
+    modernc.org/memory
+    modernc.org/sqlite
+
+  MIT License
+    github.com/beorn7/perks
+    github.com/cespare/xxhash/v2
+    github.com/dustin/go-humanize
+
+  MIT and Apache License 2.0 (dual)
+    gopkg.in/yaml.v3
+
+modernc.org/sqlite is a pure-Go translation of SQLite. SQLite itself is in the
+public domain; the translation carries the BSD 3-Clause license above, and its
+distribution includes the upstream SQLite notice as SQLITE-LICENSE.
+
+Full license texts for each module are available in the Go module cache under
+the module's own LICENSE file, and are reproduced in the third-party license
+inventory attached to each release. Exact pinned versions are recorded in
+go/go.mod and go/go.sum.
