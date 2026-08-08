@@ -22,6 +22,9 @@ var commands = map[string]struct {
 	summary string
 	run     func(ctx context.Context, args []string) error
 }{
+	"run":     {"run one command with its tools pointed at the cache", runRun},
+	"shell":   {"open a shell whose tools use the cache", runShell},
+	"env":     {"print the settings that point tools at the cache", runEnv},
 	"status":  {"is the cache running, and what is in it", runStatus},
 	"stop":    {"stop the cache daemon", runStop},
 	"serve":   {"run the cache in the foreground", runServe},
@@ -29,7 +32,7 @@ var commands = map[string]struct {
 }
 
 // order fixes the help text, which a map iteration would shuffle between runs.
-var order = []string{"status", "stop", "serve", "version"}
+var order = []string{"run", "shell", "env", "status", "stop", "serve", "version"}
 
 func main() {
 	os.Exit(dispatch())
@@ -60,11 +63,38 @@ func dispatch() int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		var exit *exitError
+		if errors.As(err, &exit) {
+			if exit.err != nil {
+				fmt.Fprintf(os.Stderr, "pkgcache: %v\n", exit.err)
+			}
+			return exit.code
+		}
 		fmt.Fprintf(os.Stderr, "pkgcache: %v\n", err)
 		return 1
 	}
 	return 0
 }
+
+// exitError carries an exit status a caller should see instead of 1.
+//
+// Two things need it. A command run through `pkgcache run` has already reported its
+// own failure, and its status is the honest answer — wrapping a compiler's exit 2 in
+// pkgcache's exit 1 loses information a script may branch on. And a full cache exits
+// 75, distinctly, whatever else happened.
+type exitError struct {
+	code int
+	err  error
+}
+
+func (e *exitError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("exit status %d", e.code)
+}
+
+func (e *exitError) Unwrap() error { return e.err }
 
 func usage() {
 	fmt.Fprint(os.Stderr, `pkgcache — a package cache for this machine

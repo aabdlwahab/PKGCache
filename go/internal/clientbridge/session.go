@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
-	"strings"
 	"time"
+
+	"github.com/brightskies/pkgreg/internal/session"
 )
 
 // SessionOptions starts a loopback bridge and an interactive child shell whose
@@ -160,114 +160,28 @@ environment; no certificate or configuration is installed on this machine.
 	return nil
 }
 
+// sessionShell and sessionEnvironment delegate to internal/session, which pkgcache
+// shares. Which variable each tool reads is the same knowledge in both programs; what
+// differs is only the base URL and the namespace.
 func sessionShell(options SessionOptions) (string, []string, error) {
-	goos := options.OperatingSystem
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	switch goos {
-	case "linux", "darwin":
-		shell := options.Shell
-		if shell == "" {
-			shell = strings.TrimSpace(os.Getenv("SHELL"))
-		}
-		if shell == "" {
-			shell = "/bin/sh"
-		}
-		return shell, []string{"-i"}, nil
-	case "windows":
-		shell := options.Shell
-		if shell == "" {
-			shell = "powershell.exe"
-		}
-		return shell, []string{"-NoLogo"}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported operating system %q", goos)
-	}
+	return session.Shell(options.Shell, options.OperatingSystem)
 }
 
 func sessionEnvironment(base []string, local string, options SessionOptions) []string {
-	remove := map[string]bool{
-		"PKGREG_SESSION":         true,
-		"PKGREG_SERVER":          true,
-		"PKGREG_PROJECT":         true,
-		"PKGREG_CA_FILE":         true,
-		"PKGREG_CA_SHA256":       true,
-		"PKGREG_BRIDGE_URL":      true,
-		"PKGREG_GIT_URL":         true,
-		"PKGREG_APT_PROXY":       true,
-		"PKGREG_FILES_URL":       true,
-		"PKGREG_DOCKER_REGISTRY": true,
-		"PIP_CERT":               true,
-		"PIP_INDEX_URL":          true,
-		"UV_NATIVE_TLS":          true,
-		"UV_DEFAULT_INDEX":       true,
-		"NODE_EXTRA_CA_CERTS":    true,
-		"NPM_CONFIG_CAFILE":      true,
-		"NPM_CONFIG_REGISTRY":    true,
-		"GIT_SSL_CAINFO":         true,
-		"NO_PROXY":               true,
-		"no_proxy":               true,
-	}
-	out := make([]string, 0, len(base)+14)
-	noProxy := ""
-	for _, entry := range base {
-		key, value, found := strings.Cut(entry, "=")
-		upper := strings.ToUpper(key)
-		if upper == "NO_PROXY" && noProxy == "" {
-			noProxy = value
-		}
-		if found && remove[upper] {
-			continue
-		}
-		out = append(out, entry)
-	}
-	noProxy = appendNoProxy(noProxy, "127.0.0.1", "localhost")
-	bridgeURL := "http://" + local
-	projectBase := bridgeURL + "/" + options.Project
-	values := [][2]string{
-		{"PKGREG_SESSION", "temporary"},
-		{"PKGREG_SERVER", options.Server},
-		{"PKGREG_PROJECT", options.Project},
-		{"PKGREG_CA_SHA256", options.CAFingerprint},
-		{"PKGREG_BRIDGE_URL", bridgeURL},
-		{"PKGREG_DOCKER_REGISTRY", local},
-		{"PKGREG_GIT_URL", projectBase + "/git"},
-		{"PKGREG_FILES_URL", projectBase + "/files/"},
-		{"PIP_INDEX_URL", projectBase + "/pypi/root/pypi/+simple/"},
-		{"UV_DEFAULT_INDEX", projectBase + "/pypi/root/pypi/+simple/"},
-		{"NPM_CONFIG_REGISTRY", projectBase + "/npm/"},
-		{"NO_PROXY", noProxy},
-		{"no_proxy", noProxy},
-	}
-	if options.AptProxy != "" {
-		values = append(values, [2]string{"PKGREG_APT_PROXY", options.AptProxy})
-	}
-	for _, value := range values {
-		if value[1] != "" {
-			out = append(out, value[0]+"="+value[1])
-		}
-	}
-	return out
-}
-
-func appendNoProxy(value string, hosts ...string) string {
-	parts := strings.Split(value, ",")
-	seen := make(map[string]bool, len(parts)+len(hosts))
-	clean := make([]string, 0, len(parts)+len(hosts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" || seen[part] {
-			continue
-		}
-		seen[part] = true
-		clean = append(clean, part)
-	}
-	for _, host := range hosts {
-		if !seen[host] {
-			seen[host] = true
-			clean = append(clean, host)
-		}
-	}
-	return strings.Join(clean, ",")
+	return session.Environment(base, session.Options{
+		Prefix:         session.PkgregPrefix,
+		Kind:           "temporary",
+		BaseURL:        "http://" + local,
+		Project:        options.Project,
+		AptProxy:       options.AptProxy,
+		DockerRegistry: local,
+		// Deliberately no GitHosts. The bridge could redirect clones the way pkgcache
+		// does, but doing it here would change what an installed pkgreg-client does to
+		// a user's git configuration, and that belongs in its own release rather than
+		// arriving as a side effect of sharing code.
+		Extra: [][2]string{
+			{session.PkgregPrefix + "SERVER", options.Server},
+			{session.PkgregPrefix + "CA_SHA256", options.CAFingerprint},
+		},
+	})
 }
