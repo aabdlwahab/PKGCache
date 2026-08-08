@@ -48,8 +48,11 @@ func Defaults() Snapshot {
 		Upstream: Upstream{
 			RequestTimeout: 20 * time.Minute,
 			ConnectTimeout: 30 * time.Second,
-			MaxIdlePerHost: 32,
-			UserAgent:      "pkgreg/1",
+			// Generous for an index a slow origin has to generate, and still two orders
+			// of magnitude below the request timeout.
+			ResponseHeaderTimeout: 60 * time.Second,
+			MaxIdlePerHost:        32,
+			UserAgent:             "pkgreg/1",
 		},
 		Git: Git{
 			RefsTTL:        60 * time.Second,
@@ -296,6 +299,7 @@ func applyEnv(s *Snapshot) error {
 		{"BATCH_INTERVAL", &s.Catalog.BatchInterval},
 		{"REQUEST_TIMEOUT", &s.Upstream.RequestTimeout},
 		{"CONNECT_TIMEOUT", &s.Upstream.ConnectTimeout},
+		{"RESPONSE_HEADER_TIMEOUT", &s.Upstream.ResponseHeaderTimeout},
 		{"GIT_REFS_TTL", &s.Git.RefsTTL},
 		{"GC_INTERVAL", &s.Maintenance.GCInterval},
 		{"GC_GRACE", &s.Maintenance.GCGrace},

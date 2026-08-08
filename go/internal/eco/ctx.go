@@ -417,10 +417,66 @@ func (c *Ctx) WriteError(err error) {
 // ---- helpers --------------------------------------------------------------
 
 // UpstreamRequest builds an outbound request carrying this ecosystem's label.
+// UpstreamRequest builds an outbound request for a URL an ecosystem has composed.
+//
+// The fallbacks are derived rather than declared, which is what keeps the six adapters
+// out of this entirely. Every one of them builds a URL as origin + an ecosystem-specific
+// path, so an alternate origin for the same path is the same URL with its prefix
+// swapped: the path is the ecosystem's business and the origin is not. An adapter that
+// gained chain awareness would be six copies of this logic that could disagree.
 func (c *Ctx) UpstreamRequest(url string, headers http.Header) upstream.Request {
 	request := upstream.Request{URL: url, Headers: headers, Eco: c.Eco}
 	request.Credential = c.credentialForURL(url)
+	request.Fallbacks = c.fallbacksFor(url)
 	return request
+}
+
+// fallbacksFor finds the chain a URL was composed from and re-composes the same path
+// against every later origin in it.
+func (c *Ctx) fallbacksFor(url string) []upstream.Fallback {
+	chain, head := c.chainForURL(url)
+	if len(chain) < 2 {
+		return nil
+	}
+	suffix := strings.TrimPrefix(url, head)
+	out := make([]upstream.Fallback, 0, len(chain)-1)
+	for _, endpoint := range chain[1:] {
+		if endpoint.URL == head {
+			continue
+		}
+		fallback := upstream.Fallback{URL: strings.TrimRight(endpoint.URL, "/") + suffix}
+		if !endpoint.Anonymous() {
+			fallback.Credential = &upstream.Credential{
+				Kind: endpoint.Credential.Kind, Username: endpoint.Credential.Username,
+				Password: endpoint.Credential.Password, Token: endpoint.Credential.Token,
+			}
+		}
+		out = append(out, fallback)
+	}
+	return out
+}
+
+// chainForURL identifies which configured chain a composed URL belongs to, returning
+// the chain and the exact origin prefix that matched.
+//
+// Longest prefix wins, for the same reason it does when choosing a credential: an origin
+// that includes a path must beat the bare host it sits on.
+func (c *Ctx) chainForURL(url string) (chain []config.Endpoint, head string) {
+	longest := 0
+	for _, candidate := range c.chains() {
+		if len(candidate) == 0 {
+			continue
+		}
+		origin := strings.TrimRight(candidate[0].URL, "/")
+		if len(origin) <= longest {
+			continue
+		}
+		if url != origin && !strings.HasPrefix(url, origin+"/") {
+			continue
+		}
+		longest, chain, head = len(origin), candidate, origin
+	}
+	return chain, head
 }
 
 // credentialForURL finds the credential belonging to the origin a URL came from.

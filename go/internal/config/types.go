@@ -175,8 +175,12 @@ type Upstream struct {
 	// deployment is a 2.5 GB CUDA wheel, which over a slow uplink takes many minutes.
 	RequestTimeout time.Duration `yaml:"request_timeout"`
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
-	MaxIdlePerHost int           `yaml:"max_idle_per_host"`
-	UserAgent      string        `yaml:"user_agent"`
+	// ResponseHeaderTimeout bounds the wait for response headers, not for the body.
+	// It is what makes a stalled origin fail over in seconds rather than after
+	// RequestTimeout, which is sized for a multi-gigabyte body.
+	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout"`
+	MaxIdlePerHost        int           `yaml:"max_idle_per_host"`
+	UserAgent             string        `yaml:"user_agent"`
 	// Offline makes every ecosystem serve from cache only and never touch upstream.
 	// This is the air-gap hard mode: it overrides every per-project soft flag.
 	Offline bool `yaml:"offline"`
