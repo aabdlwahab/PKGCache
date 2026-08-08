@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,14 @@ type Options struct {
 	// CacheAddress forces the mode used where a daemon cannot see this machine's
 	// loopback: Docker Desktop, a remote daemon, a container builder, CI.
 	CacheAddress bool
+	// HostAddress is CacheAddress's pkgcache equivalent: reach a cache on this machine
+	// through host.docker.internal rather than through loopback. Same reason — the
+	// daemon does not share this terminal's network namespace — with no certificate
+	// involved, because a local cache serves plain HTTP.
+	HostAddress bool
+	// HostGatewayName is the name a build resolves the host by. Overridable only so a
+	// test can assert what is generated.
+	HostGatewayName string
 	// GitHosts are redirected through the cache's mirror.
 	GitHosts []string
 	// SkipFrom leaves image names alone, for a daemon that already resolves them
@@ -54,15 +63,21 @@ type Options struct {
 
 // FromEnvironment fills in what a pkgreg shell already exported.
 func FromEnvironment(o Options) Options {
-	set := func(target *string, name string) {
-		if *target == "" {
+	set := func(target *string, names ...string) {
+		for _, name := range names {
+			if *target != "" {
+				return
+			}
 			*target = strings.TrimSpace(os.Getenv(name))
 		}
 	}
-	set(&o.Bridge, "PKGREG_BRIDGE_URL")
-	set(&o.Registry, "PKGREG_DOCKER_REGISTRY")
-	set(&o.Project, "PKGREG_PROJECT")
-	set(&o.AptProxy, "PKGREG_APT_PROXY")
+	// pkgcache's namespace is consulted first, so that running `pkgcache build` inside
+	// a pkgreg-client shell builds against the local cache the command names rather
+	// than against a server whose variables happen to still be set.
+	set(&o.Bridge, "PKGCACHE_BRIDGE_URL", "PKGREG_BRIDGE_URL")
+	set(&o.Registry, "PKGCACHE_DOCKER_REGISTRY", "PKGREG_DOCKER_REGISTRY")
+	set(&o.Project, "PKGCACHE_PROJECT", "PKGREG_PROJECT")
+	set(&o.AptProxy, "PKGCACHE_APT_PROXY", "PKGREG_APT_PROXY")
 	set(&o.CAFile, "PKGREG_CA_FILE")
 	set(&o.Server, "PKGREG_SERVER")
 	if o.Project == "" {
@@ -71,8 +86,15 @@ func FromEnvironment(o Options) Options {
 	if len(o.GitHosts) == 0 {
 		o.GitHosts = []string{"github.com"}
 	}
+	if o.HostGatewayName == "" {
+		o.HostGatewayName = DefaultHostGateway
+	}
 	return o
 }
+
+// DefaultHostGateway is the name a build resolves this machine by. Docker Desktop
+// provides it; on native Linux `--add-host` supplies it, which Build adds.
+const DefaultHostGateway = "host.docker.internal"
 
 // rewriteOptions turns the session into the rewriter's view of it.
 func (o Options) rewriteOptions() (dockerfile.Options, error) {
@@ -96,6 +118,24 @@ func (o Options) rewriteOptions() (dockerfile.Options, error) {
 		options.Registry = authorityOf(o.Server)
 		return options, nil
 	}
+	if o.HostAddress {
+		if o.Bridge == "" {
+			return options, errors.New(
+				"no session found: run this inside `pkgcache shell`, or through\n" +
+					"`pkgcache build`, which starts the cache for you")
+		}
+		gateway := o.HostGatewayName
+		if gateway == "" {
+			gateway = DefaultHostGateway
+		}
+		options.Mode = dockerfile.HostGateway
+		options.Base = viaHost(strings.TrimRight(o.Bridge, "/"), gateway)
+		options.Registry = authorityOf(options.Base)
+		if o.AptProxy != "" {
+			options.AptProxy = viaHost(strings.TrimRight(o.AptProxy, "/"), gateway)
+		}
+		return options, nil
+	}
 	if o.Bridge == "" {
 		return options, errors.New(
 			"no pkgreg session found: PKGREG_BRIDGE_URL is not set.\n" +
@@ -109,6 +149,32 @@ func (o Options) rewriteOptions() (dockerfile.Options, error) {
 		options.Registry = authorityOf(o.Bridge)
 	}
 	return options, nil
+}
+
+// viaHost swaps a loopback authority for the name a build container resolves this
+// machine by, keeping the scheme, the port and everything after it.
+func viaHost(rawURL, gateway string) string {
+	scheme := ""
+	rest := rawURL
+	for _, candidate := range []string{"https://", "http://"} {
+		if strings.HasPrefix(rest, candidate) {
+			scheme, rest = candidate, strings.TrimPrefix(rest, candidate)
+			break
+		}
+	}
+	authority, path, hadPath := strings.Cut(rest, "/")
+	port := ""
+	if _, p, err := net.SplitHostPort(authority); err == nil {
+		port = p
+	}
+	rebuilt := gateway
+	if port != "" {
+		rebuilt = net.JoinHostPort(gateway, port)
+	}
+	if hadPath {
+		rebuilt += "/" + path
+	}
+	return scheme + rebuilt
 }
 
 // Build rewrites the Dockerfile named in args (or ./Dockerfile) and runs docker build.
@@ -148,10 +214,17 @@ func Build(ctx context.Context, o Options, args []string) error {
 
 	report(o.Stderr, result.Changes)
 	command := []string{"build", "-f", generated}
-	if rewrite.Mode == dockerfile.Bridge {
+	switch rewrite.Mode {
+	case dockerfile.Bridge:
 		// The RUN steps talk to a loopback address, which only exists in the build
 		// container if it shares this machine's network namespace.
 		command = append(command, "--network=host")
+	case dockerfile.HostGateway:
+		// Docker Desktop resolves host.docker.internal already; native Linux does not,
+		// and this is the documented way to ask for it. Harmless where it is redundant.
+		command = append(command,
+			"--add-host="+o.HostGatewayName+":host-gateway")
+	case dockerfile.CacheAddress:
 	}
 	if result.NeedsSecret {
 		command = append(command,

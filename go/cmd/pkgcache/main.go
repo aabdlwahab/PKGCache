@@ -25,6 +25,8 @@ var commands = map[string]struct {
 	"run":     {"run one command with its tools pointed at the cache", runRun},
 	"shell":   {"open a shell whose tools use the cache", runShell},
 	"env":     {"print the settings that point tools at the cache", runEnv},
+	"build":   {"run docker build through the cache", runBuild},
+	"compose": {"run docker compose through the cache", runCompose},
 	"limit":   {"set how much disk this cache may use", runLimit},
 	"prune":   {"reclaim space, now, because you asked", runPrune},
 	"status":  {"is the cache running, and what is in it", runStatus},
@@ -35,7 +37,8 @@ var commands = map[string]struct {
 
 // order fixes the help text, which a map iteration would shuffle between runs.
 var order = []string{
-	"run", "shell", "env", "limit", "status", "prune", "stop", "serve", "version",
+	"run", "shell", "env", "build", "compose",
+	"limit", "status", "prune", "stop", "serve", "version",
 }
 
 func main() {

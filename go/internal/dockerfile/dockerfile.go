@@ -17,7 +17,9 @@ package dockerfile
 
 import (
 	"fmt"
+	"net"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -33,6 +35,19 @@ const (
 	// into each RUN that needs it. Required wherever the daemon cannot see the
 	// client's loopback: Docker Desktop, a remote daemon, a container builder, CI.
 	CacheAddress
+	// HostGateway points tools at a cache running on this machine, reached from inside
+	// the build through host.docker.internal. It is CacheAddress with every TLS part
+	// removed: a local cache serves plain HTTP, so there is no CA to mount and none of
+	// the six per-tool certificate variables to declare.
+	//
+	// It exists because Bridge is not portable. A loopback address only reaches a
+	// daemon that shares this machine's network namespace, which Docker Desktop and any
+	// remote daemon do not — and pkgcache has no HTTPS address to fall back to.
+	//
+	// The daemon must be told to accept a plain-HTTP registry at that authority, which
+	// `pkgcache docker-setup` installs. Loopback is exempt by default; host.docker
+	// .internal is not.
+	HostGateway
 )
 
 // SecretID is the build secret the CA is passed as in CacheAddress mode. It is also
@@ -243,10 +258,14 @@ func buildArgs(o Options) []string {
 	if o.AptProxy != "" {
 		// apt and apk read no index variable but both honour a proxy, so this is what
 		// makes `apt-get install` work with no flags. no_proxy is what stops pip and
-		// npm being sent through that proxy on their way to the bridge.
+		// npm being sent through that proxy on their way to the cache — and it has to
+		// name the authority they actually use. It named only loopback, which is right
+		// for Bridge and wrong for HostGateway: pip and npm would have been sent to the
+		// cache through the cache's own apt proxy, which relays http:// and is not what
+		// either of them is talking to.
 		args = append(args,
 			"ARG http_proxy="+o.AptProxy,
-			"ARG no_proxy=127.0.0.1,localhost")
+			"ARG no_proxy="+noProxyFor(o))
 	}
 	if o.Mode == CacheAddress {
 		// These tools read their own trust store rather than the OS one — verified:
@@ -261,6 +280,34 @@ func buildArgs(o Options) []string {
 			"ARG UV_NATIVE_TLS=true")
 	}
 	return args
+}
+
+// noProxyFor lists the hosts that must not go through the apt proxy: loopback, and
+// whatever authority this build actually reaches the cache on.
+func noProxyFor(o Options) string {
+	hosts := []string{"127.0.0.1", "localhost"}
+	for _, candidate := range []string{hostOf(o.Registry), hostOf(o.Base)} {
+		if candidate == "" {
+			continue
+		}
+		if !slices.Contains(hosts, candidate) {
+			hosts = append(hosts, candidate)
+		}
+	}
+	return strings.Join(hosts, ",")
+}
+
+// hostOf extracts the host from an authority or a URL, without a port.
+func hostOf(value string) string {
+	trimmed := strings.TrimSpace(value)
+	for _, scheme := range []string{"https://", "http://"} {
+		trimmed = strings.TrimPrefix(trimmed, scheme)
+	}
+	trimmed, _, _ = strings.Cut(trimmed, "/")
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		return host
+	}
+	return trimmed
 }
 
 func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Change) {
