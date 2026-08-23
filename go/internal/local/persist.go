@@ -2,6 +2,7 @@ package local
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // Persistent settings: the mode that makes tools use the cache without being wrapped.
@@ -43,6 +44,9 @@ type PersistOptions struct {
 	GitHosts []string
 	// Home overrides the user's home directory. Tests set it.
 	Home string
+	// DataDir is where the record of this installation is kept. Empty records nothing,
+	// which is what -print and the tests that only inspect files want.
+	DataDir string
 	// DryRun prints every change and applies none.
 	DryRun bool
 	// Uninstall reverses a previous run.
@@ -71,6 +75,52 @@ const (
 	// its absence: somebody would have read it as a mode that exists.
 	AvailabilityAccepted
 )
+
+// persistPath is where the record of an installation lives.
+func persistPath(dataDir string) string { return filepath.Join(dataDir, "persist.json") }
+
+// Persisted is what a previous `pkgcache persist` installed.
+//
+// Recorded because the settings outlive the shell that wrote them and name one project
+// literally: months later, "which project is my .npmrc pointing at" is a question with an
+// answer nobody can see. The files are listed too, since uninstall works by marker and a
+// person checking up on it should not have to guess where to look.
+type Persisted struct {
+	Project string   `json:"project"`
+	Files   []string `json:"files"`
+	BaseURL string   `json:"base_url"`
+}
+
+// ReadPersisted returns the recorded installation, and whether there is one.
+//
+// A missing or unreadable record reads as "nothing installed". It is a note about files
+// that are their own source of truth — each one carries pkgcache's markers — so a lost
+// record must never make `status` fail or `uninstall` refuse.
+func ReadPersisted(dataDir string) (Persisted, bool) {
+	data, err := os.ReadFile(persistPath(dataDir))
+	if err != nil {
+		return Persisted{}, false
+	}
+	var record Persisted
+	if err := json.Unmarshal(data, &record); err != nil || record.Project == "" {
+		return Persisted{}, false
+	}
+	return record, true
+}
+
+func writePersisted(dataDir string, record Persisted) error {
+	if dataDir == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(persistPath(dataDir), append(data, '\n'), 0o600)
+}
 
 // managedFile is one file persist owns a fenced region of.
 type managedFile struct {
@@ -130,8 +180,20 @@ func ApplyPersist(o PersistOptions) error {
 		return nil
 	}
 	if o.Uninstall {
+		if o.DataDir != "" {
+			_ = os.Remove(persistPath(o.DataDir))
+		}
 		fmt.Fprintln(out, "\npkgcache: persistent settings removed")
 		return nil
+	}
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.path)
+	}
+	if err := writePersisted(o.DataDir, Persisted{
+		Project: o.Project, Files: paths, BaseURL: o.BaseURL,
+	}); err != nil {
+		return err
 	}
 	fmt.Fprintln(out, "\npkgcache: settings installed for this user")
 	fmt.Fprintln(out, "New shells use the cache. Remove them with `pkgcache persist -uninstall`.")

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
 )
 
 func TestManifestRoundTrip100KStreamingEntries(t *testing.T) {

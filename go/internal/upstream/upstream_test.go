@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/obs"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
 )
 
 func newPool(t *testing.T) *Pool {
@@ -264,8 +264,8 @@ func TestCredentialsApplied(t *testing.T) {
 // exists to make cheap.
 func TestContextBoundsTransferNotClient(t *testing.T) {
 	p := newPool(t)
-	if p.client.Timeout != 0 {
-		t.Fatalf("client.Timeout = %v, want 0 so large bodies are not cut off", p.client.Timeout)
+	if timeout := p.client.Load().Timeout; timeout != 0 {
+		t.Fatalf("client.Timeout = %v, want 0 so large bodies are not cut off", timeout)
 	}
 
 	blocked := make(chan struct{})

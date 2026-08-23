@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/snapshot"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/snapshot"
 )
 
 func (s *Service) checkpointManaged(

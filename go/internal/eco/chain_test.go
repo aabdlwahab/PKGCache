@@ -3,7 +3,7 @@ package eco
 import (
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // chainCtx builds a Ctx with a configured chain, which is the only state these

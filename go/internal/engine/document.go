@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
 
 // A "document" is a small upstream file whose content the cache must read rather

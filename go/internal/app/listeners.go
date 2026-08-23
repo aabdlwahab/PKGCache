@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/listener"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/listener"
 )
 
 // ErrTLSDisabled reports that an operation needing a certificate was attempted on a
@@ -192,6 +192,11 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	var result error
 	r.stop.Do(func() {
 		r.app.listenersReady.Store(false)
+		// Before the servers: an event stream never ends on its own, so Shutdown would
+		// wait out the whole grace period for every browser window left open.
+		if r.app.API != nil {
+			r.app.API.Close()
+		}
 		var wg sync.WaitGroup
 		errs := make(chan error, len(r.bound))
 		for _, bound := range r.bound {

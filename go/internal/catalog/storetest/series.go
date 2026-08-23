@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
 )
 
 // base is a fixed instant well inside the fine-resolution retention window, chosen so

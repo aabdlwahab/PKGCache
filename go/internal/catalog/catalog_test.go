@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
 )
 
 func newDB(t testing.TB) *DB {

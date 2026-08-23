@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
 )
 
 // Factory opens a fresh, empty store. The suite calls it once per case and is

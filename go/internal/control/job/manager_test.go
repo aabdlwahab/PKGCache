@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 func TestProjectsRunConcurrentlyButOneProjectStaysOrdered(t *testing.T) {

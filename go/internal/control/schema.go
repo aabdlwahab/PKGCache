@@ -3,6 +3,8 @@ package control
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
 )
 
 var migrations = []struct {
@@ -101,6 +103,35 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS ix_project_grants_user ON project_grants(username)`,
 		},
 	},
+	{
+		// An ordered chain needs two origins for one index, and UNIQUE (project, eco, name)
+		// forbade exactly that. It only ever appeared to work because the global project is
+		// stored as NULL — NULLIF(?, '') in CreateUpstream — and SQLite treats NULLs as
+		// distinct, so global could hold as many rows per index as it liked while every named
+		// project failed on the second one with a constraint error.
+		//
+		// The uniqueness that was meant is per position in the chain: one origin per index
+		// per priority. Two rows at the same priority for the same index are still a
+		// contradiction and still refused.
+		version: 5,
+		stmts: []string{
+			`CREATE TABLE upstreams_v5 (
+			   id INTEGER PRIMARY KEY, project TEXT, eco TEXT NOT NULL,
+			   name TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL,
+			   priority INTEGER NOT NULL DEFAULT 0,
+			   enabled INTEGER NOT NULL DEFAULT 1,
+			   credential_id INTEGER REFERENCES credentials(id),
+			   UNIQUE (project, eco, name, priority)
+			 )`,
+			// Ids are carried across: the control API addresses a row by id for PATCH and
+			// DELETE, and renumbering them would invalidate every id a client holds.
+			`INSERT INTO upstreams_v5 (id, project, eco, name, url, kind, priority, enabled, credential_id)
+			   SELECT id, project, eco, name, url, kind, priority, enabled, credential_id
+			     FROM upstreams`,
+			`DROP TABLE upstreams`,
+			`ALTER TABLE upstreams_v5 RENAME TO upstreams`,
+		},
+	},
 }
 
 func schemaVersion() int { return migrations[len(migrations)-1].version }
@@ -140,6 +171,47 @@ func migrate(db *sql.DB) error {
 		}
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("control: commit migration v%d: %w", migration.version, err)
+		}
+	}
+	return nil
+}
+
+// openRawDB opens the database without migrating it. Tests use it to build the schema a
+// deployed instance is running before opening it with this binary.
+func openRawDB(path string) (*sql.DB, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", "file:"+url.PathEscape(absolute)+
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, db.Ping()
+}
+
+// migrateUpTo applies migrations no further than version, which is how a test stands up
+// the schema an older binary left behind.
+func migrateUpTo(db *sql.DB, version int) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS control_schema_version (
+		version INTEGER PRIMARY KEY)`); err != nil {
+		return err
+	}
+	for _, migration := range migrations {
+		if migration.version > version {
+			break
+		}
+		for _, statement := range migration.stmts {
+			if _, err := db.Exec(statement); err != nil {
+				return fmt.Errorf("control: migration v%d: %w", migration.version, err)
+			}
+		}
+		if _, err := db.Exec(
+			`INSERT OR IGNORE INTO control_schema_version(version) VALUES (?)`,
+			migration.version); err != nil {
+			return err
 		}
 	}
 	return nil

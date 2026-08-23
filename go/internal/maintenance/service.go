@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/control/job"
-	"github.com/brightskies/pkgreg/internal/diskusage"
-	"github.com/brightskies/pkgreg/internal/obs"
-	"github.com/brightskies/pkgreg/internal/snapshot"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control/job"
+	"github.com/aabdlwahab/PKGCache/internal/diskusage"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/snapshot"
 )
 
 // Service coordinates collectors so scheduled, API and CLI runs never overlap.

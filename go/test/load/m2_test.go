@@ -19,13 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/obs"
-	"github.com/brightskies/pkgreg/internal/race"
-	"github.com/brightskies/pkgreg/internal/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/race"
+	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
 
 var runM2 = flag.Bool("m2-2gb", false, "run the 20-client, 2 GiB M2 qualification")

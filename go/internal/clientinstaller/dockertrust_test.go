@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
 )
 
 // dockerTrustEnv points the Docker-Desktop branch at a temporary directory, which is what

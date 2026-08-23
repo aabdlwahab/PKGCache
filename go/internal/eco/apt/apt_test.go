@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/eco/ecotest"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/eco/ecotest"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
 )
 
 func aptHarness(t *testing.T, setup func(*testupstream.Server)) *ecotest.Harness {

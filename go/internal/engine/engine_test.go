@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/obs"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
-	"github.com/brightskies/pkgreg/internal/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
 
 type harness struct {

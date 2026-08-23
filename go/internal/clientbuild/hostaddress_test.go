@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/dockerfile"
+	"github.com/aabdlwahab/PKGCache/internal/dockerfile"
 )
 
 func TestHostAddressRewritesEveryLoopbackURL(t *testing.T) {

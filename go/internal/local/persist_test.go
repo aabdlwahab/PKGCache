@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // Socket activation is the answer to the sharpest problem in this design: settings

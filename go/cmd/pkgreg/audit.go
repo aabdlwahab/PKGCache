@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 func runAudit(_ context.Context, args []string) error {

@@ -13,7 +13,7 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go driver: no CGO, so the binary stays static
 
-	"github.com/brightskies/pkgreg/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
 )
 
 const driverName = "sqlite"

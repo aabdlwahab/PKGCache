@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
 )
 
 func (h *harness) doc(path string, ttl time.Duration) DocSpec {

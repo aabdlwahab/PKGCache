@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
 )
 
 func decodeInto(t *testing.T, body []byte, target any) {

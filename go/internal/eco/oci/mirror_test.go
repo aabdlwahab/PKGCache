@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 // Registry-mirror mode: a daemon configured with registry-mirrors asks for

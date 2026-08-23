@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 // reportFull writes the cache's state to stderr and says what exit status it earns.

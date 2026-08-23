@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // bindConfigFlags wires the shared configuration flags onto a FlagSet.

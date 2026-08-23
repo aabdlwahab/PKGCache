@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/diskusage"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/diskusage"
 )
 
 // SeriesInterval is how often storage is sampled and the traffic series is folded.

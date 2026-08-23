@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/control/auth"
-	"github.com/brightskies/pkgreg/internal/onboarding"
-	"github.com/brightskies/pkgreg/internal/pki"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control/auth"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/pki"
 )
 
 // runInit prepares a host to serve.

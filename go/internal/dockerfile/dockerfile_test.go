@@ -223,3 +223,54 @@ func TestRewriteRefusesIncompleteOptions(t *testing.T) {
 		t.Fatal("accepted options with no project")
 	}
 }
+
+// pip refuses a plain-HTTP index unless the host is loopback, and it refuses it by
+// *ignoring the index*: the error is "no matching distribution", which reads as a missing
+// package rather than a rejected repository.
+//
+// That is the HostGateway case this mode exists for. On Docker Desktop the base image and
+// apt went through the cache perfectly and every `pip install` failed, because
+// host.docker.internal is not loopback. Reported from a real Mac.
+func TestNonLoopbackCacheIsMarkedTrustedForPip(t *testing.T) {
+	gateway := Options{
+		Mode: HostGateway, Registry: "host.docker.internal:41780",
+		Base: "http://host.docker.internal:41780", Project: "global",
+		AptProxy: "http://host.docker.internal:41780", GitHosts: []string{"github.com"},
+	}
+	out, _ := rewrite(t, "FROM python:3.12-slim\nRUN pip install requests\n", gateway)
+	for _, want := range []string{
+		"ARG PIP_TRUSTED_HOST=host.docker.internal",
+		"ARG UV_INSECURE_HOST=host.docker.internal",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the rewrite is missing %q:\n%s", want, out)
+		}
+	}
+	// The port is deliberately absent: pip reads a bare hostname as "trust it on any
+	// port", and the cache's port moves when the fixed one is taken.
+	if strings.Contains(out, "PIP_TRUSTED_HOST=host.docker.internal:41780") {
+		t.Error("the trusted host carries a port, which pins it to one")
+	}
+}
+
+// Loopback already is trusted, so saying so would be noise in every ordinary build — and
+// noise in a generated file is how people stop reading it.
+func TestLoopbackCacheIsNotMarkedTrusted(t *testing.T) {
+	out, _ := rewrite(t, "FROM python:3.12-slim\n", bridge())
+	if strings.Contains(out, "PIP_TRUSTED_HOST") || strings.Contains(out, "UV_INSECURE_HOST") {
+		t.Errorf("a loopback cache was marked trusted:\n%s", out)
+	}
+}
+
+// CacheAddress mode reaches the cache over HTTPS with its CA mounted, so there is nothing
+// insecure to permit and permitting it would weaken a path that is already verified.
+func TestHTTPSCacheIsNotMarkedTrusted(t *testing.T) {
+	https := Options{
+		Mode: CacheAddress, Registry: "cache.internal:8443",
+		Base: "https://cache.internal:8443", Project: "global",
+	}
+	out, _ := rewrite(t, "FROM python:3.12-slim\n", https)
+	if strings.Contains(out, "PIP_TRUSTED_HOST") || strings.Contains(out, "UV_INSECURE_HOST") {
+		t.Errorf("an HTTPS cache was marked insecure:\n%s", out)
+	}
+}

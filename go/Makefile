@@ -4,7 +4,7 @@
 # on any Linux with a compatible kernel — no libc, no OpenSSL, nothing to install.
 
 BIN        := pkgreg
-PKG        := github.com/brightskies/pkgreg
+PKG        := github.com/aabdlwahab/PKGCache
 BUILDINFO  := $(PKG)/internal/buildinfo
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release menubar window window-windows test race lint fmt tidy clean help
 
 all: build
 
@@ -86,6 +86,34 @@ bridge-release: ## Build the loopback bridge for Linux, macOS, and Windows
 pkgcache: ## Build pkgcache for this host
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/pkgcache ./cmd/pkgcache
 
+window: ## Build the application-window helper for this platform
+	@case "$$(uname)" in \
+	  Linux) \
+	    pkg-config --exists gtk+-3.0 webkit2gtk-4.1 || { \
+	      echo "needs: sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev"; \
+	      echo "(Ubuntu 24.04. On 22.04 the package is libwebkit2gtk-4.0-dev and the"; \
+	      echo " pkg-config name in cmd/pkgcache-window/window_linux.go must match.)"; \
+	      exit 1; }; \
+	    go build -tags webkitgtk -trimpath -ldflags '-s -w $(LDFLAGS)' \
+	      -o bin/pkgcache-window ./cmd/pkgcache-window ;; \
+	  Darwin) \
+	    echo "macOS keeps its window in pkgcache-menubar: make menubar" ; exit 1 ;; \
+	  *) echo "no window helper for $$(uname)"; exit 1 ;; \
+	esac
+
+window-windows: ## Build the Windows application-window helper (cross-compiles)
+	# -H windowsgui, or the helper flashes a console window every time it opens.
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
+	  -o bin/pkgcache-window-windows-amd64.exe ./cmd/pkgcache-window
+
+menubar: ## Build the macOS menu bar helper and its window (macOS only)
+	@test "$$(uname)" = "Darwin" || { \
+	  echo "the menu bar helper needs a Mac: NSStatusItem is Cocoa, and pkgcache itself"; \
+	  echo "is built without cgo. See tools/menubar/main.swift."; exit 1; }
+	swiftc -O -o bin/pkgcache-menubar tools/menubar/main.swift
+	@echo "sign it before shipping: codesign --options runtime --timestamp -s <identity> bin/pkgcache-menubar"
+
 pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
@@ -99,6 +127,24 @@ pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-windows-amd64.exe ./cmd/pkgcache
 	cd bin && sha256sum pkgcache-linux-* pkgcache-darwin-* \
 		pkgcache-windows-*.exe > pkgcache-SHA256SUMS
+
+# Installers. The two scripts are copied rather than generated: they are the artefact a
+# person is asked to run, and one that a build step assembles is one nobody can read
+# before running it.
+installers: pkgcache-release deb ## Build the .deb packages and stage the install scripts
+	install -m 0755 ../packaging/install.sh bin/install.sh
+	install -m 0644 ../packaging/install.ps1 bin/install.ps1
+	@echo
+	@echo "staged in bin/:"
+	@echo "  install.sh    macOS and Linux"
+	@echo "  install.ps1   Windows"
+	@echo "  *.deb         Ubuntu and Debian"
+
+deb: ## Build Debian packages for amd64 and arm64
+	@test -f bin/pkgcache-linux-amd64 || { \
+		echo "build the binaries first: make pkgcache-release" >&2; exit 1; }
+	sh ../packaging/deb/build.sh bin/pkgcache-linux-amd64 amd64 "$(VERSION)" bin
+	sh ../packaging/deb/build.sh bin/pkgcache-linux-arm64 arm64 "$(VERSION)" bin
 
 test: ## Run tests
 	go test ./...

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
 )
 
 // authority mints a throwaway CA so the fingerprint under test is a real one.

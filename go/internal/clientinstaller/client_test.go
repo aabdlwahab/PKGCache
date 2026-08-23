@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/onboarding"
-	"github.com/brightskies/pkgreg/internal/trust"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
 func testCA(t *testing.T, serial int64) []byte {

@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/brightskies/pkgreg/internal/clientrelease"
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/clientrelease"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // Client binaries are served from disk rather than embedded; internal/clientrelease

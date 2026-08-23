@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 // StoreGuard decides whether a fill may be kept.

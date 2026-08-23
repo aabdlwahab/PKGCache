@@ -6,23 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/control/auth"
-	"github.com/brightskies/pkgreg/internal/control/credential"
-	"github.com/brightskies/pkgreg/internal/control/job"
-	controlproject "github.com/brightskies/pkgreg/internal/control/project"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/obs"
-	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control/auth"
+	"github.com/aabdlwahab/PKGCache/internal/control/credential"
+	"github.com/aabdlwahab/PKGCache/internal/control/job"
+	controlproject "github.com/aabdlwahab/PKGCache/internal/control/project"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/maintenance"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
 )
 
 // Options supplies the API's in-process collaborators.
@@ -36,11 +39,31 @@ type Options struct {
 	Projects    *controlproject.Service
 	Jobs        *job.Manager
 	Catalog     *catalog.DB
-	Engine      *engine.Engine
-	Ecos        *eco.Registry
-	Events      *obs.Bus
-	DataDir     string
-	CAFile      string
+	// Budget, when set, reports the disk policy of a cache that has one, for the
+	// storage figures every stats reader already asks for.
+	//
+	// A function rather than a value because it is sampled live: whether a cache is full
+	// changes while the process runs. Set by pkgcache's daemon after Open; a server
+	// leaves it nil and its responses are unchanged.
+	Budget func() (LocalBudget, bool)
+	// Maintenance runs collection and removal. Present because removing named content is
+	// synchronous — a handful of digests somebody selected, not a sweep worth queueing —
+	// while gc and evict stay jobs.
+	Maintenance *maintenance.Service
+	// Sources, when set, exposes the per-project upstream configuration of a cache that
+	// keeps one of its own. It is pkgcache's: the trust pin, the team cache and the chain
+	// rewrite live above this package and cannot be imported from it, so they are handed
+	// down. A server leaves it nil and the routes are not registered at all.
+	Sources LocalSources
+	Engine  *engine.Engine
+	Ecos    *eco.Registry
+	Events  *obs.Bus
+	DataDir string
+	CAFile  string
+	// Log records the errors this package answers 500 for. Without it they were written
+	// nowhere at all: the caller was told "internal server error" and the cause was
+	// discarded, which is the one failure mode a control plane cannot afford to have.
+	Log *slog.Logger
 }
 
 // API is the complete control HTTP surface.
@@ -48,6 +71,14 @@ type API struct {
 	Options
 	guard *auth.Guard
 	mux   *http.ServeMux
+	// closing releases the streaming handlers when the process is shutting down.
+	//
+	// http.Server.Shutdown waits for active handlers, and an event stream never finishes
+	// on its own — so a single open widget window made every `pkgcache stop`, every
+	// `setup` and the idle exit itself burn the whole shutdown grace period before the
+	// daemon would go. Closed once, by Close.
+	closing   chan struct{}
+	closeOnce sync.Once
 	// patterns records every registered route, in registration order. It exists so a
 	// test can check the guest allowlist against reality rather than against a second
 	// hand-maintained copy of it.
@@ -65,7 +96,7 @@ type handler func(http.ResponseWriter, *http.Request) error
 
 // New builds the route table.
 func New(options Options) *API {
-	a := &API{Options: options}
+	a := &API{Options: options, closing: make(chan struct{})}
 	a.guard = &auth.Guard{
 		Accounts: options.Accounts, Sessions: options.Sessions, Config: options.Config,
 	}
@@ -75,6 +106,15 @@ func New(options Options) *API {
 	a.downloadRoutes()
 	a.legacyRoutes()
 	return a
+}
+
+// Close releases the streaming handlers so a shutdown does not have to wait them out.
+//
+// Called before http.Server.Shutdown, not instead of it: this ends the streams, and
+// Shutdown still drains the ordinary requests. Idempotent, because both the listener
+// runtime and a test may call it.
+func (a *API) Close() {
+	a.closeOnce.Do(func() { close(a.closing) })
 }
 
 // ServeHTTP dispatches a control request.
@@ -89,18 +129,18 @@ func (a *API) route(pattern string, fn handler) {
 	a.patterns = append(a.patterns, pattern)
 	a.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		if err := a.guard.CheckOrigin(r); err != nil {
-			writeError(w, err)
+			a.writeError(w, r, err)
 			return
 		}
 		// Guest confinement is default-deny and keyed on this pattern, so a route
 		// added later is closed to guests until someone lists it. See guest.go.
 		scoped, err := a.guestGate(pattern, r)
 		if err != nil {
-			writeError(w, err)
+			a.writeError(w, r, err)
 			return
 		}
 		if err := fn(w, scoped); err != nil {
-			writeError(w, err)
+			a.writeError(w, r, err)
 		}
 	})
 }
@@ -158,6 +198,19 @@ func (a *API) requireOwner(r *http.Request, name string) (control.Project, contr
 	if err != nil {
 		return control.Project{}, control.User{}, err
 	}
+	// With no accounts there is nobody to be the owner and nobody to keep out, which is
+	// what every guard in auth.Guard already says for itself. This one has to say it
+	// here because it funnels through RequireUser, and RequireUser is deliberately the
+	// single guard with no such branch: it is what refuses a guest session, and a guest
+	// exists only where accounts do.
+	//
+	// Without this, a cache with no accounts — pkgcache on a laptop — can create a
+	// project through this API and never delete one, from the console or the command
+	// line. Grants stay refused regardless: canManageGrants checks the actor again and
+	// an empty actor owns nothing.
+	if !a.Accounts.Enabled() {
+		return project, control.User{}, nil
+	}
 	actor, err := a.guard.RequireUser(r)
 	if err != nil {
 		return control.Project{}, control.User{}, err
@@ -203,7 +256,7 @@ func list[T any](rows []T) []T {
 	return rows
 }
 
-func writeError(w http.ResponseWriter, err error) {
+func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var client *control.Error
 	if errors.As(err, &client) {
 		body := map[string]any{"error": client.Message, "code": client.Code}
@@ -223,6 +276,13 @@ func writeError(w http.ResponseWriter, err error) {
 			"error": err.Error(), "code": "not_found",
 		})
 		return
+	}
+	// Logged, not returned: the message may name a path, a host or a query, and a control
+	// plane that hands those to an unauthenticated caller is a different bug. The operator
+	// gets the cause; the caller gets the status.
+	if a.Log != nil {
+		a.Log.Error("control plane request failed",
+			"method", r.Method, "path", r.URL.Path, "error", err)
 	}
 	writeJSON(w, http.StatusInternalServerError, map[string]string{
 		"error": "internal server error", "code": "internal",

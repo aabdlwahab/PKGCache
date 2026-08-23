@@ -88,9 +88,13 @@ function renderActions() {
   const exportForm = el(
     "form",
     { class: "form" },
-    field("Output path", input("output", { required: true, placeholder: "/mnt/shuttle/pack.tar" }),
-      "a path on the server, not this machine"),
-    field("Since checkpoint", input("since", { placeholder: "leave empty for a full pack" }),
+    // The job takes a basename and writes it into shuttle/out — it refuses a path, and
+    // this asked for one, so every export here has quietly been named by the server
+    // instead. A browser cannot move a file off the machine anyway; naming it is the
+    // most this form can honestly offer.
+    field("File name", input("file", { placeholder: "leave empty to name it after the checkpoint" }),
+      "written into shuttle/out on the server, not to this machine"),
+    field("Since checkpoint", input("base", { placeholder: "leave empty for a full pack" }),
       "a delta pack carries only what changed"),
     el("button", { class: "btn", type: "submit", text: "Export pack" }),
   );
@@ -99,8 +103,8 @@ function renderActions() {
     const data = new FormData(exportForm);
     await store.mutate(
       () => api.exportPack(store.state.project, {
-        output: String(data.get("output")),
-        since: String(data.get("since") || ""),
+        file: String(data.get("file") || ""),
+        base: String(data.get("base") || ""),
       }),
       "Export started",
     );
@@ -109,13 +113,14 @@ function renderActions() {
   const importForm = el(
     "form",
     { class: "form" },
-    field("Pack path", input("input", { required: true, placeholder: "/mnt/shuttle/pack.tar" })),
+    field("File name", input("file", { placeholder: "leave empty if there is only one" }),
+      "a .tar already in shuttle/in on the server"),
     el("button", { class: "btn", type: "submit", text: "Import pack" }),
   );
   importForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const path = String(new FormData(importForm).get("input"));
-    await store.mutate(() => api.importPack(store.state.project, { input: path }), "Import started");
+    const file = String(new FormData(importForm).get("file") || "");
+    await store.mutate(() => api.importPack(store.state.project, { file }), "Import started");
   });
 
   return el(

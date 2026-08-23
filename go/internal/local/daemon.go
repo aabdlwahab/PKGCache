@@ -10,9 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/app"
-	"github.com/brightskies/pkgreg/internal/buildinfo"
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/app"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 )
 
 // ErrAlreadyRunning reports that a daemon already owns this cache directory.
@@ -97,6 +98,28 @@ func Run(ctx context.Context, o RunOptions) error {
 	lastActivity.Store(time.Now().UnixNano())
 	a.Activity = func() { lastActivity.Store(time.Now().UnixNano()) }
 
+	// The fourth channel for a full cache, and the only one a browser can reach. The
+	// guard owns the answer and this package sits above the API, so it is handed over
+	// rather than imported — the same arrangement as Activity above.
+	a.API.Budget = func() (controlapi.LocalBudget, bool) {
+		usage := guard.Usage()
+		full, reason := guard.Full()
+		return controlapi.LocalBudget{
+			LimitBytes:   usage.Budget.LimitBytes,
+			MinFreeBytes: usage.Budget.MinFreeBytes,
+			UsedBytes:    usage.Bytes,
+			FreeBytes:    usage.FreeBytes,
+			Full:         full,
+			Reason:       reason,
+		}, true
+	}
+
+	// The window's own control surface. Handed down rather than imported for the same
+	// reason as the budget above: the trust pin, the team record and the chain rewrite live
+	// here, above the API.
+	a.API.Sources = &Sources{
+		DataDir: snap.DataDir, Store: a.Projects, Ecos: a.Ecos, Pool: a.Pool, Snapshot: snap,
+	}
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}

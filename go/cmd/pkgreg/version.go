@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
 )
 
 func runVersion(_ context.Context, args []string) error {

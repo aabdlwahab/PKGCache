@@ -2,18 +2,21 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/control/auth"
-	"github.com/brightskies/pkgreg/internal/control/credential"
-	controlproject "github.com/brightskies/pkgreg/internal/control/project"
-	"github.com/brightskies/pkgreg/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control/auth"
+	"github.com/aabdlwahab/PKGCache/internal/control/credential"
+	controlproject "github.com/aabdlwahab/PKGCache/internal/control/project"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/maintenance"
 )
 
 func (a *API) v1Routes() {
@@ -59,6 +62,14 @@ func (a *API) v1Routes() {
 	a.route("GET /api/v1/events", a.events)
 	a.route("POST /api/v1/maintenance/gc", a.gcJob)
 	a.route("POST /api/v1/projects/{project}/maintenance/evict", a.evictJob)
+	a.route("POST /api/v1/projects/{project}/maintenance/remove", a.removeArtifacts)
+	// Registered unconditionally, and each one refuses when nothing supplies the surface.
+	// The routes cannot be made conditional: this runs at construction, and the only thing
+	// that can implement them is built from the instance this is part of — so the hook is
+	// always set after the table exists. See LocalSources and requireSources.
+	a.route("GET /api/v1/local/sources", a.listSources)
+	a.route("PUT /api/v1/local/sources/{project}", a.putSource)
+	a.route("DELETE /api/v1/local/sources/{project}", a.deleteSource)
 }
 
 func (a *API) gcJob(w http.ResponseWriter, r *http.Request) error {
@@ -73,6 +84,52 @@ func (a *API) gcJob(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return a.submitJob(w, r, actor, "", "gc", body)
+}
+
+// removeArtifacts drops named content from one project.
+//
+// Synchronous, unlike gc and evict. Those sweep a whole store and report progress worth
+// watching; this is the handful of digests somebody ticked in a list, and a queue plus a
+// poll between the click and the answer would be machinery around nothing.
+func (a *API) removeArtifacts(w http.ResponseWriter, r *http.Request) error {
+	name := projectName(r)
+	_, actor, err := a.requireOperate(r, name)
+	if err != nil {
+		return err
+	}
+	if a.Maintenance == nil {
+		return control.NewError(http.StatusNotImplemented, "no_maintenance",
+			"this instance cannot remove content")
+	}
+	var body struct {
+		Digests []string `json:"digests"`
+		DryRun  bool     `json:"dry_run"`
+	}
+	if err := a.decode(r, &body); err != nil {
+		return err
+	}
+	digests := make(map[blob.Digest]struct{}, len(body.Digests))
+	for _, raw := range body.Digests {
+		digest, err := blob.ParseDigest(raw)
+		if err != nil {
+			return control.NewError(http.StatusBadRequest, "invalid_digest",
+				"%q is not a sha256 digest", raw)
+		}
+		digests[digest] = struct{}{}
+	}
+	result, err := a.Maintenance.Remove(r.Context(), maintenance.RemoveOptions{
+		Project: name, Digests: digests, DryRun: body.DryRun,
+	})
+	if err != nil {
+		return err
+	}
+	if !body.DryRun && result.Entries > 0 {
+		a.audit(r, actor, "artifact.remove", name, map[string]any{
+			"entries": result.Entries, "reclaimed_bytes": result.ReclaimedBytes,
+		})
+	}
+	writeJSON(w, http.StatusOK, result)
+	return nil
 }
 
 func (a *API) evictJob(w http.ResponseWriter, r *http.Request) error {
@@ -163,6 +220,21 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) error {
 	project, err := a.Projects.Create(body.Name, actor.Username)
 	if err != nil {
 		return err
+	}
+	// A cache that keeps its own sources gives the new project the one it inherits, here
+	// rather than in each caller. `pkgcache project create` did this for itself, so a
+	// project made from the widget or over the API got no chain at all and quietly went
+	// direct — the failure this whole surface exists to prevent.
+	//
+	// Reported rather than swallowed. The project does exist by now, so this cannot be
+	// undone by failing; what it can do is say plainly that the project is not pointed
+	// anywhere yet, instead of leaving that to be discovered by a slow build.
+	if a.Sources != nil {
+		if err := a.Sources.Adopt(r.Context(), project.Name); err != nil {
+			return fmt.Errorf(
+				"project %s was created but could not be pointed at a cache: %w",
+				project.Name, err)
+		}
 	}
 	a.audit(r, actor, "project.create", project.Name, nil)
 	writeJSON(w, http.StatusCreated, a.projectJSON(project))
@@ -547,7 +619,16 @@ func (a *API) listSnapshots(w http.ResponseWriter, r *http.Request) error {
 	for _, snapshot := range rows {
 		out = append(out, snapshotJSON(snapshot))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"snapshots": list(out)})
+	// The head, because a transfer needs it and it cannot be inferred from this list. A
+	// rollback moves the head backwards without removing what came after, so the tip of
+	// the parent chain and the checkpoint a project is actually on are different
+	// questions — and an import is refused unless the pack's base matches the second
+	// one. Empty until the project has been checkpointed.
+	head, err := a.Catalog.GetHead(name)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"snapshots": list(out), "head": head})
 	return nil
 }
 
@@ -800,7 +881,22 @@ func (a *API) deleteToken(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// errNoAccounts is what the account endpoints answer where there are no accounts.
+//
+// Not 401. An instance with accounts disabled — pkgcache on a laptop — has nobody to
+// authenticate as, so "authentication required" describes a door that does not exist and
+// sends a client looking for a login form. The console already branches on
+// me.auth_enabled and hides the panel; this is for everything that does not, starting
+// with a person reading curl output and wondering what credential they are missing.
+func errNoAccounts() error {
+	return control.NewError(http.StatusNotFound, "auth_disabled",
+		"this instance has no accounts, so there are no users to manage")
+}
+
 func (a *API) listUsers(w http.ResponseWriter, r *http.Request) error {
+	if !a.Accounts.Enabled() {
+		return errNoAccounts()
+	}
 	actor, err := a.guard.RequireUser(r)
 	if err != nil {
 		return err
@@ -814,6 +910,9 @@ func (a *API) listUsers(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) createUser(w http.ResponseWriter, r *http.Request) error {
+	if !a.Accounts.Enabled() {
+		return errNoAccounts()
+	}
 	actor, err := a.guard.RequireUser(r)
 	if err != nil {
 		return err
@@ -837,6 +936,9 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) patchUser(w http.ResponseWriter, r *http.Request) error {
+	if !a.Accounts.Enabled() {
+		return errNoAccounts()
+	}
 	actor, err := a.guard.RequireUser(r)
 	if err != nil {
 		return err
@@ -881,6 +983,9 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) error {
+	if !a.Accounts.Enabled() {
+		return errNoAccounts()
+	}
 	actor, err := a.guard.RequireUser(r)
 	if err != nil {
 		return err

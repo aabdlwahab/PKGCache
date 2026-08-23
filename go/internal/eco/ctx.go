@@ -10,12 +10,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/router"
-	"github.com/brightskies/pkgreg/internal/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
 
 // Ctx is an adapter's entire view of the system.

@@ -3,7 +3,7 @@ package eco
 import (
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // The six adapters know nothing about chains. Each builds a URL as origin + an
@@ -125,5 +125,39 @@ func TestFallbackCarriesItsOwnCredential(t *testing.T) {
 	if request.Fallbacks[0].Credential != nil {
 		t.Fatalf("the team credential leaked to the public registry: %+v",
 			request.Fallbacks[0].Credential)
+	}
+}
+
+// OCI is the one ecosystem whose origins have to be written as repository roots — with
+// their /v2 — and this is why.
+//
+// A fallback is the head's URL with its prefix swapped for a later endpoint's, over an
+// untouched suffix. That only reconstructs a valid URL when both endpoints are roots of
+// the same shape. A team cache fronts several registries, so its root names both the API
+// root and the registry (/v2/dockerhub); if the public endpoint beside it were written
+// bare as "https://registry-1.docker.io", the swap would produce a URL with no /v2 in it
+// at all and every fallback pull would 404 against the real registry.
+func TestOCIFallbackKeepsTheDistributionAPIRoot(t *testing.T) {
+	descriptor := Descriptor{
+		ID: "oci", Storage: StorageBlob, Listener: ListenerProtocolRooted,
+		Upstreams: UpstreamNamedSet,
+	}
+	c := chainCtx(t, descriptor, map[string][]config.Endpoint{
+		"dockerhub": {
+			{URL: "https://cache.internal:8443/v2/dockerhub"},
+			{URL: "https://registry-1.docker.io/v2"},
+		},
+	})
+
+	// What the adapter composes: the head, then the repository and the reference.
+	composed := "https://cache.internal:8443/v2/dockerhub/library/alpine/manifests/3.20"
+	request := c.UpstreamRequest(composed, nil)
+
+	if len(request.Fallbacks) != 1 {
+		t.Fatalf("fallbacks = %+v, want one", request.Fallbacks)
+	}
+	want := "https://registry-1.docker.io/v2/library/alpine/manifests/3.20"
+	if request.Fallbacks[0].URL != want {
+		t.Fatalf("fallback = %q, want %q", request.Fallbacks[0].URL, want)
 	}
 }

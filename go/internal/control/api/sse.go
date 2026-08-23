@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control/auth"
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control/auth"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 // eventFilter decides which bus events one subscriber may receive.
@@ -101,6 +101,11 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) error {
 	for {
 		select {
 		case <-r.Context().Done():
+			return nil
+		case <-a.closing:
+			// The process is going. Ending the stream here is what lets Shutdown return
+			// promptly instead of waiting out its whole grace period on a handler that
+			// would never finish by itself.
 			return nil
 		case <-heartbeat.C:
 			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {

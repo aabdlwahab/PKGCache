@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 // Runner executes one job and appends durable log lines through logf.

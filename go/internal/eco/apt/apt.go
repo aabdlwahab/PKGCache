@@ -13,10 +13,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 const (

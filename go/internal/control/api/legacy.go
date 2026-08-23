@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	controlproject "github.com/brightskies/pkgreg/internal/control/project"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/snapshot"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	controlproject "github.com/aabdlwahab/PKGCache/internal/control/project"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/snapshot"
 )
 
 func (a *API) legacyRoutes() {

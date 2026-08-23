@@ -6,11 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
-	"github.com/brightskies/pkgreg/internal/trust"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
 func runSetup(ctx context.Context, args []string) error {
@@ -21,7 +22,10 @@ func runSetup(ctx context.Context, args []string) error {
 	fingerprint := fs.String("ca-sha256", "",
 		"the team cache's CA fingerprint, given to you out of band (colons optional)")
 	caFile := fs.String("ca-file", "", "trusted CA file; also supplies the expected fingerprint")
-	project := fs.String("project", "global", "project to use on the team cache")
+	project := fs.String("project", "",
+		"the local project this applies to (default: the current one)")
+	teamProject := fs.String("team-project", config.GlobalProject,
+		"the project name on the team's side")
 	limit := fs.String("limit", "", "cache size budget, e.g. 25G, or none")
 	minFree := fs.String("min-free", "", "free-disk floor to keep underneath the limit")
 	noDirect := fs.Bool("no-direct", false,
@@ -43,6 +47,11 @@ you were given separately; from then on it is verified normally.
 Falling back to a registry when the team cache is unreachable is what -no-direct turns
 off, for a machine that must never fetch from the internet itself.
 
+Configuration is per project. -project chooses which of this machine's projects it
+applies to, and the global project's is the fallback for every project without its own.
+-team-project is the name on the team's side, which defaults to their global project
+because assuming a name exists on somebody else's server is not this program's call.
+
 Nothing is written outside this cache's own directory.
 
 flags:
@@ -52,12 +61,25 @@ flags:
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
 	snap, err := config.LoadLocal(collect())
 	if err != nil {
 		return err
 	}
+	scope := *project
+	if scope == "" {
+		scope = local.CurrentProject(snap.DataDir)
+	}
+	if *noCache && scope != config.GlobalProject {
+		return fmt.Errorf(
+			"-no-cache is a promise about this machine — no store, no database — so it\n"+
+				"  cannot hold for one project and not another. Drop -project %s", scope)
+	}
 
-	// Chain configuration opens the store, and the store has one writer.
+	// Chain configuration opens the store, and the store has one writer. The daemon has
+	// to go anyway: the CA bundle it trusts is read when it starts.
 	if _, err := local.Stop(ctx, snap.DataDir, 30*time.Second); err != nil {
 		return err
 	}
@@ -68,52 +90,84 @@ flags:
 		}
 	}
 
-	if *uninstall {
+	set, err := local.ReadTeams(snap.DataDir)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case *uninstall && given["project"]:
+		set.Remove(scope)
+		if err := local.WriteTeams(snap.DataDir, set); err != nil {
+			return err
+		}
+		if err := applyChains(ctx, snap, set); err != nil {
+			return err
+		}
+		fmt.Printf("pkgcache: %s no longer has a team cache of its own\n", scope)
+		return describe(snap)
+
+	case *uninstall:
 		local.ClearTeam(snap.DataDir)
-		if err := local.ConfigureChains(ctx, snap, local.Team{}, false); err != nil {
+		if err := applyChains(ctx, snap, local.TeamSet{}); err != nil {
 			return err
 		}
 		fmt.Println("pkgcache: the team cache is no longer configured")
 		return describe(snap)
-	}
 
-	if *server != "" {
+	case *server != "":
 		verified, err := trust.Fetch(ctx, trust.Options{
 			Server: *server, ExpectedSHA256: *fingerprint, CAFile: *caFile,
 		})
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(
-			local.TeamCAPath(snap.DataDir), verified.CAPEM, 0o600); err != nil {
-			return err
-		}
-		team := local.Team{
+		set.Set(scope, local.Team{
 			Server:      verified.Base.String(),
 			Fingerprint: verified.Fingerprint,
-			Project:     *project,
+			Project:     *teamProject,
 			Direct:      !*noDirect,
 			NoCache:     *noCache,
-		}
-		if err := local.WriteTeam(snap.DataDir, team); err != nil {
+			CAPEM:       string(verified.CAPEM),
+		})
+		if err := local.WriteTeams(snap.DataDir, set); err != nil {
 			return err
 		}
 		// No chain to configure when nothing is cached here: with -no-cache this
 		// machine is a bridge, and opening the store to write upstream rows would
 		// create the databases the mode promises not to.
-		if !team.NoCache {
-			if err := local.ConfigureChains(ctx, snap, team, true); err != nil {
+		if !*noCache {
+			if err := applyChains(ctx, snap, set); err != nil {
 				return err
 			}
 		}
 		fmt.Printf("pkgcache: verified %s\n  fingerprint %s\n",
-			team.Server, team.Fingerprint)
-	} else if *noDirect || *noCache {
+			verified.Base.String(), verified.Fingerprint)
+
+	case *noDirect || *noCache:
 		return errors.New(
 			"-no-direct and -no-cache only mean something with a team cache; pass -server")
 	}
 
 	return describe(snap)
+}
+
+// applyChains writes every project's chain and says what it could not apply.
+//
+// A team cache configured for a project that does not exist here is inert until the
+// project is created. Reported rather than refused, because refusing would make the
+// order of two commands matter for no reason.
+func applyChains(ctx context.Context, snap *config.Snapshot, set local.TeamSet) error {
+	unknown, err := local.ConfigureChains(ctx, snap, set)
+	if err != nil {
+		return err
+	}
+	for _, name := range unknown {
+		fmt.Fprintf(os.Stderr,
+			"pkgcache: there is no project named %q on this cache, so its team cache is not\n"+
+				"  in use yet. `pkgcache project create %s`, or check the spelling.\n", name, name)
+	}
+	return nil
 }
 
 // applyLimit is `pkgcache limit` reached from setup, so one command can do the whole
@@ -149,7 +203,11 @@ func applyLimit(dataDir, limit, minFree string) error {
 // check that setup did what they meant.
 func describe(snap *config.Snapshot) error {
 	fmt.Println()
-	if team, has, err := local.ReadTeam(snap.DataDir); err == nil && has && team.NoCache {
+	set, err := local.ReadTeams(snap.DataDir)
+	if err != nil {
+		return err
+	}
+	if team, bridged := set.Bridged(); bridged {
 		fmt.Println("local      disabled")
 		fmt.Printf("team       %s (project %s)\n", team.Server, team.Project)
 		fmt.Println("direct     never — this machine caches nothing itself")
@@ -168,23 +226,55 @@ func describe(snap *config.Snapshot) error {
 		fmt.Printf("local      up to %s\n", local.FormatSize(budget.LimitBytes))
 	}
 
-	team, has, err := local.ReadTeam(snap.DataDir)
-	if err != nil {
-		return err
+	current := local.CurrentProject(snap.DataDir)
+	fmt.Printf("project    %s\n", current)
+	describeTier(set, current)
+
+	// Every other project, so a machine with two chains shows both. Printed only when
+	// there is more than the one just described: a single-project laptop should not
+	// have to read a table.
+	others := sortedProjects(set, current)
+	if len(others) > 0 {
+		fmt.Println()
+		for _, project := range others {
+			team, _ := set.Own(project)
+			fmt.Printf("%-10s %s (project %s)\n", project, team.Server, team.Project)
+		}
 	}
+	return nil
+}
+
+// describeTier says where a miss from this project goes next, and whether that was
+// chosen for it or inherited.
+func describeTier(set local.TeamSet, project string) {
+	team, has := set.For(project)
 	if !has {
 		fmt.Println("team       none")
 		fmt.Println("direct     always")
-		return nil
+		return
 	}
-	fmt.Printf("team       %s (project %s)\n", team.Server, team.Project)
-	if team.NoCache {
-		fmt.Println("local      disabled — a verified bridge to the team cache, nothing stored")
+	inherited := ""
+	if _, own := set.Own(project); !own {
+		inherited = fmt.Sprintf(" — inherited from %s", config.GlobalProject)
 	}
+	fmt.Printf("team       %s (project %s)%s\n", team.Server, team.Project, inherited)
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {
 		fmt.Println("direct     never — the team cache or nothing")
 	}
-	return nil
+}
+
+// sortedProjects returns the projects with a team cache of their own, except the one
+// already described.
+func sortedProjects(set local.TeamSet, except string) []string {
+	var names []string
+	for name, team := range set.Projects {
+		if name == except || team.Server == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

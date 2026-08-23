@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/app"
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/app"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // Collect reclaims space, in this process, because the user asked for it.

@@ -23,6 +23,7 @@ var commands = map[string]struct {
 	run     func(ctx context.Context, args []string) error
 }{
 	"setup":              {"point this machine at a cache, once", runSetup},
+	"project":            {"the projects this cache serves", runProject},
 	"run":                {"run one command with its tools pointed at the cache", runRun},
 	"shell":              {"open a shell whose tools use the cache", runShell},
 	"env":                {"print the settings that point tools at the cache", runEnv},
@@ -31,6 +32,14 @@ var commands = map[string]struct {
 	"persist":            {"settings that outlive the session", runPersist},
 	"docker-setup":       {"teach the Docker daemon about this cache", runDockerSetup},
 	"docker-build-setup": {"cache apt and apk in every build on this machine", runDockerBuildSetup},
+	"checkpoint":         {"record what this project holds right now", runCheckpoint},
+	"export":             {"put what this project holds into a pack", runExport},
+	"import":             {"take a pack somebody carried here", runImport},
+	"snapshots":          {"the checkpoints this project has", runSnapshots},
+	"rollback":           {"make a checkpoint this project's content again", runRollback},
+	"widget":             {"a small window that watches this cache", runWidget},
+	"tray":               {"keep the cache in your status bar", runTray},
+	"console":            {"open the full console in your browser", runConsole},
 	"limit":              {"set how much disk this cache may use", runLimit},
 	"prune":              {"reclaim space, now, because you asked", runPrune},
 	"status":             {"is the cache running, and what is in it", runStatus},
@@ -41,8 +50,10 @@ var commands = map[string]struct {
 
 // order fixes the help text, which a map iteration would shuffle between runs.
 var order = []string{
-	"setup", "run", "shell", "env", "build", "compose",
+	"setup", "project", "run", "shell", "env", "build", "compose",
 	"persist", "docker-setup", "docker-build-setup",
+	"checkpoint", "export", "import", "snapshots", "rollback",
+	"widget", "tray", "console",
 	"limit", "status", "prune", "stop", "serve", "version",
 }
 

@@ -18,30 +18,30 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/buildinfo"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	controlapi "github.com/brightskies/pkgreg/internal/control/api"
-	"github.com/brightskies/pkgreg/internal/control/auth"
-	"github.com/brightskies/pkgreg/internal/control/credential"
-	"github.com/brightskies/pkgreg/internal/control/job"
-	controlproject "github.com/brightskies/pkgreg/internal/control/project"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/eco/apt"
-	"github.com/brightskies/pkgreg/internal/eco/files"
-	ecogit "github.com/brightskies/pkgreg/internal/eco/git"
-	"github.com/brightskies/pkgreg/internal/eco/npm"
-	"github.com/brightskies/pkgreg/internal/eco/oci"
-	"github.com/brightskies/pkgreg/internal/eco/pypi"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/maintenance"
-	"github.com/brightskies/pkgreg/internal/obs"
-	"github.com/brightskies/pkgreg/internal/ops"
-	"github.com/brightskies/pkgreg/internal/upstream"
-	peerupstream "github.com/brightskies/pkgreg/internal/upstream/peer"
-	consoleweb "github.com/brightskies/pkgreg/internal/web"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
+	"github.com/aabdlwahab/PKGCache/internal/control/auth"
+	"github.com/aabdlwahab/PKGCache/internal/control/credential"
+	"github.com/aabdlwahab/PKGCache/internal/control/job"
+	controlproject "github.com/aabdlwahab/PKGCache/internal/control/project"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/eco/apt"
+	"github.com/aabdlwahab/PKGCache/internal/eco/files"
+	ecogit "github.com/aabdlwahab/PKGCache/internal/eco/git"
+	"github.com/aabdlwahab/PKGCache/internal/eco/npm"
+	"github.com/aabdlwahab/PKGCache/internal/eco/oci"
+	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/maintenance"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/ops"
+	"github.com/aabdlwahab/PKGCache/internal/upstream"
+	peerupstream "github.com/aabdlwahab/PKGCache/internal/upstream/peer"
+	consoleweb "github.com/aabdlwahab/PKGCache/internal/web"
 )
 
 // App holds the running subsystems.
@@ -247,7 +247,9 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 		DB: controlDB, Config: cfg, Accounts: accounts, Sessions: sessions,
 		Tokens: tokens, Credentials: credentials, Projects: projects, Jobs: jobs, Catalog: cat,
 		Engine: cacheEngine, Ecos: ecosystems, Events: events,
-		DataDir: snap.DataDir, CAFile: caFile,
+		Maintenance: a.Maintenance,
+		Log:         a.Log,
+		DataDir:     snap.DataDir, CAFile: caFile,
 	})
 	// Zero-value the series for every known project so dashboards read 0 rather
 	// than "no data" before the first request lands. See obs.InitProjectSeries.

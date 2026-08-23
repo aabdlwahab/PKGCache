@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/migrate/frompython"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/migrate/frompython"
 )
 
 func runMigrate(ctx context.Context, args []string) error {

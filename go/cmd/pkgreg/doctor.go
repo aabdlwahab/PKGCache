@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/app"
-	"github.com/brightskies/pkgreg/internal/buildinfo"
-	"github.com/brightskies/pkgreg/internal/clientrelease"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/pki"
-	consoleweb "github.com/brightskies/pkgreg/internal/web"
+	"github.com/aabdlwahab/PKGCache/internal/app"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/clientrelease"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/pki"
+	consoleweb "github.com/aabdlwahab/PKGCache/internal/web"
 )
 
 // runDoctor reports everything that would stop this host from serving, in one pass,

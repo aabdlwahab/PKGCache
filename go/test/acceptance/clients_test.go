@@ -23,14 +23,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/eco"
-	aptrepo "github.com/brightskies/pkgreg/internal/eco/apt"
-	"github.com/brightskies/pkgreg/internal/eco/ecotest"
-	"github.com/brightskies/pkgreg/internal/eco/files"
-	"github.com/brightskies/pkgreg/internal/eco/npm"
-	ocirepo "github.com/brightskies/pkgreg/internal/eco/oci"
-	"github.com/brightskies/pkgreg/internal/eco/pypi"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	aptrepo "github.com/aabdlwahab/PKGCache/internal/eco/apt"
+	"github.com/aabdlwahab/PKGCache/internal/eco/ecotest"
+	"github.com/aabdlwahab/PKGCache/internal/eco/files"
+	"github.com/aabdlwahab/PKGCache/internal/eco/npm"
+	ocirepo "github.com/aabdlwahab/PKGCache/internal/eco/oci"
+	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
 )
 
 const (

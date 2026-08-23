@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/clientbuild"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 // build and compose are the same commands pkgreg-client has, with the same flags and
@@ -39,7 +39,8 @@ func dockerCommand(ctx context.Context, argv []string, compose bool) error {
 	fs := flag.NewFlagSet("pkgcache "+name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	options := clientbuild.Options{}
-	project := fs.String("project", "global", "project to scope URLs to")
+	project := fs.String("project", "",
+		"project to scope URLs to (default: the current one, from pkgcache project use)")
 	fs.BoolVar(&options.Print, "print", false,
 		"write the rewritten Dockerfile or Compose file and build nothing")
 	fs.BoolVar(&options.HostAddress, "host-address", false,
@@ -101,6 +102,11 @@ flags:
 	options.Bridge = state.BaseURL()
 	options.Registry = state.Addr
 	options.Project = *project
+	if options.Project == "" {
+		// Resolved here rather than left to FromEnvironment, which knows the
+		// environment but not the stored choice.
+		options.Project = local.CurrentProject(snap.DataDir)
+	}
 	options.AptProxy = state.BaseURL()
 	options.GitHosts = splitList(*gitHosts)
 	options = clientbuild.FromEnvironment(options)

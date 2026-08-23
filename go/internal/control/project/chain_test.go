@@ -3,7 +3,7 @@ package project
 import (
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // The chain a request walks is decided here, so its order is worth pinning at the point

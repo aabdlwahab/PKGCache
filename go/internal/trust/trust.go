@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
 )
 
 // MaxCABytes bounds the one unverified download. A CA is a few kilobytes; anything

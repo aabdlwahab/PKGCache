@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 // bindLocalFlags wires the flags every pkgcache command accepts, so `serve` and the

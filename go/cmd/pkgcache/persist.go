@@ -7,15 +7,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 func runPersist(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("persist", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
-	project := fs.String("project", "global", "project to scope URLs to")
+	project := fs.String("project", "",
+		"project to scope URLs to (default: the current one, from pkgcache project use)")
 	gitHosts := fs.String("git-host", strings.Join(defaultGitHosts, ","),
 		"comma-separated hosts whose clones are served from the cache")
 	noGit := fs.Bool("no-git", false, "leave git configuration alone")
@@ -79,12 +80,20 @@ flags:
 	if *noGit {
 		hosts = nil
 	}
+	// These files outlive the shell that wrote them, so the project is resolved now and
+	// recorded literally. A persisted .npmrc that followed a later `project use` would
+	// silently redirect an IDE nobody has reopened.
+	scope := *project
+	if scope == "" {
+		scope = local.CurrentProject(snap.DataDir)
+	}
 	// The address the settings name is the configured one, not a running daemon's:
 	// these files outlive every daemon, and a fixed port is the whole reason the
 	// activation socket binds one.
 	return local.ApplyPersist(local.PersistOptions{
 		BaseURL:   snap.LocalBaseURL(),
-		Project:   *project,
+		Project:   scope,
+		DataDir:   snap.DataDir,
 		GitHosts:  hosts,
 		DryRun:    *dryRun,
 		Uninstall: *uninstall,

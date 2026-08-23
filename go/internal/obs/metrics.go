@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/brightskies/pkgreg/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
 )
 
 // Outcome labels for a served request. These are the vocabulary of the cache: every

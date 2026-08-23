@@ -3,7 +3,7 @@ package auth
 import (
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // grantFixture builds the shape the feature exists for: two admins who own nothing of

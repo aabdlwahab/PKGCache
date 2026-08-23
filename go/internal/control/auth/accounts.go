@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 const minPassword = 8

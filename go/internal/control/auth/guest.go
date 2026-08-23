@@ -3,8 +3,8 @@ package auth
 import (
 	"net/http"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // The guest identity: a real session with no account behind it.

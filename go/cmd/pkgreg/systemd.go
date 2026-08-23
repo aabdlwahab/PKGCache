@@ -94,7 +94,7 @@ func systemdUnit(binary, dataDir, hostnames string) string {
 	}
 	return `[Unit]
 Description=pkgreg package registry and air-gap cache
-Documentation=https://github.com/brightskies/package-registry
+Documentation=https://github.com/aabdlwahab/PKGCache
 Wants=network-online.target
 After=network-online.target
 

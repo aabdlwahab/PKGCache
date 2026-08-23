@@ -5,16 +5,12 @@ on:
     paths:
       - "go/**"
       - ".github/workflows/go.yml"
-      - "dnsmasq/**"
       - "examples/build-resolution/**"
-      - "docker-compose.yml"
   pull_request:
     paths:
       - "go/**"
       - ".github/workflows/go.yml"
-      - "dnsmasq/**"
       - "examples/build-resolution/**"
-      - "docker-compose.yml"
 
 permissions:
   contents: read
@@ -87,6 +83,32 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
+      # The window helper's Linux half is the only cgo in the product, and the machine this
+      # was written on has no GTK headers — so this job is where it gets compiled at all.
+      # Ubuntu 24.04's package names, which is the distro it is specialised to.
+      - name: Build the application-window helper (Ubuntu)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          go build -tags webkitgtk -o /dev/null ./cmd/pkgcache-window
+
+      # Pure Go, so it needs nothing installed and proves the release model is unchanged:
+      # a window on Windows still cross-compiles from any host.
+      - name: Cross-compile the Windows application-window helper
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -ldflags '-H windowsgui' -o /dev/null ./cmd/pkgcache-window
+
+      # The one part of this product that needs a Mac to build: NSStatusItem is Cocoa and
+      # pkgcache itself is CGO_ENABLED=0, so the menu bar item is a separate helper.
+      # Compiling it here is the floor, the same as cross-compiling the platform branches
+      # in the build job; signing and notarizing belong to the release workflow.
+      - name: Check the menu bar helper still compiles
+        if: runner.os == 'macOS'
+        run: swiftc -O -o /dev/null tools/menubar/main.swift
+
       - name: Privileged Linux/macOS install, trust, idempotency, and uninstall
         if: runner.os != 'Windows'
         shell: bash

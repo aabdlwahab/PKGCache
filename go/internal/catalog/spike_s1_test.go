@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/race"
+	"github.com/aabdlwahab/PKGCache/internal/race"
 )
 
 // Spike S1 — does the pure-Go SQLite driver hold up?

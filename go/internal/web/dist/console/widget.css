@@ -1,0 +1,367 @@
+/* The widget: pkgcache in a window somebody leaves open.
+ *
+ * Not a narrow console. The console answers "what is this instance doing" for someone
+ * who came to find out; this answers "is my cache working" for someone who is not
+ * looking at it — glanced at from across a desk, between builds, at 420px wide beside
+ * an editor. So it commits to one column, four questions in a fixed order, and no
+ * navigation at all: there is nowhere to go, which is the point.
+ *
+ * Everything visual is inherited. tokens.css supplies the palette and the face,
+ * console.css the meters, pills and buttons. What is here is the layout that does not
+ * exist anywhere else, and the two things a small always-open window needs that a page
+ * does not: a header that survives being 380px wide, and content that never scrolls
+ * sideways.
+ */
+
+.widget-body {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* The shell is #root, not body. Putting the grid on body looked right and was not: the
+   modules mount inside #root, so body's rows were spent on #root and <noscript> and the
+   footer floated 290px above the bottom of the window.
+
+   min-height, not height: the window can be resized taller and the sections should take
+   the room rather than leaving a band of background under them. */
+#root.wg-shell {
+  min-height: 100vh;
+  display: grid;
+  /* header, tabs, content, footer. The count matters: with three rows declared for four
+     children the tab bar took the flexible one and stood a hundred pixels tall. */
+  grid-template-rows: auto auto 1fr auto;
+}
+
+/* ---- header ---------------------------------------------------------------- */
+
+.wg-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.wg-head .wordmark { font-size: 13px; }
+.wg-head-link { font-size: 12px; flex: none; }
+.wg-head-spacer { flex: 1; }
+/* The switcher is the one control that has to stay usable at any width, so it is the
+   element allowed to shrink; the wordmark and the live dot are not. */
+.wg-project { min-width: 0; flex: 0 1 auto; }
+.wg-project-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+/* The switcher gives up width; the button does not, or "+" wraps to nothing. */
+.wg-project-row select { flex: 0 1 auto; min-width: 0; }
+.wg-project-add {
+  flex: none;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+.wg-project select {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--inset);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+}
+
+/* ---- body ------------------------------------------------------------------ */
+
+.wg-main {
+  display: grid;
+  /* Five children — notice, state, disk, figures, live — and the live list takes the
+     slack. A window taller than its content then reads as "there is room for transfers"
+     rather than as a layout that ran out of things to say, and rows appear exactly where
+     the space already was. */
+  grid-template-rows: auto auto auto auto 1fr;
+  gap: 14px;
+  padding: 14px;
+  /* A 2.5 GB wheel's name is longer than this window. Wrapping is the only honest
+     answer; the alternative is a horizontal scrollbar on a 420px window. */
+  overflow-wrap: anywhere;
+}
+
+.wg-section { display: grid; gap: 8px; align-content: start; }
+/* An explicit display wins over the hidden attribute's UA rule, so a section switched
+   off by the tab bar went on being drawn underneath the panel. */
+.wg-section[hidden] { display: none; }
+.wg-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tspace);
+}
+
+/* The state line. This is the sentence somebody opened the window to read, so it is
+   the largest thing in it and it says a state rather than a number. */
+.wg-state {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wg-state .wg-state-note { font-size: 12px; font-weight: 400; color: var(--muted); }
+.wg-state.is-full { color: var(--bad); }
+.wg-state.is-offline { color: var(--warn); }
+
+/* Disk. --used is set through CSSOM by widget.js: the CSP forbids the style attribute,
+   which is why the console applies every computed width property by property. */
+/* A border, because at 343 KiB of 20 MiB the fill is a hairline and the track alone is
+   --inset on --bg, which in light mode is nearly nothing. An empty meter still has to
+   read as a measurement that exists. */
+.wg-meter { height: 10px; border: 1px solid var(--line); }
+.wg-meter .meter-fill { transition: width 420ms var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .wg-meter .meter-fill { transition: none; }
+}
+
+.wg-numbers {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.wg-numbers .wg-of { color: var(--muted); }
+
+/* Two figures side by side. Not a KPI grid of same-size cards — there are exactly two
+   numbers worth this much room, and they are read together. */
+.wg-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wg-figure {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.wg-figure-value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wg-figure-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: var(--tspace); }
+
+/* Live transfers. The reason to keep this window open at all. */
+.wg-live { display: grid; gap: 6px; }
+.wg-live-row {
+  display: grid;
+  gap: 4px;
+  padding: 7px 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* The one authored moment: a transfer arrives by settling in, not by appearing.
+     Everything else in this window changes value in place. */
+  animation: wg-arrive 360ms var(--ease) both;
+}
+@keyframes wg-arrive {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wg-live-row { animation: none; }
+}
+.wg-live-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.wg-live-eco { color: var(--muted); flex: none; }
+.wg-live-size { color: var(--fg2); font-variant-numeric: tabular-nums; flex: none; }
+.wg-live-track { height: 3px; background: var(--inset); border-radius: 2px; overflow: hidden; }
+.wg-live-fill { display: block; height: 100%; background: var(--accent); }
+/* A transfer with no declared length: the bar cannot claim a fraction it does not
+   know, so it says "moving" instead of guessing one. */
+.wg-live-fill.indeterminate {
+  width: 34%;
+  animation: wg-sweep 1.5s var(--ease) infinite;
+}
+@keyframes wg-sweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wg-live-fill.indeterminate { animation: none; width: 100%; opacity: 0.4; }
+}
+
+.wg-quiet { color: var(--muted); font-size: 12px; }
+
+/* The full-cache banner. The one thing in this window that interrupts, because the
+   condition it reports is a cache that keeps working while quietly doing nothing. */
+.wg-banner {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  /* Mixed in sRGB, not OKLCH. --bad is hue 28 and --panel is hue 250, and an OKLCH mix
+     interpolates between them the short way round — through magenta — so a 14% red tint
+     on a near-white panel came out lavender. sRGB does not interpolate hue at all. */
+  background: color-mix(in srgb, var(--bad) 10%, var(--panel));
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+}
+.wg-banner-title { font-weight: 600; color: var(--bad); }
+.wg-banner-reason { font-size: 12px; color: var(--fg2); }
+.wg-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.wg-notice {
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--fg);
+}
+.wg-notice.is-error { background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border-color: var(--bad); }
+/* A pack path is the one string here somebody needs to select and copy. */
+.wg-notice code { user-select: all; word-break: break-all; }
+
+/* ---- footer ---------------------------------------------------------------- */
+
+.wg-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.wg-foot .btn { padding: 4px 9px; font-size: 12px; }
+
+/* Buttons in the widget are smaller than the console's, and there are never more than
+   three visible at once. */
+.wg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wg-actions .btn { padding: 5px 10px; font-size: 12px; }
+
+/* ---- what it just did ------------------------------------------------------ */
+
+/* The bottom of the window belongs to this. A cache is quiet most of the time, and a
+   quiet monitor should still show that it is watching something — so when nothing is in
+   flight, the last few completions take the space the live rows would have used. */
+.wg-recent { display: grid; gap: 2px; align-content: start; }
+.wg-recent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+.wg-recent-row:first-child { border-top: 0; }
+.wg-recent-mark { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.wg-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
+.wg-recent-outcome { color: var(--muted); font-size: 11px; }
+.wg-recent-size { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+
+/* ---- tabs and panels -------------------------------------------------------
+ *
+ * Four views in one column. The segmented control is the whole navigation: there is
+ * nowhere else to go, and a nav rail in 420px would spend a quarter of the window saying
+ * so. Labels are lowercase because they are the product's own idiom, not sentence case
+ * borrowed from a settings dialog.
+ */
+
+.wg-seg {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.wg-seg-item {
+  flex: 1;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: var(--tspace);
+  color: var(--fg2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.wg-seg-item:hover { background: var(--panel2); color: var(--fg); }
+.wg-seg-item.on { background: var(--accent-soft); color: var(--accent); }
+/* The order toggle inside a panel is the same control at a smaller scale, and must not
+   stretch to fill the row the way the navigation does. */
+.wg-seg-small { padding: 0; background: none; border: 0; }
+.wg-seg-small .wg-seg-item { flex: 0 0 auto; font-size: 11px; padding: 2px 7px; }
+
+.wg-panel-host { display: grid; }
+.wg-panel-host[hidden] { display: none; }
+.wg-panel { display: grid; gap: 10px; align-content: start; }
+.wg-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.wg-panel-note { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+
+/* ---- rows: packages, checkpoints, sources ---- */
+
+.wg-rows { display: grid; gap: 1px; }
+.wg-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.wg-row.is-current { border-color: var(--accent); }
+.wg-row-pick { cursor: pointer; }
+.wg-row-pick:hover { background: var(--panel2); }
+.wg-row input[type="checkbox"] {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+/* min-width:0 is what lets the long name truncate instead of pushing the size off the
+   right edge of a 420px window. */
+.wg-row-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.wg-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-row-sub { color: var(--muted); font-size: 11px; }
+.wg-row-sub.is-up { color: var(--ok); }
+.wg-row-sub.is-down { color: var(--bad); }
+.wg-row-right { display: grid; gap: 1px; justify-items: end; flex: none; }
+.wg-row-size { font-variant-numeric: tabular-nums; }
+.wg-row-mark { width: 6px; color: var(--accent); flex: none; }
+.wg-row .btn { padding: 3px 8px; font-size: 11px; flex: none; }
+
+/* ---- the sources form ---- */
+
+.wg-form { display: grid; gap: 10px; margin-top: 2px; }
+.wg-field { display: grid; gap: 3px; }
+.wg-field-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tspace);
+}
+.wg-field input {
+  width: 100%;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--inset);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+}
+.wg-field-hint { color: var(--muted); font-size: 10.5px; }
+.wg-check {
+  display: flex;
+  align-items: start;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--fg2);
+  line-height: 1.4;
+}
+.wg-check input { width: 13px; height: 13px; accent-color: var(--accent); margin: 2px 0 0; flex: none; }

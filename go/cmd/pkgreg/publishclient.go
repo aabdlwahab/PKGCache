@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/clientrelease"
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/clientrelease"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // runPublishClient copies client binaries into the data directory so the tutorial and

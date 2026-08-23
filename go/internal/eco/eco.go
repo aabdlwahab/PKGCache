@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 // StorageMode says how an ecosystem's content is held.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 func bootstrapDB(t *testing.T) *control.DB {

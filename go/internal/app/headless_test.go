@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // Headless removes the browser surface and nothing else. The failure this guards

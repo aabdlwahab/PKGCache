@@ -143,6 +143,20 @@ export const api = {
     request(`/users/${encodeURIComponent(name)}`, { method: "PATCH", body: body(patch) }),
   deleteUser: (name) => request(`/users/${encodeURIComponent(name)}`, { method: "DELETE" }),
   gc: (dryRun) => request("/maintenance/gc", { method: "POST", body: body({ dry_run: dryRun }) }),
+  /* Removing named content, as opposed to evicting whatever is coldest. Synchronous:
+     this is the handful of digests somebody ticked, not a sweep worth queueing. */
+  removeArtifacts: (project, digests, dryRun = false) =>
+    request(`${at(project)}/maintenance/remove`, {
+      method: "POST",
+      body: body({ digests, dry_run: dryRun }),
+    }),
+
+  // ---- local sources: present only on a cache that keeps its own upstreams
+  sources: () => request("/local/sources"),
+  putSource: (project, value) =>
+    request(`/local/sources/${encodeURIComponent(project)}`, { method: "PUT", body: body(value) }),
+  deleteSource: (project) =>
+    request(`/local/sources/${encodeURIComponent(project)}`, { method: "DELETE" }),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

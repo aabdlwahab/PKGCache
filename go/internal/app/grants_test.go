@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // Project grants over HTTP. The unit tests in internal/control/auth cover the policy;

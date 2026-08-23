@@ -228,3 +228,50 @@ func write(t *testing.T, path, body string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// pkgcache is published under its own name, not pkgreg's.
+//
+// The grammar is an allowlist, so a name it does not know is not merely unlisted — it is
+// invisible to both the listing and the download route. Before pkgcache was added here,
+// every pkgcache binary an operator published sat in the directory being ignored, and the
+// installer that asks a cache what it offers was told "nothing for your platform".
+func TestPkgcacheIsPublishableUnderItsOwnName(t *testing.T) {
+	for _, filename := range PkgcachePlatforms() {
+		binary, ok := Parse(filename)
+		if !ok {
+			t.Fatalf("Parse(%q) rejected a name `make pkgcache-release` produces", filename)
+		}
+		if binary.Tool != "pkgcache" {
+			t.Fatalf("Parse(%q).Tool = %q, want pkgcache", filename, binary.Tool)
+		}
+		if binary.OS == "" || binary.Arch == "" {
+			t.Fatalf("Parse(%q) = %+v, want an os and an arch", filename, binary)
+		}
+	}
+
+	// The pkgreg-prefixed names keep their old meaning.
+	for _, filename := range ClientPlatforms() {
+		binary, ok := Parse(filename)
+		if !ok || binary.Tool != "client" {
+			t.Fatalf("Parse(%q) = %+v, %v; want the client tool", filename, binary, ok)
+		}
+	}
+
+	// Its sums file is not prefixed either, because the binaries are not.
+	if got := ChecksumsFile("pkgcache"); got != "pkgcache-SHA256SUMS" {
+		t.Fatalf("ChecksumsFile(pkgcache) = %q", got)
+	}
+	if got := ChecksumsFile("client"); got != "pkgreg-client-SHA256SUMS" {
+		t.Fatalf("ChecksumsFile(client) = %q", got)
+	}
+
+	// And nothing else slips through the widened pattern.
+	for _, bad := range []string{
+		"pkgcache", "pkgcache-linux", "pkgcache-plan9-amd64", "pkgcache-linux-mips",
+		"pkgreg-pkgcache-linux-amd64", "evil-pkgcache-linux-amd64", "../pkgcache-linux-amd64",
+	} {
+		if _, ok := Parse(bad); ok {
+			t.Fatalf("Parse(%q) was accepted", bad)
+		}
+	}
+}

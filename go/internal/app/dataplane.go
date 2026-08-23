@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 type internalRequestKey struct{}
@@ -187,7 +187,8 @@ func (a *App) serveUnified(w http.ResponseWriter, r *http.Request) {
 func consolePath(name string) bool {
 	switch name {
 	case "/", "/landing", "/landing.html", "/tutorial", "/tutorial.html",
-		"/console", "/theme.js", "/coords.js", "/tokens.css", "/landing.js", "/landing.css",
+		"/console", "/widget", "/theme.js", "/coords.js", "/tokens.css",
+		"/landing.js", "/landing.css",
 		"/tutorial.js", "/tutorial.css", "/favicon.ico":
 		return true
 	}

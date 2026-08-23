@@ -33,8 +33,13 @@ const DirName = "downloads"
 // name is the only shape a published filename may take. An allowlist rather than a
 // traversal check: these files are produced by our own release build, so anything not
 // matching this was not put there by the process we describe.
+//
+// Two shapes, because the tools are named two ways. pkgreg's own companions carry its
+// name; pkgcache is a product with a name of its own and is built as pkgcache-<os>-<arch>
+// by the same release target. Renaming it to fit one pattern would rename the file people
+// already download by hand.
 var name = regexp.MustCompile(
-	`^pkgreg-(client|bridge)-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$`)
+	`^(?:pkgreg-(client|bridge)|(pkgcache))-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$`)
 
 // Binary is one publishable or published file.
 type Binary struct {
@@ -62,12 +67,17 @@ func Dir(dataDir string) string { return filepath.Join(dataDir, DirName) }
 // Parse reports whether a filename is publishable, and decomposes it if so. The
 // caller gets no size or checksum: those describe a file, and this describes a name.
 func Parse(filename string) (Binary, bool) {
-	if !name.MatchString(filename) {
+	match := name.FindStringSubmatch(filename)
+	if match == nil {
 		return Binary{}, false
 	}
-	// Safe by construction: the pattern above fixed the field count.
-	parts := strings.Split(strings.TrimSuffix(filename, ".exe"), "-")
-	return Binary{Name: filename, Tool: parts[1], OS: parts[2], Arch: parts[3]}, true
+	// Group 1 is the pkgreg-<tool> form and group 2 the standalone one; exactly one of
+	// them is set, because the alternation cannot match both.
+	tool := match[1]
+	if tool == "" {
+		tool = match[2]
+	}
+	return Binary{Name: filename, Tool: tool, OS: match[3], Arch: match[4]}, true
 }
 
 // ClientPlatforms is what a complete client release covers, in the order a human
@@ -83,8 +93,29 @@ func ClientPlatforms() []string {
 	}
 }
 
-// ChecksumsFile is the sums file for one tool: pkgreg-client-SHA256SUMS.
-func ChecksumsFile(tool string) string { return "pkgreg-" + tool + "-SHA256SUMS" }
+// Tools are what may be published, in the order a listing shows them.
+func Tools() []string { return []string{"client", "bridge", "pkgcache"} }
+
+// ChecksumsFile is the sums file for one tool: pkgreg-client-SHA256SUMS, and
+// pkgcache-SHA256SUMS for the tool whose binaries are not prefixed either.
+func ChecksumsFile(tool string) string {
+	if tool == "pkgcache" {
+		return "pkgcache-SHA256SUMS"
+	}
+	return "pkgreg-" + tool + "-SHA256SUMS"
+}
+
+// PkgcachePlatforms is what a complete pkgcache release covers. It matches what
+// `make pkgcache-release` builds.
+func PkgcachePlatforms() []string {
+	return []string{
+		"pkgcache-linux-amd64",
+		"pkgcache-linux-arm64",
+		"pkgcache-darwin-amd64",
+		"pkgcache-darwin-arm64",
+		"pkgcache-windows-amd64.exe",
+	}
+}
 
 // List reports what a directory currently offers, newest checksums included. A
 // missing directory is the normal state of a fresh instance, so it lists as empty
@@ -140,7 +171,7 @@ func Sort(list []Binary) {
 // binary with no recorded digest is a partial publish, not an error to parse.
 func Checksums(dir string) map[string]string {
 	sums := map[string]string{}
-	for _, tool := range []string{"client", "bridge"} {
+	for _, tool := range Tools() {
 		body, err := os.ReadFile(filepath.Join(dir, ChecksumsFile(tool)))
 		if err != nil {
 			continue
@@ -416,31 +447,44 @@ func writeChecksums(dir string) error {
 // reports and what a publish prints back.
 func Verify(dir string) (missing []string, corrupt []string, unrecorded []string, err error) {
 	sums := Checksums(dir)
-	for _, filename := range ClientPlatforms() {
+	check := func(filename string, required bool) error {
 		path := filepath.Join(dir, filename)
 		info, statErr := os.Stat(path)
-		if errors.Is(statErr, os.ErrNotExist) {
-			missing = append(missing, filename)
-			continue
+		if errors.Is(statErr, os.ErrNotExist) || (statErr == nil && info.IsDir()) {
+			if required {
+				missing = append(missing, filename)
+			}
+			return nil
 		}
 		if statErr != nil {
-			return nil, nil, nil, statErr
-		}
-		if info.IsDir() {
-			missing = append(missing, filename)
-			continue
+			return statErr
 		}
 		want := sums[filename]
 		if want == "" {
 			unrecorded = append(unrecorded, filename)
-			continue
+			return nil
 		}
 		got, digestErr := Digest(path)
 		if digestErr != nil {
-			return nil, nil, nil, digestErr
+			return digestErr
 		}
 		if got != want {
 			corrupt = append(corrupt, filename)
+		}
+		return nil
+	}
+	for _, filename := range ClientPlatforms() {
+		if err := check(filename, true); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	// pkgcache is verified when it is there and not reported missing when it is not.
+	// Publishing it is optional — a cache that only hands out pkgreg-client is a complete
+	// installation — but a published binary whose bytes disagree with its recorded digest
+	// is a fault either way, and the installers hand that digest to strangers as proof.
+	for _, filename := range PkgcachePlatforms() {
+		if err := check(filename, false); err != nil {
+			return nil, nil, nil, err
 		}
 	}
 	return missing, corrupt, unrecorded, nil

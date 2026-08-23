@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgcache</title>
+    <!-- Same pre-paint theme read as the console: this window is usually opened beside
+         it, and two surfaces disagreeing about the theme for one frame is worse here
+         because the whole window is 420px of it. -->
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/tokens.css" />
+    <!-- The console's stylesheet carries the shared components this reuses — meters,
+         pills, buttons, the loading state — so the widget stylesheet is only the parts
+         that are genuinely its own: a one-column layout at 420px. -->
+    <link rel="stylesheet" href="/console/console.css" />
+    <link rel="stylesheet" href="/console/widget.css" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151a'/><rect x='0.6' y='0.6' width='30.8' height='30.8' rx='6.6' fill='none' stroke='%232b3540'/><path d='M13 8 H9 V24 H13' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><path d='M19 8 H23 V24 H19' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><rect x='14.4' y='13.6' width='3.2' height='4.8' rx='1' fill='%2345d98a'/></svg>"
+    />
+    <script type="module" src="/console/widget.js"></script>
+  </head>
+  <body class="widget-body">
+    <div id="root" class="booting">Reading the cache…</div>
+    <noscript>
+      This window needs JavaScript. <code>pkgcache status</code> reports the same
+      things, and does not.
+    </noscript>
+  </body>
+</html>

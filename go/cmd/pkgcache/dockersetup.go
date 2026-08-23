@@ -7,9 +7,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/clientbuild"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 func runDockerSetup(ctx context.Context, args []string) error {

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // pkgcache's promise is that a real client works through it with nothing installed —
@@ -36,7 +38,7 @@ var buildPkgcache = sync.OnceValues(func() (string, error) {
 		return "", err
 	}
 	binary := filepath.Join(directory, "pkgcache")
-	build := exec.Command("go", "build", "-o", binary, "github.com/brightskies/pkgreg/cmd/pkgcache")
+	build := exec.Command("go", "build", "-o", binary, "github.com/aabdlwahab/PKGCache/cmd/pkgcache")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
 		return "", fmt.Errorf("build pkgcache: %w", err)
@@ -143,6 +145,15 @@ func (c *cacheProcess) pointAtPriority(
 	t *testing.T, ecosystem, name, url string, priority int,
 ) {
 	t.Helper()
+	c.pointProjectAtPriority(t, config.GlobalProject, ecosystem, name, url, priority)
+}
+
+// pointProjectAtPriority is pointAtPriority for a named project, which is what a chain
+// per project needs.
+func (c *cacheProcess) pointProjectAtPriority(
+	t *testing.T, project, ecosystem, name, url string, priority int,
+) {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{
 		"eco": ecosystem, "name": name, "url": url,
 		"enabled": true, "priority": priority,
@@ -150,7 +161,7 @@ func (c *cacheProcess) pointAtPriority(
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := "http://" + c.addr + "/api/v1/projects/global/upstreams"
+	endpoint := "http://" + c.addr + "/api/v1/projects/" + project + "/upstreams"
 	request, err := http.NewRequestWithContext(
 		context.Background(), http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -706,6 +717,481 @@ func TestPkgcacheNoCacheOpensNoStore(t *testing.T) {
 	for _, forbidden := range []string{"db", "blobs", "managed"} {
 		if _, err := os.Stat(filepath.Join(dataDir, forbidden)); err == nil {
 			t.Errorf("-no-cache created %s/", forbidden)
+		}
+	}
+}
+
+// Projects on a laptop exist to resolve differently, so this asserts the thing that
+// makes them worth having: two projects, two chains, and a request in one never reaching
+// the other's origin.
+//
+// Driven with plain HTTP rather than npm. The claim is about routing and chain order,
+// which is exactly what a GET through the cache exercises, and a real installer would
+// add minutes to prove the same two counters.
+func TestPkgcacheProjectsChainSeparately(t *testing.T) {
+	cache := startCache(t)
+
+	var mu sync.Mutex
+	teamHits, publicHits := 0, 0
+	serve := func(count *int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			*count++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"name":"pkg","dist-tags":{"latest":"1.0.0"},"versions":{}}`)
+		}
+	}
+	team := httptest.NewServer(serve(&teamHits))
+	defer team.Close()
+	public := httptest.NewServer(serve(&publicHits))
+	defer public.Close()
+
+	cache.cli(t, "project", "create", "work")
+	cache.readAddr(t)
+
+	// global goes straight out; work goes through the team cache first.
+	cache.pointAtPriority(t, "npm", "registry", public.URL, 20)
+	cache.pointProjectAtPriority(t, "work", "npm", "registry", team.URL, 10)
+
+	if status := cacheGet(t, cache, "/work/npm/in-work"); status != http.StatusOK {
+		t.Fatalf("a request in work answered %d", status)
+	}
+	mu.Lock()
+	teamAfterWork, publicAfterWork := teamHits, publicHits
+	mu.Unlock()
+	if teamAfterWork == 0 {
+		t.Fatal("work did not reach its own team cache")
+	}
+	if publicAfterWork != 0 {
+		t.Fatalf("work reached the global project's origin (%d hits)", publicAfterWork)
+	}
+
+	if status := cacheGet(t, cache, "/global/npm/in-global"); status != http.StatusOK {
+		t.Fatalf("a request in global answered %d", status)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if publicHits == 0 {
+		t.Fatal("global did not reach its own origin")
+	}
+	if teamHits != teamAfterWork {
+		t.Fatalf("global reached work's team cache (%d, was %d)", teamHits, teamAfterWork)
+	}
+}
+
+// The hole this closes: upstream rows are per project in the database, so a project
+// created after `setup` used to inherit nothing and resolve straight to the public
+// registry. Silently, because a chain missing its first row is still a valid chain.
+//
+// -no-direct throughout, so the chain is one row and the test can never reach the real
+// registry.npmjs.org that a direct chain's second row would name.
+func TestPkgcacheNewProjectInheritsTheTeamChain(t *testing.T) {
+	cache := startCache(t)
+
+	var mu sync.Mutex
+	hits := map[string]int{}
+	// A pkgreg publishes its CA at /api/ca.crt, and setup fetches it there and refuses
+	// it unless it matches the fingerprint given out of band. Serving it is what makes
+	// this an honest stand-in for a team cache; it is not counted as a package request.
+	var certificate func() []byte
+	serve := func(label string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/ca.crt" {
+				_, _ = w.Write(certificate())
+				return
+			}
+			mu.Lock()
+			hits[label]++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"name":%q,"dist-tags":{"latest":"1.0.0"},"versions":{}}`, label)
+		})
+	}
+	var current *httptest.Server
+	certificate = func() []byte {
+		return pem.EncodeToMemory(&pem.Block{
+			Type: "CERTIFICATE", Bytes: current.Certificate().Raw,
+		})
+	}
+	first := httptest.NewTLSServer(serve("first"))
+	defer first.Close()
+	second := httptest.NewTLSServer(serve("second"))
+	defer second.Close()
+
+	// A pkgreg mints its own certificate, so setup pins a CA out of band. Here that is
+	// httptest's, written to a file — the same path an air-gapped install takes.
+	current = first
+	cache.cli(t, "setup", "-server", first.URL, "-ca-file",
+		writeCA(t, first.Certificate().Raw), "-no-direct")
+	cache.cli(t, "project", "create", "work")
+	cache.start(t)
+
+	if status := cacheGet(t, cache, "/work/npm/anything"); status != http.StatusOK {
+		t.Fatalf("a project created after setup answered %d; it inherited no chain", status)
+	}
+	mu.Lock()
+	inherited := hits["first"]
+	mu.Unlock()
+	if inherited == 0 {
+		t.Fatal("a project created after setup did not reach the team cache")
+	}
+
+	// Its own configuration replaces the inherited one, and does not disturb global's.
+	current = second
+	cache.cli(t, "setup", "-project", "work", "-server", second.URL, "-ca-file",
+		writeCA(t, second.Certificate().Raw), "-no-direct")
+	cache.start(t)
+
+	if status := cacheGet(t, cache, "/work/npm/its-own"); status != http.StatusOK {
+		t.Fatalf("work answered %d after being given its own team cache", status)
+	}
+	if status := cacheGet(t, cache, "/global/npm/still-first"); status != http.StatusOK {
+		t.Fatalf("global answered %d", status)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["second"] == 0 {
+		t.Fatal("work did not reach the team cache configured for it")
+	}
+	if hits["first"] <= inherited {
+		t.Fatal("global stopped reaching its own team cache when work was given one")
+	}
+}
+
+// cli runs a pkgcache command and fails the test with its output.
+func (c *cacheProcess) cli(t *testing.T, args ...string) string {
+	t.Helper()
+	out, err := c.command(args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("pkgcache %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// start ensures a daemon is running and records its address. `setup` stops the daemon —
+// it holds the store's single writer, and the trust bundle is read at startup — so any
+// test that configures a team cache has to bring one back before it can ask for a
+// package, on whatever ephemeral port it lands.
+func (c *cacheProcess) start(t *testing.T) {
+	t.Helper()
+	c.cli(t, "run", "--", "true")
+	c.readAddr(t)
+}
+
+// readAddr re-reads the published address, because a command that restarts the daemon
+// gets a new ephemeral port.
+func (c *cacheProcess) readAddr(t *testing.T) {
+	t.Helper()
+	var state struct {
+		Addr string `json:"addr"`
+	}
+	data, err := os.ReadFile(filepath.Join(c.dataDir, "daemon.json"))
+	if err != nil {
+		t.Fatalf("the daemon published no state: %v", err)
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	c.addr = state.Addr
+}
+
+// cacheGet asks the cache for a path and returns the status.
+func cacheGet(t *testing.T, c *cacheProcess, path string) int {
+	t.Helper()
+	response, err := http.Get("http://" + c.addr + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	_, _ = io.Copy(io.Discard, response.Body)
+	return response.StatusCode
+}
+
+// writeCA puts a certificate where -ca-file can read it.
+func writeCA(t *testing.T, der []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.crt")
+	encoded := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The air-gap round trip, entirely from the client: one cache warms itself, writes a pack
+// to a path somebody could carry, and a second cache — with the project offline, so it
+// cannot reach anything — serves what the pack held and nothing else.
+//
+// No server takes part at any point, which is the claim.
+func TestPkgcacheShuttlesAPackBetweenTwoCaches(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"name":"carried","dist-tags":{"latest":"1.0.0"},"versions":{}}`)
+	}))
+	defer origin.Close()
+
+	sender := startCache(t)
+	sender.pointAt(t, "npm", "registry", origin.URL)
+	if status := cacheGet(t, sender, "/global/npm/carried"); status != http.StatusOK {
+		t.Fatalf("warming the sender answered %d", status)
+	}
+
+	// A path outside the cache directory: the whole point of the client's -file.
+	stick := filepath.Join(t.TempDir(), "work.tar")
+	out := sender.cli(t, "export", "-file", stick)
+	if !strings.Contains(out, stick) {
+		t.Fatalf("export did not say where the pack went:\n%s", out)
+	}
+	if info, err := os.Stat(stick); err != nil || info.Size() == 0 {
+		t.Fatalf("no pack at %s: %v", stick, err)
+	}
+
+	receiver := startCache(t)
+	// Pointed at the same origin, so "served from the pack" is a claim with teeth: the
+	// receiver could have fetched this itself, and the hit count proves it did not.
+	receiver.pointAt(t, "npm", "registry", origin.URL)
+	receiver.cli(t, "import", "-file", stick)
+	setOffline(t, receiver, config.GlobalProject, true)
+
+	mu.Lock()
+	before := hits
+	mu.Unlock()
+	if status := cacheGet(t, receiver, "/global/npm/carried"); status != http.StatusOK {
+		t.Fatalf("the receiver would not serve what the pack carried: %d", status)
+	}
+	if status := cacheGet(t, receiver, "/global/npm/never-sent"); status == http.StatusOK {
+		t.Fatal("the receiver served something the pack never carried")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits != before {
+		t.Fatalf("the receiver reached upstream %d times; it was meant to be offline",
+			hits-before)
+	}
+
+	// The staged copy is the client's, and it does not outlive the command.
+	entries, err := os.ReadDir(filepath.Join(receiver.dataDir, "shuttle", "in"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("import left %d files in shuttle/in", len(entries))
+	}
+}
+
+// A second trip carries only what is new. The delta is refused unless it continues from
+// the receiver's checkpoint, which is why `snapshots` prints that checkpoint and `export`
+// takes it.
+func TestPkgcacheShuttlesADeltaOnTheSecondTrip(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"name":%q,"dist-tags":{"latest":"1.0.0"},"versions":{}}`,
+			strings.TrimPrefix(r.URL.Path, "/"))
+	}))
+	defer origin.Close()
+
+	sender, receiver := startCache(t), startCache(t)
+	sender.pointAt(t, "npm", "registry", origin.URL)
+	cacheGet(t, sender, "/global/npm/first")
+
+	stick := t.TempDir()
+	full := filepath.Join(stick, "full.tar")
+	sender.cli(t, "export", "-file", full)
+	receiver.cli(t, "import", "-file", full)
+
+	// Which checkpoint the receiver is on is the one fact the sender needs.
+	head := headOf(t, receiver)
+	cacheGet(t, sender, "/global/npm/second")
+
+	// Two packs from the same sender at the same moment: everything, and only what is new
+	// since the receiver's checkpoint. Compared in blobs rather than bytes, because at
+	// fixture scale a tar's 512-byte blocks and end marker dominate and two packs
+	// carrying different content can weigh exactly the same.
+	everything := filepath.Join(stick, "everything.tar")
+	sender.cli(t, "export", "-file", everything)
+	delta := filepath.Join(stick, "delta.tar")
+	sender.cli(t, "export", "-since", head, "-file", delta)
+
+	whole, part := packBlobs(t, everything), packBlobs(t, delta)
+	if part >= whole {
+		t.Errorf("the delta carries %d blobs and a full pack from here carries %d", part, whole)
+	}
+	if part == 0 {
+		t.Error("the delta carries nothing at all")
+	}
+
+	receiver.cli(t, "import", "-file", delta)
+	setOffline(t, receiver, config.GlobalProject, true)
+	for _, name := range []string{"first", "second"} {
+		if status := cacheGet(t, receiver, "/global/npm/"+name); status != http.StatusOK {
+			t.Errorf("%s did not survive the two trips: %d", name, status)
+		}
+	}
+}
+
+// The refusal, which is the error a real user meets. Nothing may be written, and the
+// message has to name the checkpoint this project is on — the fix is to export a delta
+// from it, and nobody can do that without knowing it.
+func TestPkgcacheImportRefusesAPackThatDoesNotContinueFromHere(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"name":"x","dist-tags":{"latest":"1.0.0"},"versions":{}}`)
+	}))
+	defer origin.Close()
+
+	sender, receiver := startCache(t), startCache(t)
+	sender.pointAt(t, "npm", "registry", origin.URL)
+	cacheGet(t, sender, "/global/npm/first")
+
+	stick := filepath.Join(t.TempDir(), "full.tar")
+	sender.cli(t, "export", "-file", stick)
+
+	// The receiver has a history of its own, so a pack starting from nothing cannot be
+	// applied on top of it.
+	receiver.pointAt(t, "npm", "registry", origin.URL)
+	cacheGet(t, receiver, "/global/npm/mine")
+	receiver.cli(t, "checkpoint", "-m", "my own work")
+	head := headOf(t, receiver)
+
+	out, err := receiver.command("import", "-file", stick).CombinedOutput()
+	if err == nil {
+		t.Fatalf("the import was accepted:\n%s", out)
+	}
+	for _, want := range []string{"does not continue", head[:12], "export -since"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the refusal does not mention %q:\n%s", want, out)
+		}
+	}
+	if after := headOf(t, receiver); after != head {
+		t.Fatalf("a refused import moved the checkpoint from %s to %s", head, after)
+	}
+}
+
+// setOffline flips a project's own offline flag, which is how these tests prove content
+// came from a pack rather than from an origin that happened to still be up.
+func setOffline(t *testing.T, c *cacheProcess, project string, offline bool) {
+	t.Helper()
+	body := fmt.Sprintf(`{"offline":%t}`, offline)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPatch,
+		"http://"+c.addr+"/api/v1/projects/"+project, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		message, _ := io.ReadAll(response.Body)
+		t.Fatalf("setting offline: %s\n%s", response.Status, message)
+	}
+}
+
+// headOf reports the checkpoint a project is on. Not the newest one: a rollback moves the
+// head back without removing what came after it.
+func headOf(t *testing.T, c *cacheProcess) string {
+	t.Helper()
+	response, err := http.Get(
+		"http://" + c.addr + "/api/v1/projects/" + config.GlobalProject + "/snapshots")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	var body struct {
+		Head string `json:"head"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Head == "" {
+		t.Fatal("the project reports no checkpoint")
+	}
+	return body.Head
+}
+
+// packBlobs counts the blobs a pack carries, which is what makes a delta a delta.
+func packBlobs(t *testing.T, path string) int {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	reader, count := tar.NewReader(file), 0
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return count
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(header.Name, "blobs/") {
+			count++
+		}
+	}
+}
+
+// A cache that stores nothing has nothing to export and nowhere to import, and both must
+// say so without creating the databases -no-cache promises not to.
+func TestPkgcacheNoCacheRefusesTheShuttle(t *testing.T) {
+	binary, err := buildPkgcache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir := t.TempDir()
+	var caPEM []byte
+	team := httptest.NewTLSServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/ca.crt" {
+				_, _ = w.Write(caPEM)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer team.Close()
+	caPEM = pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE", Bytes: team.Certificate().Raw,
+	})
+
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command(binary, args...)
+		cmd.Env = append(os.Environ(), "PKGCACHE_DATA_DIR="+dataDir, "PKGCACHE_LIMIT=")
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("setup", "-server", team.URL,
+		"-ca-file", writeCA(t, team.Certificate().Raw), "-no-cache"); err != nil {
+		t.Fatalf("setup -no-cache: %v\n%s", err, out)
+	}
+
+	for _, args := range [][]string{
+		{"export", "-file", filepath.Join(t.TempDir(), "work.tar")},
+		{"import", "-file", filepath.Join(t.TempDir(), "work.tar")},
+		{"checkpoint", "-m", "no"},
+		{"snapshots"},
+	} {
+		out, err := run(args...)
+		if err == nil {
+			t.Errorf("%v was accepted by a cache that stores nothing:\n%s", args, out)
+			continue
+		}
+		if !strings.Contains(out, "stores nothing") && !strings.Contains(out, "not a file") &&
+			!strings.Contains(out, "read the pack") {
+			t.Errorf("%v failed for the wrong reason:\n%s", args, out)
+		}
+	}
+	for _, forbidden := range []string{"db", "blobs"} {
+		if _, err := os.Stat(filepath.Join(dataDir, forbidden)); err == nil {
+			t.Errorf("the shuttle commands created %s/ in a -no-cache cache", forbidden)
 		}
 	}
 }

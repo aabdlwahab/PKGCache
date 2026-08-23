@@ -19,7 +19,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
 )
 
 // Errors returned by this package.

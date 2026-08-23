@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 func controlApp(t *testing.T) *App {

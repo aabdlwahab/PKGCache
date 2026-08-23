@@ -34,7 +34,7 @@ jobs:
           mkdir -p dist
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
-              -ldflags="-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/brightskies/pkgreg/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/brightskies/pkgreg/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -ldflags="-s -w -X github.com/aabdlwahab/PKGCache/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/aabdlwahab/PKGCache/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/aabdlwahab/PKGCache/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o "dist/pkgreg-client-linux-${arch}" ./cmd/pkgreg-client
           done
       - uses: actions/attest@v4
@@ -106,7 +106,7 @@ jobs:
           for arch in amd64 arm64; do
             binary="pkgreg-client-darwin-${arch}"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build \
-              -ldflags="-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/brightskies/pkgreg/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/brightskies/pkgreg/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -ldflags="-s -w -X github.com/aabdlwahab/PKGCache/internal/buildinfo.version=${GITHUB_REF_NAME} -X github.com/aabdlwahab/PKGCache/internal/buildinfo.commit=${GITHUB_SHA} -X github.com/aabdlwahab/PKGCache/internal/buildinfo.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o "dist/$binary" ./cmd/pkgreg-client
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" "dist/$binary"
@@ -159,7 +159,7 @@ jobs:
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
           $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          go build "-ldflags=-s -w -X github.com/brightskies/pkgreg/internal/buildinfo.version=$env:GITHUB_REF_NAME -X github.com/brightskies/pkgreg/internal/buildinfo.commit=$env:GITHUB_SHA -X github.com/brightskies/pkgreg/internal/buildinfo.date=$date" `
+          go build "-ldflags=-s -w -X github.com/aabdlwahab/PKGCache/internal/buildinfo.version=$env:GITHUB_REF_NAME -X github.com/aabdlwahab/PKGCache/internal/buildinfo.commit=$env:GITHUB_SHA -X github.com/aabdlwahab/PKGCache/internal/buildinfo.date=$date" `
             -o dist/pkgreg-client-windows-amd64.exe ./cmd/pkgreg-client
           $certificate = Join-Path $env:RUNNER_TEMP "pkgreg-signing.pfx"
           [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))

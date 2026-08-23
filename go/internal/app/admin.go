@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/buildinfo"
-	consoleweb "github.com/brightskies/pkgreg/internal/web"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
+	consoleweb "github.com/aabdlwahab/PKGCache/internal/web"
 )
 
 // AdminHandler serves the console, control API and operational surface.

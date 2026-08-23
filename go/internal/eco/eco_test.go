@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/eco/ecotest"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/router"
-	testupstream "github.com/brightskies/pkgreg/internal/testutil/upstream"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/eco/ecotest"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/router"
+	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
 )
 
 // dummy is intentionally tiny: this is P3-01's proof that a new ecosystem only

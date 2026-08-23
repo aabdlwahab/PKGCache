@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/brightskies/pkgreg/internal/app"
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/app"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 func runServe(ctx context.Context, args []string) error {

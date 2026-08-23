@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // BootstrapUser is the account `pkgreg init` provisions on a host that has none.

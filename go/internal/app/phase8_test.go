@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 func TestPhase8JobsCheckpointRollbackAndExport(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // Tokens issues and verifies hashed bearer tokens.

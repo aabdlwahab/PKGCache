@@ -16,11 +16,12 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/obs"
-	"github.com/brightskies/pkgreg/internal/trust"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
 // ErrOffline is returned when a fetch is attempted while the cache is serving from
@@ -60,10 +61,16 @@ type Fallback struct {
 // One http.Client, shared. Go's Transport pools connections per host internally, so
 // a second client would only fragment that pooling and double the idle sockets.
 type Pool struct {
-	client  *http.Client
+	// client is swapped, never mutated. Trust can change while the process runs — a
+	// laptop is pointed at a team cache whose CA it has just pinned — and a root pool
+	// cannot be edited under a handshake. ReloadTrust builds a whole new client and
+	// swaps this pointer: requests already in flight keep the client they started on,
+	// and the next one gets the new roots. See ReloadTrust.
+	client  atomic.Pointer[http.Client]
+	cfg     config.Upstream
+	metrics *obs.Metrics
 	ua      string
 	timeout time.Duration
-	metrics *obs.Metrics
 	tokens  *tokenCache
 }
 
@@ -74,6 +81,48 @@ type Pool struct {
 // trust a sibling and silently not trusting it would fail every fetch to that sibling
 // with a certificate error nobody could explain from the configuration.
 func New(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
+	ua := cfg.UserAgent
+	if ua == "" {
+		ua = "pkgreg/1"
+	}
+	pool := &Pool{
+		cfg: cfg, metrics: m, ua: ua, timeout: cfg.RequestTimeout, tokens: newTokenCache(),
+	}
+	client, err := pool.build(cfg.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	pool.client.Store(client)
+	return pool, nil
+}
+
+// ReloadTrust rebuilds the outbound client so it trusts what caFile holds now.
+//
+// This exists for pkgcache: configuring a team cache pins that cache's own CA, and until
+// this the running daemon went on not trusting it — every fetch to the new middle tier
+// failed with a certificate error that no configuration explained, until somebody
+// restarted the process. An empty path returns to the system roots alone.
+//
+// The old client is left to its in-flight requests and its idle connections are closed,
+// so nothing is cut off mid-download and nothing is kept warm against roots that have
+// been replaced.
+func (p *Pool) ReloadTrust(caFile string) error {
+	client, err := p.build(caFile)
+	if err != nil {
+		return err
+	}
+	previous := p.client.Swap(client)
+	if previous != nil {
+		previous.CloseIdleConnections()
+	}
+	return nil
+}
+
+// build assembles one client. Every tunable comes from the configuration this pool was
+// made with; only the trust file varies, which is the whole point of taking it as an
+// argument rather than reading p.cfg.CAFile.
+func (p *Pool) build(caFile string) (*http.Client, error) {
+	cfg := p.cfg
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   cfg.ConnectTimeout,
@@ -97,35 +146,25 @@ func New(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
-	if cfg.CAFile != "" {
-		caPEM, err := os.ReadFile(cfg.CAFile)
+	if caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
 		if err != nil {
-			return nil, fmt.Errorf("upstream: read ca_file %s: %w", cfg.CAFile, err)
+			return nil, fmt.Errorf("upstream: read ca_file %s: %w", caFile, err)
 		}
 		roots, err := trust.Pool(caPEM)
 		if err != nil {
-			return nil, fmt.Errorf("upstream: ca_file %s: %w", cfg.CAFile, err)
+			return nil, fmt.Errorf("upstream: ca_file %s: %w", caFile, err)
 		}
 		transport.TLSClientConfig = &tls.Config{ // #nosec G402 -- defaults verify certificates.
 			MinVersion: tls.VersionTLS12, RootCAs: roots,
 		}
 	}
-	ua := cfg.UserAgent
-	if ua == "" {
-		ua = "pkgreg/1"
-	}
-	return &Pool{
-		client: &http.Client{
-			Transport: transport,
-			// No client-level timeout: it would apply to the whole body transfer and
-			// abort exactly the large downloads this cache exists to make cheap.
-			// Deadlines come per-request from the context instead.
-			Timeout: 0,
-		},
-		ua:      ua,
-		timeout: cfg.RequestTimeout,
-		metrics: m,
-		tokens:  newTokenCache(),
+	return &http.Client{
+		Transport: transport,
+		// No client-level timeout: it would apply to the whole body transfer and
+		// abort exactly the large downloads this cache exists to make cheap.
+		// Deadlines come per-request from the context instead.
+		Timeout: 0,
 	}, nil
 }
 
@@ -249,7 +288,7 @@ func (p *Pool) do(ctx context.Context, method string, r Request) (*http.Response
 		r.Credential.apply(req)
 	}
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Load().Do(req)
 	if err != nil {
 		p.observeError(r, "transport")
 		return nil, fmt.Errorf("upstream: %s %s: %w", method, r.URL, err)
@@ -274,10 +313,10 @@ func (p *Pool) CountBytes(eco, url string, n int64) {
 
 // Client exposes the shared client for callers that must drive a request themselves
 // (the peer protocol's batch probe). Prefer Open.
-func (p *Pool) Client() *http.Client { return p.client }
+func (p *Pool) Client() *http.Client { return p.client.Load() }
 
 // CloseIdleConnections releases pooled sockets. Used at shutdown and by tests.
-func (p *Pool) CloseIdleConnections() { p.client.CloseIdleConnections() }
+func (p *Pool) CloseIdleConnections() { p.client.Load().CloseIdleConnections() }
 
 func cloneHeaders(h http.Header) http.Header {
 	if h == nil {

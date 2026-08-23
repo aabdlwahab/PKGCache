@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // The P0 invariants, as tests, so that the default deployment posture cannot regress

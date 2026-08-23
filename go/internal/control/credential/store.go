@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 const (

@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/eco"
-	"github.com/brightskies/pkgreg/internal/engine"
-	"github.com/brightskies/pkgreg/internal/router"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 const (
@@ -587,18 +587,43 @@ func writeEngineError(c *eco.Ctx, err error, notFoundCode string) {
 	c.WriteError(err)
 }
 
+// repoRoot is the path every repository on a registry hangs off.
+//
+// A registry origin is conventionally written without it — "https://ghcr.io" — because
+// the distribution spec fixes /v2 as the API root, so this adapter has always appended
+// it. A team cache is different: it fronts several registries, so the origin that
+// reaches one of them already names both the API root and the registry
+// ("https://cache:8443/v2/dockerhub"), and appending a second /v2 to that addresses
+// nothing. An origin that already names /v2 is therefore taken as the root it is.
+//
+// This is also what lets an OCI chain fall back. eco derives an alternate origin by
+// swapping one endpoint's prefix for the next one's over the same suffix, which only
+// composes when both endpoints are roots of the same shape — which is why a chain
+// writes its public origins with their /v2 as well.
+func repoRoot(base string) string {
+	base = strings.TrimRight(base, "/")
+	if parsed, err := url.Parse(base); err == nil {
+		for _, segment := range strings.Split(parsed.EscapedPath(), "/") {
+			if segment == "v2" {
+				return base
+			}
+		}
+	}
+	return base + "/v2"
+}
+
 func manifestURL(route imageRoute, ref string) string {
-	return eco.JoinURL(route.base,
-		"v2/"+escapeRepo(route.repo)+"/manifests/"+url.PathEscape(ref))
+	return eco.JoinURL(repoRoot(route.base),
+		escapeRepo(route.repo)+"/manifests/"+url.PathEscape(ref))
 }
 
 func blobURL(route imageRoute, digest blob.Digest) string {
-	return eco.JoinURL(route.base,
-		"v2/"+escapeRepo(route.repo)+"/blobs/"+url.PathEscape(digest.Prefixed()))
+	return eco.JoinURL(repoRoot(route.base),
+		escapeRepo(route.repo)+"/blobs/"+url.PathEscape(digest.Prefixed()))
 }
 
 func tagsURL(route imageRoute, query string) string {
-	raw := eco.JoinURL(route.base, "v2/"+escapeRepo(route.repo)+"/tags/list")
+	raw := eco.JoinURL(repoRoot(route.base), escapeRepo(route.repo)+"/tags/list")
 	if query != "" {
 		raw += "?" + query
 	}

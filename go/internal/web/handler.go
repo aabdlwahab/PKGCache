@@ -183,6 +183,11 @@ func assetName(requestPath string) string {
 		return "tutorial.html"
 	case "/console":
 		return "console/index.html"
+	case "/widget":
+		// A second shell over the same modules, for a window somebody leaves open. It
+		// lives under console/ so its imports resolve against the console's own tree
+		// rather than duplicating any of it.
+		return "console/widget.html"
 	}
 	return strings.TrimPrefix(clean, "/")
 }

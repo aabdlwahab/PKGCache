@@ -244,6 +244,20 @@ func buildArgs(o Options) []string {
 		"ARG UV_DEFAULT_INDEX=" + index,
 		"ARG NPM_CONFIG_REGISTRY=" + npm,
 	}
+	// pip refuses a plain-HTTP index unless the host is loopback, and it refuses it by
+	// *ignoring the index* — the error is "no matching distribution", which reads as a
+	// missing package rather than as a rejected repository.
+	//
+	// That is exactly the HostGateway case this mode exists for: host.docker.internal is
+	// not loopback, so every `pip install` in a Docker Desktop or CI build failed while the
+	// base image and apt went through the cache perfectly. Loopback needs none of this and
+	// CacheAddress mode is HTTPS, so this is the one shape that does.
+	if host := insecureHost(o); host != "" {
+		args = append(args,
+			"ARG PIP_TRUSTED_HOST="+host,
+			// uv's equivalent. It fails the same way for the same reason.
+			"ARG UV_INSECURE_HOST="+host)
+	}
 	// Git has no index variable, but it reads configuration from the environment, so
 	// insteadOf can be expressed as ARGs — which redirects an unmodified
 	// https://github.com/... clone, and submodules and pip's git+https with it.
@@ -295,6 +309,22 @@ func noProxyFor(o Options) string {
 		}
 	}
 	return strings.Join(hosts, ",")
+}
+
+// insecureHost is the host tools have to be told to trust, or "" when none is.
+//
+// Only for a plain-HTTP base that is not loopback: pip and uv already trust 127.0.0.1 and
+// localhost, and CacheAddress mode is HTTPS with a CA they are pointed at explicitly.
+func insecureHost(o Options) string {
+	if !strings.HasPrefix(strings.TrimSpace(o.Base), "http://") {
+		return ""
+	}
+	host := hostOf(o.Base)
+	switch host {
+	case "", "127.0.0.1", "::1", "localhost":
+		return ""
+	}
+	return host
 }
 
 // hostOf extracts the host from an authority or a URL, without a port.

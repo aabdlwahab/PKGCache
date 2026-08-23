@@ -4,8 +4,6 @@ The Go rearchitecture of package-registry: six pull-through package caches, an
 operator console, and air-gap transfer, in **one static binary with no containers**.
 
 Design: [go-architecture.md](../docs/go-architecture.md) ·
-Build plan: [go-implementation-plan.md](../docs/go-implementation-plan.md) ·
-Language rationale: [language-choice.md](../docs/language-choice.md)
 
 For one machine rather than a team, the same engine ships as
 **[pkgcache](../docs/pkgcache.md)**: one loopback port, no certificate, no account, no
@@ -54,18 +52,18 @@ is announced, with a permanent ordering test.
 | 3 | P3-04 npm packuments, URL rewrite, tarball streaming | done |
 | 3 | P3-05 PEP 503/691 PyPI, metadata sidecars, inventory | done |
 | 3 | P3-06 real npm/uv/pip/wget client acceptance | done |
-| 4 | P4-01 OCI ping, manifests, blobs, tags/list | done ([report](../docs/phase4-oci-apt.md)) |
+| 4 | P4-01 OCI ping, manifests, blobs, tags/list | done |
 | 4 | P4-02 multi-arch child back-fill and deduplicated image size | done |
 | 4 | P4-03 offline tag refs and project-prefixed tags/list | done |
 | 4 | P4-04/05 apt absolute proxy, allowlist, index revalidation | done |
 | 4 | P4-06 apk indexes and apt/apk artifact inventory | done |
 | 4 | P4-07 real multi-arch Docker, apt-get, and apk clients | done |
-| 5 | P5 managed Git mirrors, smart HTTP, LFS, maintenance | done ([report](../docs/phase5-git.md)) |
-| 6 | P6 project routing, listeners, TLS reload, graceful drain | done ([report](../docs/phase6-listeners-routing.md)) |
-| 7 | P7 control DB, auth, projects/upstreams, jobs, API/SSE/audit | done ([report](../docs/phase7-control-plane.md)) |
-| 8 | P8 snapshots, rollback, export/import, lockwarm, air-gap CLI | done ([report](../docs/phase8-air-gap.md)) |
-| 9 | P9 GC, eviction, quotas, federation, scheduling, dashboard, rate limits | done ([report](../docs/phase9-scale-features.md)) |
-| 10 | P10 API-v1 console, embedded web, migration, differential and operations | done; live gate 46/46 ([runbook](../docs/phase10-cutover.md)) |
+| 5 | P5 managed Git mirrors, smart HTTP, LFS, maintenance | done |
+| 6 | P6 project routing, listeners, TLS reload, graceful drain | done |
+| 7 | P7 control DB, auth, projects/upstreams, jobs, API/SSE/audit | done |
+| 8 | P8 snapshots, rollback, export/import, lockwarm, air-gap CLI | done |
+| 9 | P9 GC, eviction, quotas, federation, scheduling, dashboard, rate limits | done |
+| 10 | P10 API-v1 console, embedded web, migration, differential and operations | done; live gate 46/46 |
 | follow-on | Client onboarding Phases 1–4: scripts, build DNS, signed wrapper | implemented ([design/status](../docs/client-onboarding.md)) |
 
 M2 passed on 2026-07-27: 20 concurrent readers each verified the complete 2 GiB
@@ -347,7 +345,7 @@ make lint     # golangci-lint
 make release  # static linux/amd64 + linux/arm64 with the console embedded
 ```
 
-Ground rules are in [go-implementation-plan.md §1](../docs/go-implementation-plan.md).
+Ground rules are in the engineering conventions.
 The ones that bite most often:
 
 - Nothing outside `internal/config` reads an environment variable.

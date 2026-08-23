@@ -3,8 +3,8 @@ package api
 import (
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 )
 
 // The event bus is unfiltered by design, so every rule about who may see what lives in

@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/clientbridge"
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/local"
-	"github.com/brightskies/pkgreg/internal/session"
+	"github.com/aabdlwahab/PKGCache/internal/clientbridge"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/session"
 )
 
 // defaultGitHosts is what `git clone` is redirected through the cache for.
@@ -32,7 +32,10 @@ type sessionFlags struct {
 
 func bindSessionFlags(fs *flag.FlagSet) *sessionFlags {
 	s := &sessionFlags{}
-	fs.StringVar(&s.project, "project", "global", "project to scope URLs to")
+	// Empty rather than "global": the default is the current project, and that cannot
+	// be read until -data-dir has been parsed. Resolved in startSession.
+	fs.StringVar(&s.project, "project", "",
+		"project to scope URLs to (default: the current one, from pkgcache project use)")
 	fs.StringVar(&s.gitHosts, "git-host", strings.Join(defaultGitHosts, ","),
 		"comma-separated hosts whose clones are served from the cache")
 	fs.BoolVar(&s.noGit, "no-git", false, "leave git configuration alone")
@@ -86,6 +89,9 @@ func startSession(
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
 	}
+	if flags.project == "" {
+		flags.project = local.CurrentProject(snap.DataDir)
+	}
 	state, stop, err := reachCache(ctx, snap)
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
@@ -119,19 +125,22 @@ func closeBridges() {
 func reachCache(
 	ctx context.Context, snap *config.Snapshot,
 ) (local.State, func(), error) {
-	team, has, err := local.ReadTeam(snap.DataDir)
+	set, err := local.ReadTeams(snap.DataDir)
 	if err != nil {
 		return local.State{}, nil, err
 	}
-	if !has || !team.NoCache {
+	// Bridge-only is a property of the machine, not of a project: it promises that no
+	// store is opened at all, which cannot hold for one project and not another.
+	team, bridged := set.Bridged()
+	if !bridged {
 		state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
 		return state, nil, err
 	}
 
-	caPEM, err := os.ReadFile(local.TeamCAPath(snap.DataDir))
-	if err != nil {
-		return local.State{}, nil, fmt.Errorf(
-			"pkgcache: the team cache's CA is missing; run `pkgcache setup` again: %w", err)
+	caPEM := []byte(team.CAPEM)
+	if len(caPEM) == 0 {
+		return local.State{}, nil, errors.New(
+			"pkgcache: the team cache's CA is missing; run `pkgcache setup` again")
 	}
 	running, err := clientbridge.Start(ctx, clientbridge.SessionOptions{
 		Server: team.Server, Project: team.Project, CAPEM: caPEM,

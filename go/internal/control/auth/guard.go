@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/control"
 )
 
 // SessionCookie is the control-plane session cookie.

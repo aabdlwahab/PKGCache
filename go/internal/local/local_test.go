@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // The lifecycle is processes, file locks and sockets, so the tests use real ones. The

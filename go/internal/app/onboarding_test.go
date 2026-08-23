@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/onboarding"
-	"github.com/brightskies/pkgreg/internal/pki"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/pki"
 )
 
 func onboardingApp(t *testing.T, authEnabled bool) *App {

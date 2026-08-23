@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/dockerfile"
+	"github.com/aabdlwahab/PKGCache/internal/dockerfile"
 )
 
 // Options is what the caller learned from the environment or from flags.

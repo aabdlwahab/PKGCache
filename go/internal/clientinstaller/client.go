@@ -18,9 +18,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/brightskies/pkgreg/internal/clientbridge"
-	"github.com/brightskies/pkgreg/internal/onboarding"
-	"github.com/brightskies/pkgreg/internal/trust"
+	"github.com/aabdlwahab/PKGCache/internal/clientbridge"
+	"github.com/aabdlwahab/PKGCache/internal/onboarding"
+	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
 const (

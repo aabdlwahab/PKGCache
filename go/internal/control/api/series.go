@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
-	"github.com/brightskies/pkgreg/internal/control"
-	"github.com/brightskies/pkgreg/internal/diskusage"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/diskusage"
 )
 
 // defaultWindow is what a caller gets with no explicit range: recent enough to be
@@ -192,6 +192,29 @@ type storageDetail struct {
 	// MinFreeBytes is the eviction floor, so a gauge can be drawn against the
 	// threshold the system will actually act on rather than an arbitrary one.
 	MinFreeBytes int64 `json:"min_free_bytes"`
+	// Budget is the disk policy of a cache that has one, and absent otherwise — a
+	// server's response is unchanged byte for byte, which the differential harness
+	// checks.
+	Budget *LocalBudget `json:"budget,omitempty"`
+}
+
+// LocalBudget is what a cache that never evicts reports about its own limit.
+//
+// A server's answer to "is there room" is the eviction floor, because it evicts. A
+// laptop's is a number somebody chose once, and a state — full, still serving, no longer
+// storing — that has no equivalent on a server and cannot be derived from the totals.
+type LocalBudget struct {
+	// LimitBytes is the chosen cap. Negative means a deliberate absence of one, which is
+	// a different thing from zero.
+	LimitBytes   int64 `json:"limit_bytes"`
+	MinFreeBytes int64 `json:"min_free_bytes"`
+	UsedBytes    int64 `json:"used_bytes"`
+	FreeBytes    int64 `json:"free_bytes"`
+	// Full means the cache is still serving and has stopped storing. It is the fourth
+	// channel this condition is reported on; the other three are stderr, the exit status
+	// and a desktop notification.
+	Full   bool   `json:"full"`
+	Reason string `json:"reason,omitempty"`
 }
 
 func (a *API) storageNow() (storageDetail, error) {
@@ -202,6 +225,14 @@ func (a *API) storageNow() (storageDetail, error) {
 	detail := storageDetail{
 		StorageTotals: totals,
 		MinFreeBytes:  a.Config.Current().Maintenance.EvictMinFreeBytes,
+	}
+	// Supplied by whoever has a budget to report. The hook exists because the code that
+	// owns the answer — pkgcache's store guard — sits above this package and cannot be
+	// imported from it. Same shape and same reason as App.Activity.
+	if a.Budget != nil {
+		if budget, ok := a.Budget(); ok {
+			detail.Budget = &budget
+		}
 	}
 	free, total, err := diskusage.Usage(a.DataDir)
 	if err != nil {

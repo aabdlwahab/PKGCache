@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/config"
-	"github.com/brightskies/pkgreg/internal/pki"
+	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/pki"
 )
 
 func TestSinglePortServesTLSPlainProxyAndReloadsCertificate(t *testing.T) {

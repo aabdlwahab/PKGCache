@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/catalog"
 )
 
 // record() has always been handed the outcome and the timestamp; until now it reported

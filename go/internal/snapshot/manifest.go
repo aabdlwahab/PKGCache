@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/blob"
+	"github.com/aabdlwahab/PKGCache/internal/blob"
 )
 
 const manifestMagic = "#pkgreg-manifest v1"

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/local"
+	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
 func runStop(ctx context.Context, args []string) error {
@@ -54,22 +54,64 @@ flags:
 		return err
 	}
 	fmt.Printf("cache      %s\n", snap.DataDir)
+	project := local.CurrentProject(snap.DataDir)
+	if local.HasCurrentProject(snap.DataDir) {
+		fmt.Printf("project    %s\n", project)
+	} else {
+		fmt.Printf("project    %s (the default; pkgcache project use <name> to change it)\n", project)
+	}
 	if errors.Is(err, local.ErrNoDaemon) {
 		fmt.Printf("daemon     not running\n")
 		fmt.Printf("address    %s (when started)\n", snap.LocalBaseURL())
-		return reportBudget(snap.DataDir, snap.BlobRoot())
+		return reportBudget(snap.DataDir, snap.BlobRoot(), project)
 	}
 	fmt.Printf("daemon     running, pid %d, up %s\n",
 		state.PID, state.Uptime().Round(time.Second))
 	fmt.Printf("address    %s\n", state.BaseURL())
 	fmt.Printf("version    %s\n", state.Version)
-	return reportBudget(snap.DataDir, snap.BlobRoot())
+	if err := reportBudget(snap.DataDir, snap.BlobRoot(), project); err != nil {
+		// The per-project table is still worth printing under a full cache, which is
+		// exactly when somebody wants to know which project is holding what — so it goes
+		// out before the exit status this returns.
+		reportProjects(ctx, state)
+		return err
+	}
+	reportProjects(ctx, state)
+	return nil
+}
+
+// reportProjects prints what each project holds and how much of it was served from here.
+//
+// Only with a daemon running: the figures come from the catalog, the daemon owns it, and
+// `status` starting one to answer a question about whether one is running would be its
+// own kind of wrong. Failures are printed, not returned — a status report that dies on
+// its last section is worse than one that says a section is missing.
+func reportProjects(ctx context.Context, state local.State) {
+	reports, err := local.ProjectReports(ctx, state)
+	if err != nil {
+		fmt.Printf("projects   unavailable: %v\n", err)
+		return
+	}
+	if len(reports) == 0 {
+		fmt.Println("projects   nothing cached yet")
+		return
+	}
+	label := "projects  "
+	for _, report := range reports {
+		served := "     —"
+		if rate, known := report.Served(); known {
+			served = fmt.Sprintf("%5.0f%%", rate*100)
+		}
+		fmt.Printf("%s %-16s %9s  %6d objects  %s served from here\n",
+			label, report.Project, local.FormatSize(report.Bytes), report.Objects, served)
+		label = "          "
+	}
 }
 
 // reportBudget prints what the cache holds against what it is allowed to hold, and is
 // the second of the four channels: a non-zero status while the cache is full, from a
 // command whose whole job is to answer "is this healthy?".
-func reportBudget(dataDir, blobRoot string) error {
+func reportBudget(dataDir, blobRoot, project string) error {
 	budget, err := local.ReadBudget(dataDir)
 	if errors.Is(err, local.ErrNoLimit) {
 		fmt.Println("limit      not set — pkgcache will not serve until it is")
@@ -87,8 +129,14 @@ func reportBudget(dataDir, blobRoot string) error {
 				local.FormatSize(size), local.FormatSize(budget.LimitBytes))
 		}
 	}
-	if err := reportTiers(dataDir); err != nil {
+	if err := reportTiers(dataDir, project); err != nil {
 		return err
+	}
+	if record, found := local.ReadPersisted(dataDir); found {
+		// Which project the persisted files name, because they outlive the shell that
+		// wrote them and a `project use` afterwards does not move them.
+		fmt.Printf("persisted  %s, %d files (%s)\n",
+			record.Project, len(record.Files), record.BaseURL)
 	}
 	usage, sampled, found := local.ReadUsage(dataDir)
 	if found && usage.Full {
@@ -103,8 +151,8 @@ func reportBudget(dataDir, blobRoot string) error {
 //
 // Tiering is only worth having if it is visible: a team cache that has been down for a
 // week is otherwise just "builds got slower", noticed by nobody.
-func reportTiers(dataDir string) error {
-	team, has, err := local.ReadTeam(dataDir)
+func reportTiers(dataDir, project string) error {
+	team, has, err := local.ReadTeam(dataDir, project)
 	if err != nil {
 		return err
 	}

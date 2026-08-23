@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/brightskies/pkgreg/internal/clientbridge"
+	"github.com/aabdlwahab/PKGCache/internal/clientbridge"
 )
 
 func main() {

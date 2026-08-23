@@ -108,7 +108,7 @@ func fetchToken(ctx context.Context, p *Pool, realm string, params map[string]st
 		return "", 0, false
 	}
 	req.Header.Set("User-Agent", p.ua)
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Load().Do(req)
 	if err != nil {
 		return "", 0, false
 	}

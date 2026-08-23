@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/buildinfo"
-	"github.com/brightskies/pkgreg/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 )
 
 // startTimeout bounds how long a client waits for a daemon it started. Opening two

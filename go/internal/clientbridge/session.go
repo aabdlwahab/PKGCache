@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/brightskies/pkgreg/internal/session"
+	"github.com/aabdlwahab/PKGCache/internal/session"
 )
 
 // SessionOptions starts a loopback bridge and an interactive child shell whose
