@@ -11,7 +11,7 @@ There are two ways a client reaches the cache, and this page covers both end to 
 | Needs the CA in a trust store | yes | no |
 | Needs `--trusted-host` | no | no |
 | Needs root | yes, for the system store and `/etc/docker/certs.d` | no |
-| Works inside a container | yes | no — see [Containers](#containers) |
+| Works inside a container | yes | no — see [Containers](#5-containers) |
 | Extra process to supervise | none | one per developer machine |
 
 The bridge is an alternative, not a replacement. If it does not fit, the direct path is
@@ -380,7 +380,7 @@ embedded — which is what a blank console page would otherwise look like.
 | `catalog.Store` contract | `internal/catalog/storetest` | runs through the interface, not the SQLite type |
 | Client acceptance | `test/acceptance` | real `pip`, `uv`, `npm`, `docker`, `apt`, `apk`, `wget` |
 | Bridge | `cmd/pkgreg-bridge` | rewrite rules, HEAD, digest-committed bodies, pinning |
-| Differential | `test/differential` | opt-in; needs live Python and Go deployments |
+| Differential | `test/differential` | opt-in; needs a live Python deployment, which this repository no longer contains — useful only against one still running |
 | Load | `test/load` | opt-in; 2 GiB / 20 readers |
 | Privileged onboarding | `test/onboardingos` | opt-in; installs a CA, so it needs root |
 
@@ -468,4 +468,3 @@ sudo ./pkgreg-client --persist -server https://cache:8443 -ca-sha256 "$FP" \
 
 - [client-bridge.md](client-bridge.md) — how the bridge works and when not to use it
 - [client-onboarding.md](client-onboarding.md) — temporary and persistent client design
-- [go-implementation-plan.md](go-implementation-plan.md) — verification strategy (§8)

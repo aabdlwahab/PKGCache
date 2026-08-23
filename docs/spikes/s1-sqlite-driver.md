@@ -7,7 +7,7 @@
 
 `modernc.org/sqlite` is a machine translation of SQLite's C source into Go. It is
 what keeps the binary CGO-free and genuinely static, and it is the one place
-[language-choice.md](../language-choice.md) conceded Rust would be better —
+The language decision conceded Rust would be better —
 `rusqlite` statically links the real C SQLite at full speed.
 
 The bet was that the difference is irrelevant at this workload's scale. The measured

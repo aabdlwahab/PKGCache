@@ -1,13 +1,13 @@
 # pkgreg — Go rearchitecture plan
 
 Status: **implemented, with recorded final-state differences**. Written 2026-07-27.
-Supersedes [go-port-plan.md](go-port-plan.md), which describes the conservative
+Supersedes the original port plan, which described the conservative
 1:1 port and is kept for comparison.
 
 > This document preserves the design reasoning. The final frontend deliberately
 > differs from the proposal in §11.5: it is checked-in HTML/CSS/ES modules embedded
 > in every build, with no React, Node, bundler, or `embedconsole` build tag. See
-> [phase 10](phase10-cutover.md) and [system overview](system-overview.md).
+> the [system overview](system-overview.md).
 
 **Goal:** one static Go binary, deployable on bare metal with no containers, that
 does everything the current stack does — and is structured so that adding an
@@ -27,7 +27,7 @@ are consequences of how it grew (six separate proxies unified into one process).
 
 `build_core()` constructs a `Storage`, a **`Ledger` (its own SQLite file)**, an
 `Upstream` (its own connection pool), a `Progress` and a `Stats` **per (project,
-role)** ([`core/__init__.py:38`](../pkgcache/src/pkgcache/core/__init__.py#L38)).
+role)** (``core/__init__.py:38``).
 
 This checkout already has **24 `ledger.db` files** for 4 projects. Ten projects would
 be 60 databases and 60 HTTP connection pools.
@@ -36,7 +36,7 @@ The direct consequences:
 
 - Every cross-cutting question needs a fan-out and a manual merge. `/api/stats`
   fetches six endpoints concurrently and reassembles them in ~80 lines of Python
-  ([`reads.py:70`](../webui/app/services/reads.py#L70)) — logic that is one `GROUP BY`
+  (``reads.py:70``) — logic that is one `GROUP BY`
   in a single database.
 - No query can span projects ("what is `torch` costing us across all teams?") or span
   ecosystems ("top 20 artifacts by size on this host").
@@ -48,7 +48,7 @@ The direct consequences:
 
 Artifacts live at URL-shaped paths inside per-project trees, with a sha256 CAS
 hardlinked *alongside* as an optimisation
-([`storage.py:114`](../pkgcache/src/pkgcache/core/storage.py#L114)). That CAS only
+(``storage.py:114``). That CAS only
 engages when the digest is known **before** the download — pypi index hashes and OCI
 digests. npm tarballs and apt `.deb`s are explicitly excluded by that comment, so the
 same bytes are stored once per project.
@@ -56,7 +56,7 @@ same bytes are stored once per project.
 More seriously, path-first storage means:
 
 - **No garbage collection.** Deleting a project from the registry deliberately leaves
-  its bytes on disk ([`projects.py:226`](../webui/app/services/projects.py#L226)),
+  its bytes on disk (``projects.py:226``),
   because nothing knows what else references them.
 - **No eviction.** `package_stats.last_access` exists with the comment *"leaderboard +
   future LRU eviction"* — nothing consumes it. This cache is **119 GB** and grows
@@ -65,9 +65,13 @@ More seriously, path-first storage means:
 
 ### 1.3 Adding an ecosystem means editing ten places in two codebases
 
-The claim in [`repositories.py`](../pkgcache/src/pkgcache/repositories.py) is
+The claim in ``repositories.py`` is
 *"Adding a 5th ecosystem is: implement Repository, add it here, add a compose
 service."* In practice it is also:
+
+> The files below are from the Python implementation, which has since been removed. The
+> table is kept because it is the argument for the design that replaced it: one list, in
+> one place, rather than nine copies that drift.
 
 | File | Table |
 |---|---|
@@ -90,12 +94,12 @@ Eight duplicated mapping tables, verified by grep. Three independent copies of
 - **Upstreams are static YAML.** Adding an internal PyPI index or an OCI mirror means
   editing `pkgcache.yaml` on disk and restarting. No per-project overrides.
 - **No upstream credentials** — anonymous pulls only, so private registries are out of
-  scope by construction ([`upstream.py:5`](../pkgcache/src/pkgcache/core/upstream.py#L5)).
+  scope by construction (``upstream.py:5``).
 - **Config changes take ~5 s** and arrive by polling a JSON file
-  ([`__main__.py:_POLL`](../pkgcache/src/pkgcache/__main__.py)); the files write token
+  (``__main__.py:_POLL``); the files write token
   is separately mtime-cached and re-read on the PUT path.
 - **Jobs are globally serialised** — a checkpoint of project A blocks a lockwarm of
-  project B ([`jobs.py:_busy`](../webui/app/services/jobs.py#L61)).
+  project B (``jobs.py:_busy``).
 - **No metrics, no structured logs, no tracing.** Observability is one JSON progress
   endpoint polled every 1.5 s.
 - **The data plane is entirely anonymous.** No per-client identity, no read tokens, no
@@ -127,7 +131,7 @@ the last known target"), one place to fix a bug.
 **`Entry` + `Blob` is what makes dedup, GC and eviction fall out for free:**
 
 - Dedup becomes universal, not digest-known-in-advance-only. We already hash every
-  byte while streaming ([`inflight.py:90`](../pkgcache/src/pkgcache/core/inflight.py#L90)),
+  byte while streaming (``inflight.py:90``),
   so the npm tarball two projects both pull is *already* known to be the same blob —
   today we just throw that knowledge away.
 - Deleting a project is `DELETE FROM entries WHERE project = ?`. GC then reclaims any
@@ -201,7 +205,7 @@ type Resolution struct {
 }
 ```
 
-Compare with today: [`pypi.py`](../pkgcache/src/pkgcache/handlers/pypi.py) is 293
+Compare with today: ``pypi.py`` is 293
 lines, of which maybe 120 are PyPI-specific (PEP 503/691 parsing and rendering) and
 the rest is cache plumbing repeated in five other files. Under this interface each
 ecosystem shrinks to its protocol logic.
@@ -392,7 +396,7 @@ known in advance. Today that only works for pypi and OCI.
 ### 6.1 Single-flight and progressive delivery — kept, and hardened
 
 This is the best thing in the current codebase
-([`inflight.py`](../pkgcache/src/pkgcache/core/inflight.py)) and it ports intact: one
+(``inflight.py``) and it ports intact: one
 goroutine streams upstream → staging file while N readers tail-follow it. Go improves
 three things:
 
@@ -420,7 +424,7 @@ type FreshnessPolicy interface { Classify(key string) Freshness }  // Immutable 
   sidecar files vanish into the `refs` table.
 - OCI tags → `Revalidate`; digests → `Immutable`.
 - npm packuments → `Revalidate(60s)` — an actual improvement, since today every
-  packument request hits upstream ([`npm.py:61`](../pkgcache/src/pkgcache/handlers/npm.py#L61)).
+  packument request hits upstream (``npm.py:61``).
 - pypi simple indexes → `Revalidate(300s)`; wheels → `Immutable`.
 - git refs → `Revalidate(refs_ttl)`.
 

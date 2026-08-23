@@ -1,98 +1,97 @@
-# Caching git repositories
+# Git through the cache
 
-> **Legacy Python-stack reference.** This page describes the retired Python Git
-> cache. The Go implementation differs in storage, maintenance, and control-plane
-> behavior. Use [phase 5 — managed Git](phase5-git.md) and the live Connect page for
-> current behavior and client commands.
+The cache keeps a mirror of the repositories you clone, so a second clone — on this
+machine, in a container, or by a colleague pointed at the same server — is served from
+disk. It speaks Git's smart HTTP protocol, so `git` needs no plugin and no special
+client.
 
-The `git` role is a **mirror-and-serve** smart-HTTP git server (on the unified
-HTTPS port `8443`, under `/<project>/git/…`).
-Unlike the other ecosystems it can't byte-cache responses — a git fetch is a
-negotiation — so it keeps a real bare mirror on disk (bare init plus a heads/tags
-fetch), revalidates it online, and serves `git upload-pack` from it. Offline it serves
-the mirror as-is.
+It is **read-only**. Push is refused, explicitly, with a message saying so rather than a
+transport error to guess at.
 
-It caches whatever pulls code from git: `pip install git+https://…`, CMake
-CPM/FetchContent, vcpkg ports, submodules, ansible roles.
+## The URL shape
 
-## URL scheme
-
-Put the **real upstream host** in the path:
+A repository is addressed by its real upstream host, kept in the path:
 
 ```
-https://<cache-host>:8443/<project>/git/<upstream-host>/<owner>/<repo>.git
+http://127.0.0.1:41780/global/git/github.com/some-org/some-repo
 ```
 
-```bash
-git clone https://cache.local:8443/global/git/github.com/pallets/click.git
-git clone https://cache.local:8443/global/git/gitlab.com/group/project.git
+The host stays visible on purpose. A mirror that renames what it mirrors makes it
+impossible to tell, from a URL in a lockfile or a submodule, what is actually being
+fetched. The first path segment must be a DNS host, and every segment is checked before
+it reaches the filesystem.
+
+## Using it
+
+The blunt way is to clone the cache URL directly. The useful way is to let git rewrite
+the URLs you already have:
+
+```sh
+pkgcache run -- git clone https://github.com/some-org/some-repo
+pkgcache shell     # every git command in this shell, for as long as it lasts
 ```
 
-## Transparent adoption (recommended)
+Both work by setting `GIT_CONFIG_COUNT` and an `insteadOf` rule, which is git's own
+mechanism:
 
-Rewrite upstream URLs to the cache once per machine/CI image, and everything —
-including submodules, `pip`'s `git+https` deps, and CPM — routes through the cache
-with no per-project changes:
-
-```bash
-git config --global url."https://cache.local:8443/global/git/github.com/".insteadOf "https://github.com/"
-git config --global url."https://cache.local:8443/global/git/gitlab.com/".insteadOf  "https://gitlab.com/"
+```
+GIT_CONFIG_COUNT=1
+GIT_CONFIG_KEY_0=url.http://127.0.0.1:41780/global/git/github.com/.insteadOf
+GIT_CONFIG_VALUE_0=https://github.com/
 ```
 
-## Trusting the cache CA
+That covers what you type, and also what you do not: submodules, `pip install git+https`,
+Go module fetches, CMake `FetchContent`, and anything else that hardcodes a GitHub URL
+several layers down.
 
-The cache serves HTTPS with the private CA from `scripts/gen-certs.sh`. Point git at it:
+`github.com` is redirected by default. Add others with `-git-host`:
 
-```bash
-# per user (covers all repos):
-git config --global http."https://cache.local:8443/".sslCAInfo /path/to/certs/ca.crt
-# or install certs/ca.crt into the system trust store (update-ca-certificates /
-# update-ca-trust) and no git config is needed.
+```sh
+pkgcache run -git-host github.com,gitlab.com -- git clone https://gitlab.com/g/p
 ```
 
-CI one-liner: `GIT_SSL_CAINFO=certs/ca.crt git clone https://cache.local:8443/global/git/github.com/…`.
+In a build, `pkgcache build` declares the same variables as `ARG`s — see
+[docker-builds.md](docker-builds.md).
 
-## Behavior
+## Making it permanent
 
-- **Read-only.** `git push` is refused (`git-receive-pack` → 403, "read-only mirror").
-- **Heads + tags only.** `refs/pull/*` and other server-side refs are not mirrored,
-  so a commit reachable *only* from a PR ref isn't cached. Clone/fetch of branches,
-  tags, and any commit reachable from them (including `--depth`, `--filter=blob:none`,
-  and SHA-pinned `fetch <sha>`) works.
-- **Freshness.** A mirror is re-fetched from upstream at most once per `refs_ttl`
-  (default 60 s, configured as `git.refs_ttl`). Within that window clones are
-  served from the mirror with no upstream contact (a cache hit).
-- **Offline.** With `OFFLINE=1`, cloning a mirrored repo works with no upstream; an
-  un-mirrored repo returns 404 (the expected air-gap miss).
-- **First clone of a large repo** makes the first requester wait for the server-side
-  mirror initialization and fetch (single-flight — concurrent requesters share it).
-- **Bounded negotiation.** CPU-heavy `upload-pack` processes are capped by
-  `git.max_upload_packs` (default 8). A disconnected client cancels and reaps its
-  subprocess.
-- **Git LFS.** Download batches are forwarded to the origin, then the sha256-addressed
-  object is served through the shared CAS. Repeated and offline pulls reuse the
-  cached object; LFS uploads are refused with the rest of the read-only protocol.
+```sh
+pkgcache persist          # writes the rules into your git config
+```
 
-## Pre-seeding for the air gap
+Without it, the rules live only in the session `run` and `shell` create, and vanish when
+the shell exits. That is the default because a global git rewrite is a real change to a
+machine, and it should be something you asked for.
 
-Add a `git:` list to your seed file (see `pkgcache/seed.example.yaml`) and run
-`scripts/prefetch.py` on the online side; each entry triggers a server-side mirror
-clone. Then `pkgops.py checkpoint` versions the mirrors into DVC.
+## Large files
 
-## Air-gap / DVC notes
+Git LFS works. The cache serves the batch API and the objects themselves, so
+`git lfs pull` resolves through it like anything else. Uploads are refused, for the same
+reason pushes are.
 
-- Mirrors are DVC-tracked with the rest of the cache. They run with `gc.auto=0`, so
-  git never rewrites packfiles on its own — the **only** rewrite is a geometric
-  `git repack` run once per checkpoint. New commits arrive as new packfiles
-  (append-only), so a checkpoint's shuttle delta is proportional to what actually
-  changed, not the whole mirror.
-- **Rollback** (`git checkout <commit> && dvc checkout` of the cache repo) rewinds
-  the mirrors; a git server serving older refs is a valid state.
-- **Local filesystem only.** Serving `upload-pack` while a fetch/repack runs relies
-  on POSIX unlink-while-open semantics; the cache tree must not be on NFS.
+## What it does not do
 
-## Limitations
+**It does not chain to a team cache.** Unlike PyPI, npm and OCI, git derives its origin
+from the request itself rather than from a configured upstream, so there is no ordered
+chain to walk and no fall-through. A machine pointed at a team `pkgreg` still fetches
+git from the real host. This is a gap, not a decision that git is different in kind —
+see [pkgcache.md](pkgcache.md#three-tiers).
 
-- Very large mirrors (e.g. `torvalds/linux` ≈ 3–4 GB) are cached whole; there is no
-  eviction (by design — the stats tab's per-repo request counts inform a future
-  policy).
+**It does not accept pushes.** It is a mirror of upstream, not a place to publish.
+
+## Freshness
+
+Refs are re-checked against upstream on a short TTL, so a clone or fetch sees new commits
+without a manual step, while a burst of fetches in a build does not become a burst of
+upstream requests. Objects, once fetched, are immutable and never re-fetched.
+
+Concurrent `git-upload-pack` operations are bounded, because pack generation is the
+expensive part of serving git and an unbounded number of them is how a cache becomes
+slower than the network it was meant to save.
+
+## Offline
+
+With the cache offline (`pkgcache setup -offline`, or the widget's toggle), clones and
+fetches are served entirely from the mirror. What was never fetched fails; what was is
+available with no network at all — which is the point of carrying a cache across an air
+gap.

@@ -131,7 +131,7 @@ hosts, not images.
 
 Settle on `pkgcache.internal` (or a subdomain of an owned domain, which would switch
 the whole plan to a publicly-trusted cert and delete phases 1–2). Add it to `SANS` in
-[`scripts/gen-certs.sh`](../scripts/gen-certs.sh) and re-mint the server cert; the CA
+``scripts/gen-certs.sh`` and re-mint the server cert; the CA
 is reused, so trust already distributed stays valid.
 
 ### Phase 1 — CA endpoint — implemented
@@ -195,7 +195,7 @@ The baseline is explicit and portable:
 
 [`examples/build-resolution/`](../examples/build-resolution/) contains both forms,
 a BuildKit `[dns]` configuration example, and daemon-level DNS guidance. The optional
-`dns` Compose profile builds [`dnsmasq/`](../dnsmasq/) and requires explicit cache
+`dns` Compose profile builds ``dnsmasq/`` and requires explicit cache
 address/upstream resolver configuration instead of guessing host networking.
 
 [`scripts/verify-build-resolution.sh`](../scripts/verify-build-resolution.sh)
@@ -310,10 +310,10 @@ must come from those native runners.
 
 ## What already exists to build on
 
-- [`urls.endpoints()`](../webui/app/urls.py) — per-project, per-ecosystem client
+- ``urls.endpoints()`` — per-project, per-ecosystem client
   endpoints as data, already rendered by the console.
 - [`views/connect.js`](../go/internal/web/dist/console/views/connect.js) — where the
   download link and fingerprint are rendered.
-- [`scripts/gen-certs.sh`](../scripts/gen-certs.sh) — SAN list is already a parameter.
+- ``scripts/gen-certs.sh`` — SAN list is already a parameter.
 - [`examples/porting/`](../examples/porting/) — the in-image half, which the installer
   does not replace.

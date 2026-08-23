@@ -76,5 +76,3 @@ The wrong claim appeared in three places and has been amended in all of them, ea
 noting what was measured:
 
 - `docs/go-architecture.md` §3.1
-- `docs/go-implementation-plan.md` §3.3
-- `docs/language-choice.md` §2.1

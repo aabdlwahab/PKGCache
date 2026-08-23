@@ -1,7 +1,7 @@
 # pkgreg — what it does and why it is built this way
 
 Written 2026-07-29. This describes the system as built, in plain terms. For the
-numbered build plan see [go-implementation-plan.md](go-implementation-plan.md); for the
+numbered build plan see the git history; for the
 argument behind the bigger decisions see [go-architecture.md](go-architecture.md).
 
 ---

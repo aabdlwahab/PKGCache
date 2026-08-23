@@ -4,10 +4,9 @@
 no certificate, no account, no privileged setup. The first command that needs it starts
 it, it exits when nothing has used it for a while, and the next command starts it again.
 
-For the design and the decisions behind it, see [local-cache-plan.md](local-cache-plan.md).
 
 ```sh
-make pkgcache            # or: go install github.com/brightskies/pkgreg/cmd/pkgcache@latest
+make pkgcache            # or: go install github.com/aabdlwahab/PKGCache/cmd/pkgcache@latest
 pkgcache setup -limit 25G
 pkgcache run -- npm ci
 ```
@@ -22,6 +21,29 @@ That is the whole setup. Nothing is installed, nothing is reachable from another
 machine, and `pkgcache limit -uninstall` is not a thing you need because nothing was
 put anywhere except your own cache directory.
 
+## Installing
+
+Each platform has a real installer, and they verify what they download before installing
+it. Installing from a cache also configures the machine to use it, so there is no second
+step to forget:
+
+```sh
+# macOS — a .pkg somebody double-clicks; carries the menu bar app too
+./packaging/macos/build-pkg.sh --version 1.0.0 \
+    --server https://cache.internal:8443 --ca-sha256 AA:BB:...
+
+# Ubuntu / Debian
+make -C go deb && sudo apt install ./go/bin/pkgcache_1.0.0_amd64.deb
+
+# any Unix, or Windows with install.ps1
+sh packaging/install.sh --server https://cache.internal:8443 --ca-sha256 AA:BB:...
+```
+
+A checksum is verified before anything is installed, and the binary is moved into place
+rather than written over — on macOS a code signature is cached against the file's inode,
+so writing new bytes into the old one leaves every later run killed by the kernel with no
+message but "killed". See [the installers](../packaging/README.md).
+
 ## Commands
 
 | | |
@@ -31,9 +53,15 @@ put anywhere except your own cache directory.
 | `pkgcache env` | print the exports, for a shell that has to keep them |
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
 | `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
+| `pkgcache project` | the projects this cache serves: `ls`, `create`, `rm`, `use` |
 | `pkgcache limit 25G \| none` | change the budget later |
-| `pkgcache status` | size against the limit, uptime, and whether it is still caching |
+| `pkgcache status` | size against the limit, uptime, per-project figures, and whether it is still caching |
+| `pkgcache widget` | a small window that watches this cache; `-on-login` opens it with your session |
+| `pkgcache tray` | the same, kept in the status bar; `-on-login` starts it with your session |
+| `pkgcache console` | the full console, in your browser |
 | `pkgcache prune` | reclaim space, when you ask and not before |
+| `pkgcache export` / `import` | carry what a project holds to a machine with no network, and back |
+| `pkgcache checkpoint` / `snapshots` / `rollback` | name what a project holds now, list those names, return to one |
 | `pkgcache persist` | settings that outlive the session, plus socket activation |
 | `pkgcache docker-setup` | teach the Docker daemon about this cache |
 | `pkgcache docker-build-setup` | send apt and apk through the cache in every build on this machine |
@@ -66,6 +94,38 @@ silently degrades is worse than one that fails:
 
 `pkgcache prune` reclaims space. It is the only thing that deletes.
 
+## Projects
+
+The same projects a `pkgreg` server has, without the accounts — there is one person here
+and nobody to keep out.
+
+```sh
+pkgcache project ls                 # marking the current one, and where its misses go
+pkgcache project create work
+pkgcache project use work           # every run, build and persist defaults to it
+pkgcache run -project side -- npm ci   # or name one for a single command
+PKGCACHE_PROJECT=ci pkgcache run -- npm ci   # or for a pipeline that must not depend on
+                                             # what somebody selected in a shell
+```
+
+A project on a laptop is exactly two things:
+
+- **A separate upstream chain.** Work resolves through the company's cache; a side
+  project goes straight to the public registry. That is configured per project with
+  `pkgcache setup -project work -server …`, and the global project's configuration is
+  the fallback for any project without its own.
+- **A separate accounting boundary.** "What is this project costing" is one `GROUP BY`,
+  because there is one catalog rather than one per project.
+
+It is **not an isolation boundary**, and nothing should be built on the assumption that
+it is. Content is stored once by digest, which is the point: two projects that need the
+same 2.5 GB wheel hold one copy. Deleting a project drops its catalog entries and leaves
+the bytes for `pkgcache prune` to reclaim once nothing references them.
+
+The URL carries the project, exactly as on a server:
+`http://127.0.0.1:41780/<project>/npm/…`. An unregistered name is a 404 rather than
+somebody else's content.
+
 ## Three tiers
 
 With a team cache configured, a lookup goes local, then the team's cache, then the
@@ -83,12 +143,32 @@ a cache in offline mode answers and falling through would defeat, and not on a 4
 403, which is a misconfigured credential that going around would hide.
 
 `setup -no-direct` omits the public row, for a machine that must never fetch from the
-internet itself. `pkgcache status` shows all three tiers and probes the team cache, so
-one that has been down for a week is visible rather than just "builds got slower".
+internet itself. `pkgcache status` shows all three tiers for the current project and
+probes the team cache, so one that has been down for a week is visible rather than just
+"builds got slower".
 
-Chained ecosystems today are **pypi and npm**. apt and git derive their origin from the
-request, `files` is local-only, and oci resolves through a registry alias whose path
-shape is still an open question — absent rather than half-supported.
+**Per project.** `setup -project work` configures the chain for one of this machine's
+projects, and `-team-project` names the project on the team's side — which defaults to
+their global project, because assuming a name exists on somebody else's server is not
+this program's call. A project with no configuration of its own inherits the global
+project's, so a machine pointed at a team cache routes everything through it until told
+otherwise, and `pkgcache project ls` marks an inherited chain with `*`. Two team caches
+mean two self-minted CAs, so the file the outbound pool trusts is a bundle assembled
+from those records; removing a project's configuration removes its CA with it.
+
+Chained ecosystems today are **pypi, npm and oci**. apt and git derive their origin from
+the request itself rather than from configuration, and `files` has no upstream at all —
+its content arrives by upload. Those three are absent rather than half-supported.
+
+OCI is the one whose URLs do not look like the others'. The distribution spec fixes
+`/v2` as the API root, so a chained origin has to name it — the team's root for Docker
+Hub is `https://cache:8443/v2/dockerhub`, and the public origin beside it is written
+`https://registry-1.docker.io/v2` rather than bare. Both ends of a chain have to be
+repository roots of the same shape, because a fallback is the head's URL with its prefix
+swapped; written bare, every fallback pull would lose its `/v2` and 404 against the real
+registry. The project also rides a different segment here: the server reads it from
+after `/v2` and treats a literal `global` there as a registry name, so the global project
+addresses `/v2/<registry>` and every other project `/v2/<project>/<registry>`.
 
 ## Replacing pkgreg-client
 
@@ -146,6 +226,119 @@ nothing is listening on fails `npm install` rather than slowing it, and the daem
 deliberately one that exits when idle. With activation, systemd holds the port open, the
 first connection starts the cache, and it still exits when idle.
 
+## A window to leave open
+
+```sh
+pkgcache widget              # a small window: no tabs, no address bar
+pkgcache widget -on-login    # and again next time you log in
+pkgcache console             # the full console instead
+```
+
+It opens in a real application window where this machine has one — its own icon in the
+Dock, the taskbar or alt-tab, no address bar, and **no browser needed at all**. That is a
+small helper beside `pkgcache`, one per platform, because keeping it out of the client is
+what keeps the client a single static `CGO_ENABLED=0` binary:
+
+| | Engine | Build |
+|---|---|---|
+| Linux | WebKitGTK | `make window` on Ubuntu 24.04, after `sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev`. The only cgo in the product, behind a build tag so nothing else ever needs the headers |
+| Windows | WebView2 (Edge's engine) | `make window-windows` — pure Go, cross-compiles from any host. The runtime ships with Windows 11 and with Edge on 10 |
+| macOS | WKWebView | `make menubar` — it lives in the same helper as the menu bar item, since that is already a native process |
+
+Without the helper it falls back to a Chromium-family browser in app mode, then to an
+ordinary browser window, then to printing the address — and it says which one you got.
+`pkgcache widget -tab` asks for a browser tab on purpose.
+
+The widget opens on four questions in one column, in this order: is the cache working,
+how much room is left, is it actually helping, and what is it doing right now. When the
+cache fills up it says so there too — that is the fourth of the four channels, next to
+stderr, the exit status and the desktop notification.
+
+Three more tabs make it the client's control surface rather than only its monitor:
+
+- **packages** — what this project holds, largest first. Tick the ones you are never going
+  to build against again and remove them; anything a checkpoint holds is kept and said so.
+  *Reclaim space* is the same collection `pkgcache prune` runs.
+- **transfer** — the checkpoints, with the one you are on marked. Take one, go back to one,
+  write a pack, or apply the pack waiting in `shuttle/in`.
+- **sources** — where every project's misses go, and the form that changes it for the one
+  you are in: the team cache's address and the CA fingerprint you were given out of band.
+  Nothing is trusted without that fingerprint, and the running cache starts using it
+  immediately — no restart.
+
+It is the same console, in a shell built for 420 pixels, so there is no second frontend
+and nothing extra in the binary. A Chromium-family browser (Chrome, Chromium, Edge,
+Brave) gives the window without tabs; anything else gets an ordinary one, and pkgcache
+says which you got. Over SSH, with no browser to open, it prints the address instead.
+
+`-on-login` writes one marked file under your home — an XDG autostart entry, a LaunchAgent
+or a Startup script — and `-off-login` removes it. The window watches the cache; it never
+keeps it running, so the daemon still exits when nothing has used it.
+
+### In the status bar
+
+```sh
+pkgcache tray               # one icon: notification area, status bar, or menu bar
+pkgcache tray -on-login     # and again next time you log in
+```
+
+The icon says whether the cache is working, turns to the alarm colour and asks for
+attention when it has filled up and stopped storing, and fades when the cache has gone
+idle. Clicking it opens the window; its menu offers the console, offline, reclaiming space
+and stopping the cache.
+
+**It never keeps the cache running.** Everything in the menu that needs a live daemon is
+greyed while it sleeps — the icon reads the files the daemon published on its way out and
+says "asleep" rather than starting one behind your back. Opening the window is the one
+exception, because that is you asking.
+
+Three platforms, three mechanisms, and one of them is not like the others:
+
+| | |
+|---|---|
+| Linux | `StatusNotifierItem` over D-Bus. Native on KDE, Plasma, most tiling setups, and anything with libappindicator. **GNOME needs a shell extension** (AppIndicator support) or nothing appears — `pkgcache widget` is the same window without it |
+| Windows | `Shell_NotifyIcon`, pure Go |
+| macOS | a separate signed helper, `pkgcache-menubar`, shipped beside the binary. `NSStatusItem` is Cocoa and pkgcache is built without cgo, so the menu bar item is the one piece of this product that needs a Mac to build |
+
+
+## Carrying a cache somewhere with no network
+
+The packages you need in order to keep working on a plane, at a customer site, or in a
+room with no network are the ones already in your cache — that is what it is for, and why
+it never evicts. So the client can hand them over:
+
+```sh
+# on the machine that has a network
+pkgcache export -file /media/usb/work.tar
+
+# on the machine that does not
+pkgcache import -file /media/usb/work.tar
+pkgcache run -- npm ci          # served from the pack
+```
+
+`export` checkpoints the project first, so the pack is what the cache holds *now* rather
+than what it held the last time somebody thought about it, and prints the checkpoint it
+made. `import` applies the pack as it reads it — there is no second command — and creates
+the project if this machine does not have it.
+
+A second trip should carry only what is new:
+
+```sh
+pkgcache snapshots                       # on the receiving machine: * marks where it is
+pkgcache export -since 80a9a71cb8e6      # on the sending machine, against that
+```
+
+**An import cannot lose what you already have.** A pack records where it started, and it
+is refused unless that matches the receiving project's checkpoint — nothing is written on
+refusal. If it is refused, either ask for a delta from the checkpoint `pkgcache snapshots`
+shows, or import into a project of its own. The one command that *does* replace a
+project's content is `pkgcache rollback`, which says so.
+
+The packs are ordinary `pkgreg` transfer packs, so they move in any direction: laptop to
+laptop with no server involved, a team cache to a laptop, or a laptop to the disconnected
+site's own server. A pack is verified against the digests it names, which catches
+corruption — it says nothing about who made it.
+
 ## Working offline
 
 ```sh
@@ -171,13 +364,21 @@ instead.
 ```
 
 `PKGCACHE_DATA_DIR` overrides it. Inside: `blobs/` and `db/` (the cache itself),
-`budget.json` (your limit), `daemon.json` (the running daemon), `daemon.log`.
+`budget.json` (your limit), `project.json` (the project you are working in), `team.json`
+and `team-ca.crt` (the team cache and the CAs it is verified against), `shuttle/in` and
+`shuttle/out` (packs, when you do not give a path of your own), `daemon.json` (the running
+daemon), `daemon.log`.
 
 ## Verified where
 
 Linux is implemented and run: real `npm`, `uv` and `git` through the cache and again
 from it with the origin switched off; a real `docker build`; socket activation against a
-pre-bound descriptor; twenty concurrent starts producing one daemon.
+pre-bound descriptor; twenty concurrent starts producing one daemon; two caches passing a
+pack between them, with the receiving one offline and installing from it — including a
+delta second trip, and a pack that does not continue from the receiver's checkpoint being
+refused without writing anything. The widget is rendered in a real browser at 420 and 320
+pixels wide in both themes, and its export and import buttons driven through to their
+results.
 
 The macOS and Windows branches of `docker-setup`, `persist` and the desktop notification
 are written to the same contract and **have not been run**. The generated systemd units

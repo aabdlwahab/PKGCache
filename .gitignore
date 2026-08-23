@@ -4,20 +4,9 @@
 # including its nested .git/.dvc — so checkpoints can never touch code history.
 /caches/
 
-# Host-specific container uid/gid mapping and local backup copies. Never committed.
+# Local environment files, whatever writes them. Never committed.
 /.env
 /.env.*
-!/.env.example
-
-# Project registry: each extra project's allocated ports are host-specific state
-# (managed by the control UI), not source. pkgcache + webui share this file; it is
-# (re)created as projects are created.
-/config/projects.json
-
-# Control-plane auth state, not source: the accounts store (usernames + password
-# hashes/salts) and the legacy htpasswd file are created/managed at runtime.
-/config/users.json
-/config/htpasswd
 
 # Shuttle staging area (fixed export/import dirs) — local transfer artifacts.
 /shuttle/
@@ -29,37 +18,18 @@
 # Disposable CoW snapshots and runtime state used by qualification scripts.
 /.qualification/
 
-# Python bytecode
-__pycache__/
-*.pyc
-
-# Local virtualenvs (e.g. pkgcache/.venv-test for running the pytest suite)
-.venv/
-.venv-*/
-*.egg-info/
-.pytest_cache/
-
-# TLS material (scripts/gen-certs.sh). Private keys never leave this host; the
-# CA cert is shareable (carry it across the gap, install on build hosts). The
-# server cert is host-specific generated material — regenerate, never commit.
-/certs/*.key
-/certs/*.srl
-/certs/server.crt
-!/certs/ca.crt
-
-# The retired React console's build output and an old dependency snapshot. Left on
-# disk deliberately — nothing is deleted that was never committed — but they are
-# roughly 40 MB of vendored JavaScript, and `git add -A` would put every byte of it
-# into history permanently. That very nearly happened once.
-/webui/console/dist/
-node_modules/
-node_modules.*/
-
 # Bridge and debug logs written beside the code while testing by hand.
 *.log
 
-# A saved copy of a console page, kept for reference rather than built from source.
-/inde2x.html
-
 # Per-machine agent settings. The name says local; the rest of .claude/ is shared.
 /.claude/settings.local.json
+
+# Installer artefacts. Built from packaging/ by `make installers` and
+# packaging/macos/build-pkg.sh, so they are outputs rather than sources — and a .pkg is
+# ~15 MB of binary that git would keep a copy of for every rebuild.
+packaging/**/*.pkg
+packaging/**/*.deb
+
+# What the removed Python stack's Docker builds left behind. Root-owned, so it takes
+# `sudo rm -rf webui` to clear; ignored until then so it does not sit in every status.
+/webui/
