@@ -97,8 +97,11 @@ func InstallAutostart(o AutostartOptions) error {
 
 // describe names what an entry starts, in the words its own command uses.
 func describe(command string) string {
-	if command == "tray" {
+	switch command {
+	case "tray":
 		return "the status bar icon"
+	case "app":
+		return "the app"
 	}
 	return "the widget"
 }
@@ -133,6 +136,18 @@ type loginEntry struct {
 
 // autostartEntry is the per-platform shape. Three formats, one contract: a marked file
 // under the user's home that runs `pkgcache widget` once, at login.
+// execArgs is what a login entry runs after the executable.
+//
+// Every command here is a pkgcache subcommand except one: the desktop app is its own
+// binary, and what it needs is a flag telling it to come up as an icon rather than as a
+// window across whatever the person was about to do.
+func execArgs(command string) string {
+	if command == "app" {
+		return "-background"
+	}
+	return command
+}
+
 func autostartEntry(home, executable, command string) (loginEntry, error) {
 	// One file per command. A person may want the icon and not the window, or the reverse,
 	// and a shared filename would make -off-login on one silently remove the other.
@@ -150,7 +165,7 @@ func autostartEntry(home, executable, command string) (loginEntry, error) {
 				"Type=Application\n" +
 				"Name=pkgcache\n" +
 				"Comment=Watch this machine's package cache\n" +
-				"Exec=" + executable + " " + command + "\n" +
+				"Exec=" + executable + " " + execArgs(command) + "\n" +
 				"Terminal=false\n" +
 				"X-GNOME-Autostart-enabled=true\n",
 		}, nil
@@ -171,7 +186,7 @@ func autostartEntry(home, executable, command string) (loginEntry, error) {
     <key>ProgramArguments</key>
     <array>
       <string>` + executable + `</string>
-      <string>` + command + `</string>
+      <string>` + execArgs(command) + `</string>
     </array>
     <key>RunAtLoad</key><true/>
   </dict>
@@ -187,7 +202,7 @@ func autostartEntry(home, executable, command string) (loginEntry, error) {
 				"Start Menu", "Programs", "Startup", "pkgcache"+suffix+".cmd"),
 			mode: 0o644,
 			content: "@echo off\nrem " + strings.TrimPrefix(autostartMarker, "# ") + "\n" +
-				"start \"\" \"" + executable + "\" " + command + "\n",
+				"start \"\" \"" + executable + "\" " + execArgs(command) + "\n",
 		}, nil
 	default:
 		return loginEntry{}, fmt.Errorf("no login entry is defined for %s", runtime.GOOS)

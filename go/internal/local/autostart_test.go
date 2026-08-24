@@ -227,3 +227,55 @@ func TestAutostartRetirementIsDarwinOnly(t *testing.T) {
 		t.Fatalf("a linux run reached into LaunchAgents: %v", err)
 	}
 }
+
+// The desktop app's login entry, which is the one command here that is a separate binary
+// rather than a pkgcache subcommand.
+func TestAutostartRunsTheAppInTheBackground(t *testing.T) {
+	home := t.TempDir()
+	entry, err := autostartEntry(home, "/usr/bin/pkgcache-app", "app")
+	if err != nil {
+		t.Skip(err)
+	}
+	if err := InstallAutostart(AutostartOptions{
+		Executable: "/usr/bin/pkgcache-app", Command: "app", Home: home,
+		Out: &strings.Builder{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(entry.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// -background, not "app": a login entry that opened a window across whatever the
+	// person was about to do would be turned off the same day.
+	if !strings.Contains(string(content), "-background") {
+		t.Errorf("the app's login entry does not ask for the background:\n%s", content)
+	}
+	if strings.Contains(string(content), "pkgcache-app app") {
+		t.Errorf("\"app\" leaked through as a subcommand:\n%s", content)
+	}
+}
+
+func TestAutostartKeepsTheAppApartFromTheOldEntries(t *testing.T) {
+	// Somebody upgrading has a tray entry already. Installing the app's must not silently
+	// replace it, or -off-login on one removes the other.
+	home := t.TempDir()
+	app, err := autostartEntry(home, "pkgcache-app", "app")
+	if err != nil {
+		t.Skip(err)
+	}
+	tray, err := autostartEntry(home, "pkgcache", "tray")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.path == tray.path {
+		t.Fatalf("the app and the tray both write %s", app.path)
+	}
+}
+
+func TestDescribeNamesTheApp(t *testing.T) {
+	// The line a person reads after installing the login entry.
+	if got := describe("app"); got != "the app" {
+		t.Errorf("describe(\"app\") = %q, want %q", got, "the app")
+	}
+}
