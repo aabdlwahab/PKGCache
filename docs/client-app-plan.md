@@ -27,9 +27,10 @@ Wails v3 beta.12 held on both platforms, which was the one genuine risk in this 
 | `GET /apt/...` serving | **done**, 10 tests including traversal and symlink escape |
 | The two Debian packages | **done**, byte-reproducible; **installed by real apt** |
 | `install.sh` apt bootstrap | its key-and-source steps verified in a container |
-| `cmd/pkgcache-app` — the Wails app | **compiles on macOS and Linux; never yet run** |
-| Windows NSIS installer, macOS `.pkg` changes | not started |
-| Phase 5 cutover | not started; it waits on the app running |
+| `cmd/pkgcache-app` — the Wails app | compiles on macOS and Linux; **runs** — window, menu bar icon, working menu |
+| macOS app bundle (`packaging/macos/bundle.sh`) | written, not run — needs `sips`/`iconutil` |
+| **Phase 5 cutover** | **done** — 1,944 lines deleted, suite green |
+| Windows NSIS installer, `build-pkg.sh` rewrite | not started |
 
 ### What real apt does with this
 
@@ -169,9 +170,30 @@ This is the fault worth remembering out of all of them. Every other one was a mi
 inside the new code; this one was correct code elsewhere whose stated precondition the
 split quietly removed.
 
+### The cutover
+
+Done, and it removed slightly more than the plan estimated: **1,944 lines**.
+
+| | |
+|---|---|
+| `cmd/pkgcache-window/` | three web engines, one of them a stub |
+| `internal/tray/tray_{linux,darwin,windows,other}.go` | D-Bus, Shell_NotifyIcon, a pipe protocol |
+| `internal/tray/{menu,icon}_linux.go` | drawing a menu over D-Bus by hand |
+| `tools/menubar/main.swift` | a second language, for one platform |
+
+`godbus/dbus` and `jchv/go-webview2` fell out of `go.mod` with them, exactly as predicted.
+`internal/tray/tray.go` stayed — `State`, `Action`, `Label`, `Enabled`, `Tooltip`, `Menu` —
+minus `Run` and `Options`, which existed only for the platform loops. The app renders that
+table now, so the CLI's menu and the app's cannot disagree.
+
+`pkgcache widget`, `tray` and `console` stayed too, as the plan said, and are now three
+lines each: find the app, start it, or explain that it is not installed. `widget` still
+falls back to a chromeless browser window on a machine that took the daemon package and
+not the desktop one, which is what it did before any of the helpers existed.
+
 ### Still unknown
 
-Whether the widget renders. Five launches have each got further — no window, then a crash,
+Whether the widget renders inside the window. Five launches have each got further — no window, then a crash,
 then a service refusing to start, then a window with the wrong page, then a working status
 bar icon that crashed on click. Nobody has yet seen the cache's own UI appear inside it.
 

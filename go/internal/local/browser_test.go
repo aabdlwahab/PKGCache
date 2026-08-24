@@ -206,10 +206,14 @@ func TestDarwinFallsBackWhenNoChromiumIsInstalled(t *testing.T) {
 // above cannot be confused for one another.
 func installed2(names ...string) LookPath { return installed(names...) }
 
-// The escalation, which is the whole point of the change: a real application window where
-// this machine has one, a chromeless browser window where it does not, an ordinary window
-// after that, and the address printed when there is nothing at all.
-func TestAnApplicationWindowIsPreferredToABrowser(t *testing.T) {
+// The escalation, after the cutover: the desktop app where this machine has one, a
+// chromeless browser window where it does not, an ordinary window after that, and the
+// address printed when there is nothing at all.
+//
+// The first step moved out of ResolveLauncher when the three window helpers became one
+// app. The app resolves its own address and takes no URL, so it is not a launcher for one
+// — the commands that prefer it ask AppPath directly, before they ever get here.
+func TestTheAppIsFoundBesideThisBinaryOrOnPath(t *testing.T) {
 	helpers := map[string]string{}
 	restore := helperPathFor
 	helperPathFor = func(name string) (string, bool) {
@@ -218,57 +222,39 @@ func TestAnApplicationWindowIsPreferredToABrowser(t *testing.T) {
 	}
 	t.Cleanup(func() { helperPathFor = restore })
 
-	bundles := map[string]bool{"Google Chrome": true}
-	restoreBundle := appBundleExists
-	appBundleExists = func(bundle string) bool { return bundles[bundle] }
-	t.Cleanup(func() { appBundleExists = restoreBundle })
+	if _, found := AppPath(); found {
+		t.Error("AppPath found an app on a machine with none installed")
+	}
+	helpers[appName()] = "/usr/local/bin/" + appName()
+	path, found := AppPath()
+	if !found || path != "/usr/local/bin/"+appName() {
+		t.Errorf("AppPath() = %q, %v; want the installed path", path, found)
+	}
+}
+
+// ResolveLauncher is browser-only now, and says so: nothing it returns claims to be a
+// native window, whatever is installed beside the binary.
+func TestResolveLauncherOffersOnlyBrowsers(t *testing.T) {
+	helpers := map[string]string{appName(): "/usr/local/bin/" + appName()}
+	restore := helperPathFor
+	helperPathFor = func(name string) (string, bool) {
+		path, found := helpers[name]
+		return path, found
+	}
+	t.Cleanup(func() { helperPathFor = restore })
 
 	display := environment(map[string]string{"DISPLAY": ":0"})
-
-	// With no helper, the behaviour that existed before: a Chromium browser in app mode.
 	launcher, err := ResolveLauncher("http://cache/widget", true, "linux",
 		installed("chromium", "xdg-open"), display)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if launcher.Native || launcher.Program != "chromium" {
-		t.Fatalf("with no helper installed, resolved %+v", launcher)
-	}
-
-	// With one, it wins — even though a browser is available.
-	helpers["pkgcache-window"] = "/usr/local/bin/pkgcache-window"
-	launcher, err = ResolveLauncher("http://cache/widget", true, "linux",
-		installed("chromium", "xdg-open"), display)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !launcher.Native || !launcher.AppWindow {
-		t.Fatalf("the application window did not win: %+v", launcher)
-	}
-	if launcher.Program != "/usr/local/bin/pkgcache-window" ||
-		len(launcher.Args) != 1 || launcher.Args[0] != "http://cache/widget" {
-		t.Fatalf("resolved %+v, want the helper with just the URL", launcher)
-	}
-
-	// macOS runs both jobs from one helper, so it has to be told which is wanted.
-	helpers["pkgcache-menubar"] = "/usr/local/bin/pkgcache-menubar"
-	launcher, err = ResolveLauncher("http://cache/widget", true, "darwin",
-		installed("open"), environment(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !launcher.Native || strings.Join(launcher.Args, " ") != "-window http://cache/widget" {
-		t.Fatalf("darwin resolved %+v", launcher)
-	}
-
-	// And -tab still asks for a browser, helper or no helper: somebody who said tab meant
-	// tab.
-	launcher, err = ResolveLauncher("http://cache/widget", false, "linux",
-		installed("chromium", "xdg-open"), display)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if launcher.Native {
-		t.Fatalf("-tab was given an application window: %+v", launcher)
+		t.Errorf("ResolveLauncher claimed a native window: %+v", launcher)
+	}
+	// Still a chromeless one where a Chromium-family browser exists, which is what the
+	// widget falls back to on a machine with no app.
+	if !launcher.AppWindow || launcher.Program != "chromium" {
+		t.Errorf("resolved %+v, want chromium in app mode", launcher)
 	}
 }

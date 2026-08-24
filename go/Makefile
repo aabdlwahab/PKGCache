@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release menubar window window-windows app test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app test race lint fmt tidy clean help
 
 all: build
 
@@ -86,30 +86,12 @@ bridge-release: ## Build the loopback bridge for Linux, macOS, and Windows
 pkgcache: ## Build pkgcache for this host
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/pkgcache ./cmd/pkgcache
 
-window: ## Build the application-window helper for this platform
-	@case "$$(uname)" in \
-	  Linux) \
-	    pkg-config --exists gtk+-3.0 webkit2gtk-4.1 || { \
-	      echo "needs: sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev"; \
-	      echo "(Ubuntu 24.04. On 22.04 the package is libwebkit2gtk-4.0-dev and the"; \
-	      echo " pkg-config name in cmd/pkgcache-window/window_linux.go must match.)"; \
-	      exit 1; }; \
-	    go build -tags webkitgtk -trimpath -ldflags '-s -w $(LDFLAGS)' \
-	      -o bin/pkgcache-window ./cmd/pkgcache-window ;; \
-	  Darwin) \
-	    echo "macOS keeps its window in pkgcache-menubar: make menubar" ; exit 1 ;; \
-	  *) echo "no window helper for $$(uname)"; exit 1 ;; \
-	esac
-
-window-windows: ## Build the Windows application-window helper (cross-compiles)
-	# -H windowsgui, or the helper flashes a console window every time it opens.
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
-	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
-	  -o bin/pkgcache-window-windows-amd64.exe ./cmd/pkgcache-window
-
-# The desktop app, which replaces the three helpers above once it reaches parity. It is a
-# separate binary from pkgcache for the reason the helpers were: pkgcache stays
-# CGO_ENABLED=0 on five targets from one host, and the app is where cgo is allowed.
+# The desktop app. One program for all three platforms, replacing the WebKitGTK helper,
+# the WebView2 helper and the Swift menu bar item that used to live here.
+#
+# A separate binary from pkgcache, and a separate module: pkgcache stays CGO_ENABLED=0 on
+# five targets from one host, which is the whole release story, and the app is where cgo
+# is allowed.
 # The app is built natively, so its name carries the host's architecture rather than a
 # cross-compilation target.
 GOARCH ?= $(shell go env GOARCH)
@@ -154,13 +136,6 @@ app: ## Build the desktop app for this platform
 	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \
 	     exit 1 ;; \
 	esac
-
-menubar: ## Build the macOS menu bar helper and its window (macOS only)
-	@test "$$(uname)" = "Darwin" || { \
-	  echo "the menu bar helper needs a Mac: NSStatusItem is Cocoa, and pkgcache itself"; \
-	  echo "is built without cgo. See tools/menubar/main.swift."; exit 1; }
-	swiftc -O -o bin/pkgcache-menubar tools/menubar/main.swift
-	@echo "sign it before shipping: codesign --options runtime --timestamp -s <identity> bin/pkgcache-menubar"
 
 pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \

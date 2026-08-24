@@ -1,41 +1,42 @@
 package local
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 )
 
-// A real application window, where this machine has one.
+// Finding the desktop app.
 //
 // The console is HTML on a loopback port, and a browser tab is a poor container for it: no
-// icon of its own in the Dock, the taskbar or alt-tab, an address bar nobody needs, and on
-// a machine with no Chromium-family browser installed, no chromeless window at all — which
-// is precisely how this came up.
+// icon of its own in the Dock, the taskbar or alt-tab, and an address bar nobody needs. So
+// there is an application window, and since the cutover there is exactly one of it —
+// pkgcache-app, one program on all three platforms.
 //
-// So the window is preferred over a browser when the platform's own engine is available:
+// Before that there were three: a cgo WebKitGTK binary on Linux, a WebView2 binary on
+// Windows, and a Swift helper on macOS, each found by a different name. That map is gone
+// and so is the reason for it.
 //
-//	linux    pkgcache-window, built against WebKitGTK on Ubuntu
-//	windows  pkgcache-window, WebView2 through a pure-Go binding
-//	darwin   pkgcache-menubar -window, which already owns a native process for the icon
-//
-// All three are helpers rather than code in this binary, and the reason is the release: with
-// them, pkgcache is still one static CGO_ENABLED=0 executable for five targets built from
-// one host. Any of them may be absent, which is not a failure — the browser paths below it
-// are the fallback, and they were the whole feature until now.
+// pkgcache does not need the app to work. `pkgcache widget` prefers it and falls back to a
+// browser, which is what it did before any of them existed.
 
-// windowHelpers names the helper each platform's window lives in.
-var windowHelpers = map[string]string{
-	"linux":   "pkgcache-window",
-	"windows": "pkgcache-window.exe",
-	"darwin":  "pkgcache-menubar",
+// appName is the desktop app's binary, per platform.
+func appName() string {
+	if runtime.GOOS == "windows" {
+		return "pkgcache-app.exe"
+	}
+	return "pkgcache-app"
 }
 
-// helperPathFor finds a helper beside this binary or on PATH.
+// helperPathFor finds a program beside this binary or on PATH.
 //
-// Beside first, because that is what a release ships and what somebody who copied two files
-// onto a machine will have. A variable so a test can answer without a filesystem.
+// Beside first, because that is what every installer here produces: the .deb puts both in
+// /usr/bin, the macOS bundle puts both in Contents/MacOS with symlinks into it, and
+// somebody who copied two files onto a machine has them in one directory. A variable so a
+// test can answer without a filesystem.
 var helperPathFor = func(name string) (string, bool) {
 	if self, err := os.Executable(); err == nil {
 		beside := filepath.Join(filepath.Dir(self), name)
@@ -47,24 +48,36 @@ var helperPathFor = func(name string) (string, bool) {
 	return found, err == nil
 }
 
-// NativeWindow returns a launcher for an application window, if this machine has one.
-func NativeWindow(url, goos string) (Launcher, bool) {
-	name, known := windowHelpers[goos]
-	if !known {
-		return Launcher{}, false
-	}
-	path, found := helperPathFor(name)
-	if !found {
-		return Launcher{}, false
-	}
-	args := []string{url}
-	if goos == "darwin" {
-		// The macOS helper is both things, so it has to be told which one is wanted.
-		args = []string{"-window", url}
-	}
-	return Launcher{Program: path, Args: args, AppWindow: true, Native: true}, true
-}
+// AppPath returns the desktop app's path, if this machine has it installed.
+func AppPath() (string, bool) { return helperPathFor(appName()) }
 
 // GOOS is runtime.GOOS, named so callers read as platform-parameterised rather than
 // platform-specific.
 func GOOS() string { return runtime.GOOS }
+
+// StartApp launches the desktop app and returns without waiting for it.
+//
+// Detached, because the app outlives the command that asked for it: `pkgcache tray` in a
+// shell should not hold a terminal open for as long as somebody keeps an icon in their
+// status bar, and closing that terminal should not take the icon with it.
+//
+// background asks the app to come up as an icon with no window, which is what a login
+// entry and `pkgcache tray` both want. `pkgcache widget` passes false and gets a window.
+func StartApp(ctx context.Context, app string, background bool) error {
+	var args []string
+	if background {
+		args = append(args, "-background")
+	}
+	// #nosec G204 -- app is resolved beside this binary or on PATH, never from input.
+	cmd := exec.CommandContext(ctx, app, args...)
+	// Its own session, so it survives the shell that started it. Output goes nowhere:
+	// anything worth saying, the icon says.
+	detach(cmd)
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = nil, nil, nil
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("local: start %s: %w", app, err)
+	}
+	// Released rather than waited for. A tracked child would make this command the app's
+	// parent for its whole life.
+	return cmd.Process.Release()
+}

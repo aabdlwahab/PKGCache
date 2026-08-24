@@ -15,9 +15,12 @@ import (
 //
 // The console is already a complete UI, embedded in this binary and served on the
 // loopback port. What it lacked on a laptop was a window: nobody keeps a browser tab
-// open to watch a cache. `widget` opens the compact view in a Chromium-family app-mode
-// window — no tabs, no address bar — which is the whole of the "widget" on every platform
-// at once, with no cgo, no toolkit and no second frontend.
+// open to watch a cache.
+//
+// That window is now pkgcache-app, so `widget` starts it. Where the app is not installed —
+// a server, a container, a machine that took the daemon package and not the desktop one —
+// the browser paths below are still here and still work: a Chromium-family app-mode window
+// first, an ordinary tab second, and the printed address last.
 //
 // The daemon is started if it is not running, and then left alone. Neither command holds
 // it open: the page reads the cache, it is not a reason for the cache to exist, and a
@@ -30,14 +33,17 @@ func runWidget(ctx context.Context, args []string) error {
 
 usage: pkgcache widget [flags]
 
-Opens the compact view in a window with no tabs and no address bar, where a browser
-supports one; in an ordinary window where it does not. It shows what is downloading, how
-much of your limit is used, how much is being served from here, and says so when the
-cache has filled up and stopped storing.
+Starts the desktop app, which shows what is downloading, how much of your limit is used,
+how much is being served from here, and says so when the cache has filled up and stopped
+storing.
+
+Where the app is not installed the same page opens in a browser instead: a window with no
+tabs and no address bar where a Chromium-family browser supports one, an ordinary window
+where it does not. -tab asks for the browser even when the app is there.
 
 Starts the cache if it is not running, then leaves it to its own idle timeout.
 
--on-login opens it with your session, and -off-login stops that again. It watches the
+-on-login starts it with your session, and -off-login stops that again. It watches the
 cache; it never keeps it running.
 
 flags:
@@ -85,12 +91,17 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 	// The login entry is a desktop file, not a cache operation: it starts no daemon and
 	// opens no window. Handled before anything else for that reason.
 	if onLogin != nil && (*onLogin || *offLogin) {
-		executable, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("locate this program: %w", err)
+		// The same entry `pkgcache tray -on-login` writes, deliberately. Both flags mean
+		// "have this waiting for me when I log in", the thing that waits is the app, and
+		// two entries starting one program would be two icons.
+		app, found := local.AppPath()
+		if !found {
+			return fmt.Errorf(
+				"the desktop app is not installed, so there is nothing to start at login.\n" +
+					"  The window lives in `pkgcache-app` — see packaging/README.md.")
 		}
 		return local.InstallAutostart(local.AutostartOptions{
-			Executable: executable, Command: "widget",
+			Executable: app, Command: "app",
 			Remove: *offLogin, DryRun: *dryRun, Out: os.Stdout,
 		})
 	}
@@ -108,6 +119,16 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 		}
 		fmt.Println(url)
 		return nil
+	}
+
+	// The app first, and only for the widget: `console` is the full operator console
+	// and belongs in a real browser with tabs and a URL bar, which is where somebody
+	// reading statistics wants it. -tab is the way out for anybody who would rather
+	// have the page than the app.
+	if name == "widget" && !*plain {
+		if app, found := local.AppPath(); found {
+			return local.StartApp(ctx, app, false)
+		}
 	}
 
 	state, err := reachRegistry(ctx, snap)

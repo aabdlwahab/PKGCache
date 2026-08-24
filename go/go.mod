@@ -3,8 +3,7 @@ module github.com/aabdlwahab/PKGCache
 go 1.25.0
 
 require (
-	github.com/godbus/dbus/v5 v5.2.2
-	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
+	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
@@ -13,13 +12,11 @@ require (
 )
 
 require (
-	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

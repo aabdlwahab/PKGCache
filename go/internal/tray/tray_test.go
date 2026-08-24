@@ -112,9 +112,3 @@ func TestFormatBytes(t *testing.T) {
 		}
 	}
 }
-
-func TestRunRefusesWithoutItsCallbacks(t *testing.T) {
-	if err := Run(nil, Options{}); err == nil {
-		t.Fatal("Run accepted options with no Read or Do")
-	}
-}

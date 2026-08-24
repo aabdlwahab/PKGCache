@@ -83,31 +83,29 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
-      # The window helper's Linux half is the only cgo in the product, and the machine this
-      # was written on has no GTK headers — so this job is where it gets compiled at all.
-      # Ubuntu 24.04's package names, which is the distro it is specialised to.
-      - name: Build the application-window helper (Ubuntu)
+      # The desktop app is the only cgo in the product, and the machine this was written
+      # on has no GTK headers — so this job is where it gets compiled at all. Ubuntu
+      # 24.04's package names, which is the platform it targets.
+      #
+      # Its own module, so it is built from its own directory: the main module does not
+      # contain it, which is the point — go build ./... keeps working on a host with no
+      # GUI toolchain, and pkgcache stays CGO_ENABLED=0 for five targets from one host.
+      - name: Build the desktop app (Ubuntu)
         if: matrix.os == 'ubuntu-24.04'
+        working-directory: go/cmd/pkgcache-app
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-          go build -tags webkitgtk -o /dev/null ./cmd/pkgcache-window
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          go build -o /dev/null .
 
-      # Pure Go, so it needs nothing installed and proves the release model is unchanged:
-      # a window on Windows still cross-compiles from any host.
-      - name: Cross-compile the Windows application-window helper
-        if: matrix.os == 'ubuntu-24.04'
-        run: |
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-            go build -ldflags '-H windowsgui' -o /dev/null ./cmd/pkgcache-window
-
-      # The one part of this product that needs a Mac to build: NSStatusItem is Cocoa and
-      # pkgcache itself is CGO_ENABLED=0, so the menu bar item is a separate helper.
-      # Compiling it here is the floor, the same as cross-compiling the platform branches
-      # in the build job; signing and notarizing belong to the release workflow.
-      - name: Check the menu bar helper still compiles
+      # macOS needs only the Command Line Tools, which the runner has. CGO_CFLAGS is
+      # noise reduction, not correctness: six of Wails' darwin files carry no
+      # -mmacosx-version-min and so compile against the runner's SDK, and the linker then
+      # prints a warning per object. See docs/client-app-plan.md.
+      - name: Build the desktop app (macOS)
         if: runner.os == 'macOS'
-        run: swiftc -O -o /dev/null tools/menubar/main.swift
+        working-directory: go/cmd/pkgcache-app
+        run: CGO_CFLAGS="-mmacosx-version-min=11.0" go build -o /dev/null .
 
       - name: Privileged Linux/macOS install, trust, idempotency, and uninstall
         if: runner.os != 'Windows'

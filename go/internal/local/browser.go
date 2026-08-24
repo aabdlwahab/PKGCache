@@ -85,11 +85,9 @@ func ResolveLauncher(
 		return Launcher{}, ErrNoBrowser
 	}
 	if appWindow {
-		// A real application window first, where this machine has one: it needs no browser
-		// at all, and it is what "an app rather than a tab" means. See window.go.
-		if launcher, found := NativeWindow(url, goos); found {
-			return launcher, nil
-		}
+		// Browsers only. The real application window is pkgcache-app, which resolves its
+		// own address and takes no URL — so it is not a launcher for one, and the callers
+		// that prefer it reach for it before they get here. See window.go.
 		if launcher, found := appLauncher(url, goos, look); found {
 			return launcher, nil
 		}

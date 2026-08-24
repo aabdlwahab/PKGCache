@@ -1,8 +1,8 @@
 # pkgcache-app
 
 The desktop app: a window onto this machine's cache, and an icon in the status bar that
-watches it. It replaces three things — `cmd/pkgcache-window` on Linux and Windows, and
-`tools/menubar/main.swift` on macOS — with one program.
+watches it. It replaced three things — `cmd/pkgcache-window` on Linux and Windows, and
+`tools/menubar/main.swift` on macOS — with one program, and those 1,944 lines are gone.
 
 ## Why this is its own module
 
