@@ -9,27 +9,6 @@ import (
 	"strings"
 )
 
-// startingHTML is what the window shows until the cache answers.
-//
-// Deliberately one file with no assets: it exists for the second or two before the daemon
-// is listening, and anything that had to be fetched would be fetched from the server that
-// is not up yet.
-const startingHTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<style>
-  :root { color-scheme: dark light }
-  body { margin:0; height:100vh; display:grid; place-items:center;
-         background:#10151a; color:#8b98a5;
-         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif }
-  @media (prefers-color-scheme: light) { body { background:#fff; color:#5b6770 } }
-  .g { text-align:center }
-  .b { color:#45d98a; font-weight:600; letter-spacing:.02em }
-</style></head>
-<body><div class="g"><div class="b">pkgcache</div><div>starting the cache&hellip;</div></div></body>
-</html>`
-
-// isDarwin is runtime.GOOS in one place, so the tray setup reads as a choice about icons
-// rather than as platform plumbing.
 func isDarwin() bool { return runtime.GOOS == "darwin" }
 
 // notificationsAvailable reports whether this process can post system notifications.

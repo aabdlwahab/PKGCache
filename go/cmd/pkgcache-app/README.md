@@ -43,13 +43,15 @@ is left here is the wiring.
 
 Four things in that wiring are load-bearing and easy to undo by accident:
 
-- **One goroutine touches the window at a time.** `showWindow` is reached from a tray
-  click, a menu item and a second launch, and the first call can be waiting the full
-  daemon start timeout when the next arrives. Two goroutines then drove the same window —
-  one inside `SetURL` while the other was still in `Show`, which is where Wails builds the
-  native webview — and the process died with a SIGSEGV in `navigationLoadURL`. The window
-  is also shown *before* the address is resolved, so a click produces a window
-  immediately rather than nothing for half a minute followed by a second click.
+- **The window is created with its URL, and `SetURL` is never called.** `WebviewWindow.Run`
+  assigns `w.impl` *before* dispatching the call that builds the native window, so there
+  is a moment where `impl` is non-nil and `nsWindow` is not yet valid. `SetURL`'s only
+  guard is `impl != nil`, and on macOS it hands `nsWindow` straight to Objective-C — a
+  SIGSEGV inside cgo whose traceback points at Wails rather than at the caller. Giving the
+  URL to `NewWithOptions` lets Wails order construction and loading itself.
+- **One goroutine touches the window at a time,** and closing hides rather than destroys
+  it. Two clicks during a cold daemon start would otherwise each build a window; a
+  destroyed window would leave the package variable pointing at freed memory.
 
 - **Nothing touches the application before `ApplicationStarted`.** `InvokeSync` reaches
   `dispatchOnMainThread`, which dereferences an `impl` that `app.Run()` creates — calling

@@ -124,15 +124,28 @@ The fifth launch reached the status bar. The icon was there and it responded to 
 and then took the process down with a SIGSEGV inside `navigationLoadURL`, which is cgo, on
 the main thread.
 
-Not a Wails fault. `showWindow` spawns a goroutine per call and there was nothing stopping
-two of them existing: the first was still waiting on a cold daemon when the click arrived,
-so one goroutine was inside `SetURL` while the other was still in `Show` — which is where
-Wails builds the native webview. The second reached a half-constructed object.
+I read that as a race between two `showWindow` goroutines and added a mutex. **It crashed
+again identically, with one goroutine in the traceback** — so the diagnosis was wrong, and
+the sixth launch is what found the real cause:
 
-The lock is now held across the whole sequence, and the window is shown *before* the
-address is resolved. That second part is the actual cure rather than the mutex: a click
-that produced nothing at all for thirty seconds was always going to be clicked again, and
-the crash needed that second click.
+```go
+func (w *WebviewWindow) Run() {
+	if w.impl != nil { return }
+	w.impl = newWindowImpl(w)   // impl is set here
+	...
+	InvokeSync(w.impl.run)      // nsWindow only becomes valid here
+}
+```
+
+`SetURL` guards on `impl != nil` and then hands `nsWindow` straight to Objective-C. There
+is a window where the first is true and the second is garbage, and that is where every one
+of these crashes landed.
+
+The fix is to stop calling `SetURL` at all: the window is created by `NewWithOptions` with
+its URL already set, so Wails orders construction and loading itself. The mutex stays —
+it was solving a real second problem — and closing the window now hides it rather than
+destroying it, since a destroyed window would leave the package variable pointing at freed
+memory.
 
 ### Still unknown
 

@@ -123,7 +123,7 @@ func run(background, onLogin, offLogin bool) error {
 			"pkgcache-app: no app bundle, so no notifications — the tooltip says the same things")
 	}
 
-	app := application.New(application.Options{
+	app = application.New(application.Options{
 		Name:        "pkgcache",
 		Description: "A package cache for this machine",
 		Services:    services,
@@ -133,7 +133,7 @@ func run(background, onLogin, offLogin bool) error {
 			UniqueID: "org.pkgreg.pkgcache.app",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 				// Somebody asked for it again, which means they want to see it.
-				showWindow(ctx, core)
+				openWindow(ctx, core)
 			},
 		},
 		Mac: application.MacOptions{
@@ -145,28 +145,6 @@ func run(background, onLogin, offLogin bool) error {
 		},
 	})
 
-	// The window is created hidden and shown on demand. -background is the login entry's
-	// flag: a machine that starts this at every login should get an icon, not a window
-	// across whatever the person was about to do.
-	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:   "pkgcache",
-		Title:  "pkgcache",
-		Width:  420,
-		Height: 660,
-		// The console is already a complete UI served on the loopback port, so the app
-		// loads it rather than carrying a second copy of the same HTML. One frontend —
-		// which means this window has nothing to show until the daemon is up.
-		//
-		// So it starts on one line of inline HTML instead. With an empty URL the webview
-		// lands on Wails' asset server, finds no index.html and renders its own "Missing
-		// index.html" error — which is a true statement about a project that has no
-		// frontend, and a completely misleading one here, where the frontend is a web
-		// server that has not finished starting.
-		HTML:             startingHTML,
-		Hidden:           true,
-		BackgroundColour: application.NewRGB(16, 21, 26),
-	})
-
 	systemTray := app.SystemTray.New()
 	if isDarwin() {
 		// A template image, so macOS tints it for the menu bar's own appearance rather
@@ -175,11 +153,11 @@ func run(background, onLogin, offLogin bool) error {
 	} else {
 		systemTray.SetIcon(trayLight).SetDarkModeIcon(trayDark)
 	}
-	systemTray.OnClick(func() { showWindow(ctx, core) })
+	systemTray.OnClick(func() { openWindow(ctx, core) })
 
 	// Built once and then only relabelled. Rebuilding the menu on every tick would drop
 	// the one a person had open, on the two platforms where an open menu is a live object.
-	menu, items := buildMenu(ctx, app, core)
+	menu, items := buildMenu(ctx, core)
 	systemTray.SetMenu(menu)
 
 	refresh := func() {
@@ -236,7 +214,7 @@ func run(background, onLogin, offLogin bool) error {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted,
 		func(*application.ApplicationEvent) {
 			if !background {
-				showWindow(ctx, core)
+				openWindow(ctx, core)
 			}
 			go func() {
 				refresh()
@@ -251,60 +229,81 @@ func run(background, onLogin, offLogin bool) error {
 	return app.Run()
 }
 
-// window is the single window, kept here because showWindow is reached from three places —
-// a tray click, a menu item and a second launch — and threading it through all of them
-// would be ceremony.
-var window application.Window
-
-// One window, one goroutine touching it at a time.
+// The one window, created the first time somebody asks for it.
 //
-// This is not defensive tidiness, it is a crash that happened. showWindow is reached from
-// a tray click, a menu item and a second launch, and the first call can be waiting the
-// full daemon start timeout when the next arrives. Two goroutines then drove the same
-// window: one inside SetURL while the other was still in Show, which is where Wails
-// builds the native webview. The second reached navigationLoadURL with a webview that was
-// half-constructed and took the process down with a SIGSEGV in cgo.
+// Created with its URL already set, and SetURL is never called — which is the whole point
+// of this shape. WebviewWindow.Run assigns w.impl *before* dispatching the call that
+// builds the native window, so there is a moment where impl is non-nil and nsWindow is
+// not yet valid. SetURL's only guard is `impl != nil`, and on macOS it hands nsWindow
+// straight to Objective-C:
 //
-// The lock is held across the whole sequence, daemon start included. A click that arrives
-// during a cold start waits for it rather than racing it, and every click after that is
-// instant because the address is already known.
+//	NSWindow<WailsWebviewWindow>* window = webviewHost(nsWindow);
+//	[window.webView loadRequest:request];
+//
+// which is a SIGSEGV inside cgo, on the main thread, with a traceback that points at
+// Wails rather than at the caller. Handing the URL to NewWithOptions instead lets Wails
+// construct the window and load the page in whatever order it knows to be safe.
 var (
-	windowMu  sync.Mutex
-	windowURL string
+	windowMu sync.Mutex
+	window   application.Window
+	// app is the running application, kept here because the single-instance callback is
+	// constructed inside the call that produces it and so cannot name the local. It is
+	// only ever read after Run has started, which is the only time any of these fire.
+	app *application.App
 )
 
-// showWindow brings the window forward and points it at the cache.
+// openWindow shows the cache's window, building it the first time.
 //
 // Always on its own goroutine, and that matters in both directions: the caller is usually
 // the UI thread inside a click handler, so this must not block it, and resolving the
 // address may start a cold daemon that the client waits up to thirty seconds for.
 //
-// Shown before the address is known, deliberately. The window carries a line of HTML that
-// says the cache is starting, so somebody who clicks gets a window immediately and watches
-// it fill in — rather than clicking, seeing nothing at all for half a minute, and clicking
-// again. That second click is what crashed this.
-//
-// SetURL, Show and Focus each marshal themselves onto the main thread, so nothing here
-// needs InvokeSync.
-func showWindow(ctx context.Context, core *appcore.Core) {
+// The lock is held across the whole sequence. Clicks that arrive during a cold start wait
+// for the window they asked for rather than each building one of their own — two windows
+// racing to be the window was an earlier version of this bug.
+func openWindow(ctx context.Context, core *appcore.Core) {
 	go func() {
 		windowMu.Lock()
 		defer windowMu.Unlock()
 
+		if window != nil {
+			window.Show()
+			window.Focus()
+			return
+		}
+
+		url, err := core.WindowURL(ctx, tray.ActionWidget)
+		if err != nil {
+			// Not fatal, and not silent: the address is the useful half of the answer,
+			// and over SSH or in a container it is the whole of it.
+			fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
+			url = core.FallbackURL()
+		}
+
+		created := app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:   "pkgcache",
+			Title:  "pkgcache",
+			Width:  420,
+			Height: 660,
+			// The console is already a complete UI served on the loopback port, so the
+			// app loads it rather than carrying a second copy of the same HTML.
+			URL:              url,
+			BackgroundColour: application.NewRGB(16, 21, 26),
+		})
+
+		// Closing hides it rather than destroying it. This is a status bar application:
+		// the icon stays whatever the window does, and a closed window that had been
+		// destroyed would leave the variable above pointing at something Wails has torn
+		// down — the next click would then be reaching into freed memory, which is the
+		// same class of fault as the one this shape exists to avoid.
+		created.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+			created.Hide()
+			e.Cancel()
+		})
+
+		window = created
 		window.Show()
 		window.Focus()
-
-		if windowURL == "" {
-			url, err := core.WindowURL(ctx, tray.ActionWidget)
-			if err != nil {
-				// Not fatal, and not silent: the address is the useful half of the
-				// answer, and over SSH or in a container it is the whole of it.
-				fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
-				url = core.FallbackURL()
-			}
-			windowURL = url
-		}
-		window.SetURL(windowURL)
 	}()
 }
 
@@ -313,7 +312,7 @@ func showWindow(ctx context.Context, core *appcore.Core) {
 // The labels and the enabled rules come from internal/tray, so the status bar item and
 // `pkgcache tray` cannot drift apart in what they offer or in what they grey out.
 func buildMenu(
-	ctx context.Context, app *application.App, core *appcore.Core,
+	ctx context.Context, core *appcore.Core,
 ) (*application.Menu, map[tray.Action]*application.MenuItem) {
 	menu := application.NewMenu()
 	items := make(map[tray.Action]*application.MenuItem, len(tray.Menu))
@@ -328,7 +327,7 @@ func buildMenu(
 		item.OnClick(func(*application.Context) {
 			switch choice {
 			case tray.ActionWidget, tray.ActionConsole:
-				showWindow(ctx, core)
+				openWindow(ctx, core)
 			case tray.ActionQuit:
 				// Quits the icon, not the cache. The daemon has its own idle exit and
 				// stopping it here would surprise whatever is mid-install.
