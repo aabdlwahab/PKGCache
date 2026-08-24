@@ -49,6 +49,27 @@ case "$ARCH" in amd64|arm64) ;; *) echo "arch must be amd64 or arm64" >&2; exit 
 DEBVER="$(printf '%s' "$VERSION" | sed 's/^v//; s/-/+/g')"
 [ -n "$DEBVER" ] || DEBVER="0"
 
+# And it has to begin with a digit, which a git description often does not: `git describe
+# --always` on a tree with no tags is a bare commit hash, and five hex characters in eight
+# are letters. This was a coin flip — 410a9e2 installed and d4fd0d0 did not, with dpkg
+# refusing at unpack time on a package that had built without complaint.
+#
+# Prefixed rather than rejected, and with '~' because it sorts before everything: an
+# untagged development build then orders below every real release rather than above them.
+case "$DEBVER" in
+[0-9]*) ;;
+*) DEBVER="0~$DEBVER" ;;
+esac
+
+# Checked rather than assumed, because the failure lands on somebody else's machine at
+# install time. dpkg's rule for an upstream version is a leading digit followed by
+# alphanumerics and . + ~ : - only.
+printf '%s' "$DEBVER" | grep -qE '^[0-9][A-Za-z0-9.+~:-]*$' || {
+	echo "build.sh: '$DEBVER' is not a valid Debian version" >&2
+	echo "  Derived from --version '$VERSION'. Pass a version dpkg accepts." >&2
+	exit 1
+}
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
