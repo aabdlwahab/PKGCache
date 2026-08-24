@@ -291,7 +291,15 @@ func openWindow(ctx context.Context, core *appcore.Core) {
 			// Not fatal, and not silent: the address is the useful half of the answer,
 			// and over SSH or in a container it is the whole of it.
 			fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
+			// The configured address rather than a bound one, which is a guess: a daemon
+			// that took an ephemeral port is not on it. Said out loud below for that
+			// reason — "Load failed" in a webview names neither the address nor the
+			// reason, and this is the only place that knows both.
 			url = core.FallbackURL()
+			fmt.Fprintf(os.Stderr,
+				"pkgcache-app: falling back to %s, which may not be where the cache is\n", url)
+		} else {
+			fmt.Fprintf(os.Stderr, "pkgcache-app: window on %s\n", url)
 		}
 
 		created := app.Window.NewWithOptions(application.WebviewWindowOptions{
