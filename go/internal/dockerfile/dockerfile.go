@@ -449,11 +449,24 @@ func mapImage(ref, registry string) string {
 	switch {
 	case registry == "", ref == "", ref == "scratch":
 		return ""
-	case strings.ContainsAny(ref, "$"):
-		// Already parameterised: the author is choosing the base themselves.
+	}
+	// A variable is only disqualifying where it lands.
+	//
+	// The rule used to be "any $ means the author is choosing the base themselves", which
+	// is true of `FROM ${BASE_IMAGE}` and false of `FROM nvidia/cuda:${CUDA_VER}-runtime`
+	// — an extremely common shape, and in one real manifest the shape of every CUDA image
+	// in the build. Those are multi-gigabyte pulls that went straight past the cache while
+	// everything around them was served from it.
+	//
+	// The registry prefix is prepended to the *name*, and Docker expands the tag after
+	// that, so a variable in the tag is carried through untouched and still resolves. A
+	// variable in the name or the registry is a different matter: there is no way to know
+	// which repository it will become, so those are still left alone.
+	name, tag := splitTag(ref)
+	if strings.Contains(name, "$") {
 		return ""
 	}
-	head, rest, hasSlash := strings.Cut(ref, "/")
+	head, rest, hasSlash := strings.Cut(name, "/")
 	// The first component is a registry only if it looks like a host AND something
 	// follows it. Without the second test the tag colon in "python:3.12-alpine" reads
 	// as a port, and the most common base image in the world is silently left
@@ -463,14 +476,28 @@ func mapImage(ref, registry string) string {
 		if !known {
 			return ""
 		}
-		return registry + "/" + alias + "/" + rest
+		return registry + "/" + alias + "/" + rest + tag
 	}
-	name := ref
 	if !hasSlash {
 		// Docker Hub's official images live under library/.
-		name = "library/" + ref
+		name = "library/" + name
 	}
-	return registry + "/dockerhub/" + name
+	return registry + "/dockerhub/" + name + tag
+}
+
+// splitTag separates a reference from its tag or digest.
+//
+// The last colon is only a tag separator when it comes after the last slash: in
+// "registry:5000/image" it is a port, and cutting there would produce a repository nobody
+// asked for. A digest is unambiguous and takes precedence.
+func splitTag(ref string) (name, tag string) {
+	if at := strings.LastIndex(ref, "@"); at >= 0 {
+		return ref[:at], ref[at:]
+	}
+	if colon := strings.LastIndex(ref, ":"); colon > strings.LastIndex(ref, "/") {
+		return ref[:colon], ref[colon:]
+	}
+	return ref, ""
 }
 
 // mountCA adds the CA secret to a RUN, unless it already carries one.

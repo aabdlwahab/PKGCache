@@ -439,3 +439,57 @@ func TestLocalImageCheckIsOptional(t *testing.T) {
 		t.Errorf("with no LocalImage set the rewrite should be unchanged:\n%s", result.Content)
 	}
 }
+
+// A variable is only disqualifying where it lands.
+//
+// The rule was "any $ means leave it alone", which is right for `FROM ${BASE_IMAGE}` and
+// wrong for `FROM nvidia/cuda:${CUDA_VER}-runtime` — a very common shape, and in one real
+// manifest the shape of every CUDA image in the build. Multi-gigabyte pulls went straight
+// past the cache while everything around them was served from it.
+func TestVariableInTheTagStillGoesThroughTheCache(t *testing.T) {
+	const registry = "127.0.0.1:41780"
+	for _, testCase := range []struct{ ref, want string }{
+		{"nvidia/cuda:${CUDA_VER}-cudnn-runtime-ubuntu24.04",
+			registry + "/dockerhub/nvidia/cuda:${CUDA_VER}-cudnn-runtime-ubuntu24.04"},
+		{"python:${PY_VERSION}", registry + "/dockerhub/library/python:${PY_VERSION}"},
+		{"ghcr.io/org/tool:${TAG}", registry + "/ghcr/org/tool:${TAG}"},
+		// A digest is carried through the same way.
+		{"alpine@sha256:abc", registry + "/dockerhub/library/alpine@sha256:abc"},
+	} {
+		if got := MapImage(testCase.ref, registry); got != testCase.want {
+			t.Errorf("MapImage(%q) = %q, want %q", testCase.ref, got, testCase.want)
+		}
+	}
+}
+
+func TestVariableInTheNameIsStillLeftAlone(t *testing.T) {
+	// There is no way to know which repository these become, so prefixing them would
+	// produce a reference to something that may not exist.
+	for _, ref := range []string{
+		"${BASE_IMAGE}",
+		"${REGISTRY}/app:1",
+		"myorg/${APP}:1",
+	} {
+		if got := MapImage(ref, "127.0.0.1:41780"); got != "" {
+			t.Errorf("MapImage(%q) = %q, want it left alone", ref, got)
+		}
+	}
+}
+
+// The last colon is a tag separator only after the last slash. In "registry:5000/image"
+// it is a port, and cutting there would invent a repository.
+func TestSplitTagKnowsAPortFromATag(t *testing.T) {
+	for _, testCase := range []struct{ ref, name, tag string }{
+		{"alpine:3.20", "alpine", ":3.20"},
+		{"registry:5000/image", "registry:5000/image", ""},
+		{"registry:5000/image:2", "registry:5000/image", ":2"},
+		{"alpine@sha256:abc", "alpine", "@sha256:abc"},
+		{"alpine", "alpine", ""},
+	} {
+		name, tag := splitTag(testCase.ref)
+		if name != testCase.name || tag != testCase.tag {
+			t.Errorf("splitTag(%q) = %q, %q; want %q, %q",
+				testCase.ref, name, tag, testCase.name, testCase.tag)
+		}
+	}
+}
