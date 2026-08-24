@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows pkgcache-windows windows-installer test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -151,6 +151,16 @@ app-windows: ## Cross-compile the desktop app for Windows
 	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
 	  -o ../../bin/pkgcache-app-windows-amd64.exe .
 
+# The two Linux binaries the .deb is built from, as their own target so `make deb` can
+# depend on them. Before this it only checked they existed, which meant `git pull && make
+# deb` happily packaged yesterday's binary and the new command was missing from the
+# package with nothing said about why.
+pkgcache-linux: ## Cross-compile pkgcache for Linux, both architectures
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-arm64 ./cmd/pkgcache
+
 pkgcache-windows: ## Cross-compile pkgcache itself for Windows
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-windows-amd64.exe ./cmd/pkgcache
@@ -199,12 +209,13 @@ windows-installer: pkgcache-windows app-windows ## Build the Windows installer (
 	mv ../packaging/windows/pkgcache-*-setup.exe bin/
 	@echo "built bin/pkgcache-$(VERSION)-setup.exe"
 
-deb: ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
-	@test -f bin/pkgcache-linux-amd64 || { \
-		echo "build the binaries first: make pkgcache-release" >&2; exit 1; }
+deb: pkgcache-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
 	@for arch in amd64 arm64; do \
 		app="bin/pkgcache-app-linux-$$arch"; \
-		if test ! -f "$$app"; then \
+		if test -f "$$app"; then \
+			echo "note: packaging the desktop app from $$app"; \
+			echo "      it is not rebuilt here — run \`make app\` if it is stale"; \
+		else \
 			echo "note: no $$app, so only the daemon package for $$arch"; \
 			app=""; \
 		fi; \
