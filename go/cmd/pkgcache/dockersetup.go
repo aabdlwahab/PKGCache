@@ -76,9 +76,14 @@ are predefined build arguments, injected into every RUN with no ARG line to decl
 them, so this is the only way to reach a build somebody else wrote — including a
 colleague's Makefile, which `+"`pkgcache build`"+` cannot.
 
-It covers apt and apk and nothing else: pip, uv and npm speak HTTPS to their upstreams,
-which through a proxy means a CONNECT tunnel this proxy does not offer. Use
-`+"`pkgcache build`"+` for those.
+It covers whatever fetches over plain HTTP, which in practice means apt: Debian's default
+sources are http, so `+"`apt-get`"+` in a build is served from here.
+
+It does not cover HTTPS, because through a proxy that means a CONNECT tunnel this proxy
+does not offer — so pip, uv and npm are not covered, and neither is apk on any Alpine
+since 3.x, whose /etc/apk/repositories is https. Those go straight out and the build
+still works; it is just not cached. Use `+"`pkgcache build`"+` for those, which rewrites
+the Dockerfile rather than proxying it.
 
 Because it applies to every build, the cache has to be running for those builds to
 work. Consider `+"`pkgcache persist`"+` alongside it.
