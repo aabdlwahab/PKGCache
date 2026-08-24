@@ -12,6 +12,7 @@
 ;   a Start Menu shortcut, so it is launchable without a terminal
 ;   an Add/Remove Programs entry, so it is removable the way everything else is
 ;   PATH, for this user only
+;   a disk budget, where the machine has none — see LIMIT below
 ;   optionally, a login entry and the machine's configuration
 ;
 ; Built with:
@@ -23,6 +24,16 @@
 
 !ifndef VERSION
   !define VERSION "0.0.0"
+!endif
+; The disk budget this installs when the machine has none.
+;
+; pkgcache refuses to start without one and will not guess a size for somebody else's
+; disk, which is right — but on Windows the consequence was a first run that showed a
+; webview error and no way to learn why. "none" is the answer that guesses least: no cap,
+; and the free-space floor still applies, so the cache cannot fill the disk. Override with
+; -DLIMIT=25G at build time.
+!ifndef LIMIT
+  !define LIMIT "none"
 !endif
 !define NAME "pkgcache"
 !define PUBLISHER "pkgreg"
@@ -129,6 +140,27 @@ Section "pkgcache" SecMain
     MessageBox MB_ICONSTOP "The installed pkgcache.exe does not run. Nothing was configured."
     Abort
   ${EndIf}
+
+  ; A disk budget, but only where there is not one already.
+  ;
+  ; `pkgcache limit` with no argument exits non-zero exactly when none is set, which makes
+  ; it the query as well as the setter. Asking first is what stops an upgrade from
+  ; overwriting a size somebody chose deliberately — this section runs on every install,
+  ; and silently resetting a 200G cap to "none" would be a poor way to repay an upgrade.
+  nsExec::ExecToStack '"$INSTDIR\pkgcache.exe" limit'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "Setting the cache limit to ${LIMIT}..."
+    nsExec::ExecToLog '"$INSTDIR\pkgcache.exe" limit ${LIMIT}'
+    Pop $0
+    ${If} $0 != 0
+      MessageBox MB_ICONEXCLAMATION \
+        "pkgcache is installed but has no disk budget, and will not start without one.$\r$\nSet one yourself:$\r$\n$\r$\n  pkgcache limit ${LIMIT}"
+    ${EndIf}
+  ${Else}
+    DetailPrint "A cache limit is already set; leaving it alone."
+  ${EndIf}
 SectionEnd
 
 Section "Add to PATH" SecPath
@@ -160,13 +192,13 @@ SectionEnd
 Section "Point this machine at ${SERVER}" SecConfigure
   DetailPrint "Configuring for ${SERVER}..."
   nsExec::ExecToLog '"$INSTDIR\pkgcache.exe" setup -server "${SERVER}" \
-    -ca-sha256 "${CASHA256}" -limit 25G'
+    -ca-sha256 "${CASHA256}" -limit ${LIMIT}'
   Pop $0
   ${If} $0 != 0
     ; Installed but unconfigured is a recoverable state, and worth saying rather than
     ; failing the whole install over.
     MessageBox MB_ICONEXCLAMATION \
-      "pkgcache is installed but could not be configured.$\r$\nRun this yourself:$\r$\n$\r$\n  pkgcache setup -server ${SERVER} -ca-sha256 ${CASHA256} -limit 25G"
+      "pkgcache is installed but could not be configured.$\r$\nRun this yourself:$\r$\n$\r$\n  pkgcache setup -server ${SERVER} -ca-sha256 ${CASHA256} -limit ${LIMIT}"
   ${EndIf}
 SectionEnd
 !endif

@@ -96,6 +96,12 @@ Per-user, so there is no UAC prompt and no administrator needed — everything l
 shortcut, an Add/Remove Programs entry, the PATH edit and optionally the login item, and
 `makensis -DSERVER=… -DCASHA256=…` bakes in a cache so that installing is also the setup.
 
+It also sets a disk budget, because pkgcache refuses to start without one and the first run
+would otherwise show a webview error with no way to learn why. The default is `none` — no
+cap, with the free-space floor still applying — which is the answer that guesses least
+about somebody else's disk. `-DLIMIT=25G` changes it. Either way it is set only when the
+machine has none: an upgrade never overwrites a limit somebody chose.
+
 The uninstaller removes the login entry and the PATH edit as well as the files, which are
 the two things an uninstaller usually forgets and the two that leave a machine haunted.
 
