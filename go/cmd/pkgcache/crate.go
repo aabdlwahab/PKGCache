@@ -148,9 +148,8 @@ func buildProxyConfig(state local.State, existing string) (string, func(), error
 		cleanup()
 		return "", func() {}, fmt.Errorf("crate: cannot read a port from %q", state.Addr)
 	}
-	// A bare host:port. ApplyDockerBuildProxy adds the scheme itself, and handing it a
-	// URL produces "http://http://host.docker.internal:41780" — which Docker accepts
-	// into the file and then fails to use, silently, for every build.
+	// The gateway name rather than loopback, because this address goes into a build and
+	// a container's loopback is its own.
 	gateway := clientbuild.DefaultHostGateway + ":" + port
 
 	if err := local.ApplyDockerBuildProxy(local.DockerBuildProxy{

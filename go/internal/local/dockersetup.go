@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -213,7 +215,10 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 			"local: %s already has a build proxy this did not install; leave it alone or "+
 				"remove it yourself", path)
 	}
-	proxyURL := "http://" + setup.Address
+	proxyURL, proxyHost, err := proxyAddress(setup.Address)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "+ set proxies.default.httpProxy = %s in %s\n", proxyURL, path)
 	if setup.DryRun {
 		fmt.Fprintln(out, "\nNothing was changed.")
@@ -222,7 +227,7 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 	proxies["default"] = map[string]any{
 		"httpProxy": proxyURL,
 		// noProxy keeps pip, uv and npm out of the proxy on their way to the cache.
-		"noProxy":  "127.0.0.1,localhost," + hostOnly(setup.Address),
+		"noProxy":  "127.0.0.1,localhost," + proxyHost,
 		managedKey: true,
 	}
 	document["proxies"] = proxies
@@ -249,12 +254,47 @@ func dockerClientConfigDir() (string, error) {
 	return filepath.Join(home, ".docker"), nil
 }
 
-func hostOnly(address string) string {
-	host, _, found := strings.Cut(address, ":")
-	if !found {
-		return address
+// proxyAddress turns a caller's address into the proxy URL and the bare host beside it.
+//
+// It exists because both halves of this were wrong, and wrong in the quietest possible
+// way. The URL was "http://" + Address, so an Address that already carried a scheme
+// produced "http://http://host:41780" — which Docker writes to the file without complaint
+// and then ignores, leaving every build reaching the internet while the configuration
+// looks correct. And the host was the text before the first colon, which for that same
+// input is "http", so noProxy gained a bogus entry too.
+//
+// Both forms are accepted rather than one refused: a caller with a URL and a caller with
+// a host:port are both being reasonable, and a function that silently mangles one of them
+// is the actual defect. What is refused is an address with no host at all, because there
+// is no correct file to write for that.
+func proxyAddress(address string) (proxyURL, host string, err error) {
+	trimmed := strings.TrimSpace(address)
+	if trimmed == "" {
+		return "", "", errors.New("local: the build proxy needs an address")
 	}
-	return host
+	scheme := "http"
+	if parsed, parseErr := url.Parse(trimmed); parseErr == nil && parsed.Scheme != "" &&
+		parsed.Host != "" {
+		// Written as a URL. Only http and https mean anything to Docker's proxy setting;
+		// anything else is a caller confusion worth reporting rather than reinterpreting.
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return "", "", fmt.Errorf(
+				"local: %q is not a usable build proxy address; use http or https", address)
+		}
+		scheme = parsed.Scheme
+		trimmed = parsed.Host
+	}
+
+	// SplitHostPort so an IPv6 literal keeps its brackets in the URL and loses them in
+	// noProxy, which is what each of the two wants.
+	host = trimmed
+	if bare, _, splitErr := net.SplitHostPort(trimmed); splitErr == nil {
+		host = bare
+	}
+	if host == "" {
+		return "", "", fmt.Errorf("local: %q has no host to send builds to", address)
+	}
+	return scheme + "://" + trimmed, host, nil
 }
 
 // readJSONFile reads a JSON object, treating a missing file as an empty one.

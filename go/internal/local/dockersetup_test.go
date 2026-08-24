@@ -269,3 +269,78 @@ func TestWriteJSONFilePreservesMode(t *testing.T) {
 		t.Fatalf("document = %v", document)
 	}
 }
+
+// The build proxy address, which was wrong in the quietest way available: a caller passing
+// a URL got "http://http://host:41780" written to the file, which Docker accepts and then
+// ignores. Every build would reach the internet while the configuration looked right.
+func TestProxyAddressAcceptsBothFormsAndKeepsTheHostSeparate(t *testing.T) {
+	for _, testCase := range []struct{ in, url, host string }{
+		{"host.docker.internal:41780", "http://host.docker.internal:41780", "host.docker.internal"},
+		// The form that produced the double scheme.
+		{"http://host.docker.internal:41780", "http://host.docker.internal:41780", "host.docker.internal"},
+		{"127.0.0.1:41780", "http://127.0.0.1:41780", "127.0.0.1"},
+		{"https://cache.internal:8443", "https://cache.internal:8443", "cache.internal"},
+		// An IPv6 literal keeps its brackets in the URL and loses them in noProxy, which
+		// is what each of the two wants. hostOnly cut at the first colon and returned "[".
+		{"[::1]:41780", "http://[::1]:41780", "::1"},
+		{"host.docker.internal", "http://host.docker.internal", "host.docker.internal"},
+	} {
+		gotURL, gotHost, err := proxyAddress(testCase.in)
+		if err != nil {
+			t.Errorf("proxyAddress(%q): %v", testCase.in, err)
+			continue
+		}
+		if gotURL != testCase.url {
+			t.Errorf("proxyAddress(%q) url = %q, want %q", testCase.in, gotURL, testCase.url)
+		}
+		if gotHost != testCase.host {
+			t.Errorf("proxyAddress(%q) host = %q, want %q", testCase.in, gotHost, testCase.host)
+		}
+	}
+}
+
+func TestProxyAddressRefusesWhatItCannotWrite(t *testing.T) {
+	// No host means no correct file to write, and guessing one would put a build proxy
+	// somewhere nobody asked for.
+	for _, address := range []string{"", "   ", "ftp://cache:21"} {
+		if _, _, err := proxyAddress(address); err == nil {
+			t.Errorf("proxyAddress(%q) was accepted; it has nothing usable in it", address)
+		}
+	}
+}
+
+// The whole path, because the unit above is only half the bug: the value has to reach the
+// file intact.
+func TestBuildProxyWritesAUsableConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := ApplyDockerBuildProxy(DockerBuildProxy{
+		// Deliberately the URL form, which is what a caller reaches for.
+		Address: "http://host.docker.internal:41780", ConfigPath: path, Out: io.Discard,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Proxies struct {
+			Default struct {
+				HTTPProxy string `json:"httpProxy"`
+				NoProxy   string `json:"noProxy"`
+			} `json:"default"`
+		} `json:"proxies"`
+	}
+	if err := json.Unmarshal(body, &document); err != nil {
+		t.Fatalf("the config is not JSON Docker could read: %v\n%s", err, body)
+	}
+	if got := document.Proxies.Default.HTTPProxy; got != "http://host.docker.internal:41780" {
+		t.Errorf("httpProxy = %q, want a single scheme", got)
+	}
+	if strings.Contains(document.Proxies.Default.NoProxy, "http") {
+		t.Errorf("noProxy picked up a scheme fragment: %q", document.Proxies.Default.NoProxy)
+	}
+	if !strings.Contains(document.Proxies.Default.NoProxy, "host.docker.internal") {
+		t.Errorf("noProxy does not name the cache's host: %q", document.Proxies.Default.NoProxy)
+	}
+}
