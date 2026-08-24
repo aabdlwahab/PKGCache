@@ -192,6 +192,10 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		stages    = map[string]bool{}
 		rewritten []string
 	)
+	// apk is only worth touching when there is a proxy for it to reach.
+	proxied := options.AptProxy != ""
+	inStage := false
+
 	for _, item := range parse(string(source)) {
 		if !item.code {
 			rewritten = append(rewritten, item.text)
@@ -199,6 +203,11 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		}
 		switch {
 		case isFrom(item.text):
+			// The stage that is ending gets its repositories back before the next one
+			// starts, or the change would ship in whichever stage happened to be last.
+			if proxied && inStage {
+				rewritten = append(rewritten, apkRestore())
+			}
 			replaced, change := rewriteFrom(item.text, stages, options)
 			rewritten = append(rewritten, replaced)
 			if change != nil {
@@ -212,6 +221,10 @@ func Rewrite(source []byte, options Options) (Result, error) {
 			// Declaring it once at the top would work in the first stage and quietly
 			// do nothing in the rest — the failure people report as "works locally".
 			rewritten = append(rewritten, args...)
+			if proxied {
+				rewritten = append(rewritten, apkToPlainHTTP())
+				inStage = true
+			}
 		case options.Mode == CacheAddress && isRun(item.text):
 			replaced, mounted := mountCA(item.text)
 			rewritten = append(rewritten, replaced)
@@ -221,12 +234,48 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		}
 	}
 
+	if proxied && inStage {
+		rewritten = append(rewritten, apkRestore())
+	}
+
 	body := strings.Join(rewritten, "\n")
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
 	result.Content = []byte(body)
 	return result, nil
+}
+
+// Alpine's package index, which is the one thing the build proxy cannot reach on its own.
+//
+// pkgcache serves apt and apk through a forward proxy rather than a path, so a build has
+// to fetch them over plain HTTP for the proxy to see anything at all. Debian obliges:
+// deb.debian.org is http by default. Alpine stopped — every image since 3.x ships
+// https://dl-cdn.alpinelinux.org in /etc/apk/repositories, and HTTPS through a proxy is a
+// CONNECT tunnel this one does not offer. So apk went straight out and nothing was cached,
+// while the help claimed otherwise.
+//
+// The file is rewritten for the build and put back before the stage ends. That second half
+// matters more than it looks: leaving http in the shipped image would change what `apk add`
+// does for everybody who later runs the container, on a machine that has never heard of
+// this cache. It is the same rule the ARG-not-ENV note above is about — a build may bend
+// things for itself and must hand back what it was given.
+//
+// Restored from a copy rather than by rewriting http back to https, because an image whose
+// repositories were already http would otherwise be handed back something it never had.
+//
+// Guarded on the file existing, so this is a no-op layer on Debian, Ubuntu, distroless and
+// anything else without apk.
+const apkBackup = "/etc/apk/repositories.pkgcache"
+
+func apkToPlainHTTP() string {
+	return "RUN if [ -f /etc/apk/repositories ]; then cp /etc/apk/repositories " +
+		apkBackup + " && sed -i 's|^https://|http://|' /etc/apk/repositories; fi"
+}
+
+func apkRestore() string {
+	return "RUN if [ -f " + apkBackup + " ]; then mv " + apkBackup +
+		" /etc/apk/repositories; fi"
 }
 
 // buildArgs is the block declared after every FROM.

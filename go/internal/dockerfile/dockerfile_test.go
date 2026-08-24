@@ -304,3 +304,86 @@ func TestMapImageForPull(t *testing.T) {
 		t.Errorf("with no registry, MapImage = %q, want empty", got)
 	}
 }
+
+// Alpine's package index. The build proxy is plain HTTP, and every Alpine image since 3.x
+// ships https:// in /etc/apk/repositories, so apk went straight past the cache — silently,
+// with the build succeeding and nothing stored.
+func TestApkRepositoriesAreRewrittenForTheBuildAndPutBack(t *testing.T) {
+	result, err := Rewrite([]byte("FROM alpine:3.20\nRUN apk add --no-cache curl\n"), Options{
+		Project: "global", Base: "http://127.0.0.1:41780",
+		Registry: "127.0.0.1:41780", AptProxy: "http://127.0.0.1:41780",
+		Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	if !strings.Contains(body, "sed -i 's|^https://|http://|' /etc/apk/repositories") {
+		t.Errorf("apk was left on https, so the proxy never sees it:\n%s", body)
+	}
+	// Restored, and restored from a copy: leaving http in the shipped image would change
+	// what `apk add` does for everybody who later runs the container.
+	if !strings.Contains(body, "mv "+apkBackup+" /etc/apk/repositories") {
+		t.Errorf("the repositories file is never put back:\n%s", body)
+	}
+	if strings.Index(body, "apk add") > strings.Index(body, "mv "+apkBackup) {
+		t.Error("the restore runs before the build's own apk step")
+	}
+}
+
+func TestApkRewriteIsSkippedWithoutAProxy(t *testing.T) {
+	// Nothing to send apk to, so the layers would buy nothing and still cost two.
+	result, err := Rewrite([]byte("FROM alpine:3.20\nRUN apk add curl\n"), Options{
+		Project: "global", Base: "http://127.0.0.1:41780",
+		Registry: "127.0.0.1:41780", Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(result.Content), "/etc/apk/repositories") {
+		t.Errorf("apk was rewritten with no proxy configured:\n%s", result.Content)
+	}
+}
+
+// Every stage gets its own pair, and no stage ends still rewritten — ARG is stage-scoped
+// and so is a file edit, and a multi-stage build that restored only once would ship the
+// change in whichever stage happened to be last.
+func TestApkRewriteIsPerStage(t *testing.T) {
+	source := "FROM alpine:3.20 AS build\nRUN apk add curl\n\nFROM alpine:3.20\nRUN apk add git\n"
+	result, err := Rewrite([]byte(source), Options{
+		Project: "global", Base: "http://127.0.0.1:41780",
+		Registry: "127.0.0.1:41780", AptProxy: "http://127.0.0.1:41780",
+		Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	if got := strings.Count(body, "sed -i 's|^https://|http://|'"); got != 2 {
+		t.Errorf("rewrite appears %d times, want one per stage", got)
+	}
+	if got := strings.Count(body, "mv "+apkBackup); got != 2 {
+		t.Errorf("restore appears %d times, want one per stage", got)
+	}
+	// The last thing in the file is a restore, not a rewrite.
+	if strings.LastIndex(body, "sed -i") > strings.LastIndex(body, "mv "+apkBackup) {
+		t.Error("the final stage ships with its repositories still rewritten")
+	}
+}
+
+// A Debian image has no /etc/apk/repositories, and the guard is what keeps the injected
+// layers from failing the build there.
+func TestApkRewriteIsGuardedForImagesWithoutApk(t *testing.T) {
+	result, err := Rewrite([]byte("FROM debian:bookworm-slim\nRUN apt-get update\n"), Options{
+		Project: "global", Base: "http://127.0.0.1:41780",
+		Registry: "127.0.0.1:41780", AptProxy: "http://127.0.0.1:41780",
+		Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	if !strings.Contains(body, "if [ -f /etc/apk/repositories ]") {
+		t.Errorf("the rewrite is unguarded and would fail on an image without apk:\n%s", body)
+	}
+}

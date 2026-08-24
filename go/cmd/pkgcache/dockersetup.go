@@ -80,10 +80,13 @@ It covers whatever fetches over plain HTTP, which in practice means apt: Debian'
 sources are http, so `+"`apt-get`"+` in a build is served from here.
 
 It does not cover HTTPS, because through a proxy that means a CONNECT tunnel this proxy
-does not offer — so pip, uv and npm are not covered, and neither is apk on any Alpine
-since 3.x, whose /etc/apk/repositories is https. Those go straight out and the build
-still works; it is just not cached. Use `+"`pkgcache build`"+` for those, which rewrites
-the Dockerfile rather than proxying it.
+does not offer, so pip, uv and npm are not covered here. Use `+"`pkgcache build`"+` for
+those: it rewrites the Dockerfile rather than proxying it, and points each tool at the
+cache directly.
+
+apk is covered there too, and only there. Every Alpine since 3.x ships https in
+/etc/apk/repositories, which this proxy cannot see — so `+"`pkgcache build`"+` rewrites
+that file to plain HTTP for the build and puts it back before the image ships.
 
 Because it applies to every build, the cache has to be running for those builds to
 work. Consider `+"`pkgcache persist`"+` alongside it.
