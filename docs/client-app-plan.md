@@ -15,38 +15,65 @@ The daemon does not change.
 
 ## Status
 
-Built and verified on Linux, with a full test suite green:
+**Phase 0's gate is cleared: the app compiles on macOS and on Ubuntu 24.04 with GTK4.**
+Wails v3 beta.12 held on both platforms, which was the one genuine risk in this plan.
 
 | | state |
 |---|---|
-| `internal/appcore` — the app's logic, toolkit-free | **done**, 7 tests; the CLI's tray now uses it too |
-| `internal/feed` — appcast, apt indexes, Release, OpenPGP signing | **done**, 40 tests, signatures verified with real `gpg` |
+| `internal/appcore` — the app's logic, toolkit-free | **done**, 7 tests; the CLI's tray uses it too |
+| `internal/feed` — appcast, apt indexes, Release, OpenPGP signing | **done**, 40 tests, verified against real `gpg` |
 | `pkgreg publish-apt` | **done**, run end to end against real `.deb` files |
 | `pkgreg doctor` verifying the repository | **done**, 4 tests; catches a rewritten index on real data |
 | `GET /apt/...` serving | **done**, 10 tests including traversal and symlink escape |
-| The two Debian packages | **done**, byte-reproducible, built and inspected |
-| `install.sh` apt bootstrap | **done**, unverified — needs a machine with apt |
-| `cmd/pkgcache-app` — the Wails app | **written, never compiled**; see below |
+| The two Debian packages | **done**, byte-reproducible; **installed by real apt** |
+| `install.sh` apt bootstrap | its key-and-source steps verified in a container |
+| `cmd/pkgcache-app` — the Wails app | **compiles on macOS and Linux; never yet run** |
 | Windows NSIS installer, macOS `.pkg` changes | not started |
 | Phase 5 cutover | not started; it waits on the app running |
 
-**The app has never been built.** It was written against the real Wails v3 beta.12 API,
-read from the module source rather than remembered, and every call in it was checked
-against that source — but no machine in reach has GTK4 and WebKitGTK 6.0, so the compiler
-has never seen it. Treat it as a reviewed draft. Two bugs were already found and fixed by
-reading Wails' source rather than by running anything:
+### What real apt does with this
+
+A clean Ubuntu 24.04 container, given only the published repository and its keyring:
+
+```
+Get:1 http://…:8099 stable InRelease [1874 B]        # no warning: the signature verified
+Depends: pkgcache
+Depends: libgtk-4-1
+Depends: libwebkitgtk-6.0-4
+```
+
+`apt install pkgcache-desktop` — one command — pulled `pkgcache` with it, resolved the GTK4
+stack, installed both, and `dpkg -V` reports every file matching its recorded digest. That
+is the whole claim of the two-package split, demonstrated rather than argued.
+
+### What building it found
+
+The app was written against the Wails API read from the module source, without a compiler.
+Three real defects came out of that, all fixed:
 
 - `MenuItem.SetLabel` and `SetEnabled` do **not** marshal onto the UI thread, unlike
   `SystemTray.SetTooltip`, which does. Updating the menu from the poll ticker without
   `application.InvokeSync` is precisely the flaky-tray failure the code it replaces warned
   about.
 - `showWindow` may start a cold daemon, which the client waits up to thirty seconds for.
-  On the UI thread that is a frozen menu, so it runs off it.
+  On the UI thread that is a frozen menu.
+- **`MACOSX_DEPLOYMENT_TARGET` has to be set.** Go links a darwin binary at a minimum of
+  11.0, but cgo hands the Objective-C to clang with no floor, so those objects are built
+  for whatever SDK the Mac has — 26.0 on a current one. The linker warns and then produces
+  a binary claiming to support 11.0 while containing objects that do not, which is exactly
+  the promise `build-pkg.sh` writes into `LSMinimumSystemVersion`. Set to 11.0 to match.
+  *Reasoned from the linker warnings; not yet confirmed silent on a Mac.*
 
-A third finding shaped the design: `getDownload` in the control API matches filenames
-against a strict single-segment grammar, so it **cannot** serve `dists/stable/InRelease`.
-The repository needed its own handler, which is why the signing key is a sibling of the
-served tree rather than inside it.
+A fourth finding shaped the design rather than fixing a bug: `getDownload` in the control
+API matches filenames against a strict single-segment grammar, so it **cannot** serve
+`dists/stable/InRelease`. The repository needed its own handler, which is why the signing
+key is a sibling of the served tree rather than inside it.
+
+### Still unknown
+
+Nobody has watched the app run. It compiles on both platforms and its logic is tested, but
+whether the window appears, the icon lands in the bar, and the menu greys correctly when
+the daemon sleeps are all unobserved.
 
 ## The split
 

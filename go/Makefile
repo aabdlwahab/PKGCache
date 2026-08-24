@@ -114,6 +114,15 @@ window-windows: ## Build the Windows application-window helper (cross-compiles)
 # cross-compilation target.
 GOARCH ?= $(shell go env GOARCH)
 
+# The macOS floor, and it has to be stated rather than left to default.
+#
+# Go links a darwin binary with a minimum of 11.0, but cgo hands the Objective-C to clang
+# with no floor at all, so those objects are built for whatever SDK the machine has — on a
+# current Mac, macOS 26. The linker warns about the mismatch and then produces a binary
+# claiming to support 11.0 while containing objects that do not. Setting this makes both
+# halves agree, and 11.0 is the number build-pkg.sh already puts in LSMinimumSystemVersion.
+MACOS_MIN ?= 11.0
+
 app: ## Build the desktop app for this platform
 	@case "$$(uname)" in \
 	  Linux) \
@@ -126,6 +135,7 @@ app: ## Build the desktop app for this platform
 	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
 	      -o bin/pkgcache-app-linux-$(GOARCH) ./cmd/pkgcache-app ;; \
 	  Darwin) \
+	    MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN) \
 	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
 	      -o bin/pkgcache-app-darwin-$(GOARCH) ./cmd/pkgcache-app ;; \
 	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \
