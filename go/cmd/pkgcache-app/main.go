@@ -30,17 +30,25 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
-	"github.com/wailsapp/wails/v3/pkg/icons"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
 // The status bar glyph, in two flat colours so the panel's own background shows through.
 // A filled tile reads as a sticker stuck on the bar rather than as part of it.
+//
+// The dark one doubles as the macOS template image: a template is black plus alpha, which
+// is exactly what it already is, and macOS then tints it for a light or dark menu bar and
+// for being clicked. That is why there is no third file for it.
 var (
 	//go:embed icons/tray-light.png
 	trayLight []byte
 	//go:embed icons/tray-dark.png
 	trayDark []byte
+	// The application's own icon — the full logo, card and all — rather than the status
+	// bar glyph. Different job, different image: this one is seen at 512px in an about
+	// box, not at 22px against a menu bar.
+	//go:embed icons/appicon.png
+	appIcon []byte
 )
 
 // pollInterval is how often the tray re-reads the cache.
@@ -126,6 +134,7 @@ func run(background, onLogin, offLogin bool) error {
 	app = application.New(application.Options{
 		Name:        "pkgcache",
 		Description: "A package cache for this machine",
+		Icon:        appIcon,
 		Services:    services,
 		// One icon in the bar, not one per launch. Clicking a launcher twice, or the
 		// login entry racing a manual start, should reach the app that is already there.
@@ -147,10 +156,15 @@ func run(background, onLogin, offLogin bool) error {
 
 	systemTray := app.SystemTray.New()
 	if isDarwin() {
-		// A template image, so macOS tints it for the menu bar's own appearance rather
-		// than leaving a flat glyph that is invisible in one of the two themes.
-		systemTray.SetTemplateIcon(icons.SystrayMacTemplate)
+		// A template image, so macOS tints it for the menu bar's own appearance — light
+		// bar, dark bar, and the inverted state while the menu is open — rather than
+		// leaving a flat glyph that is invisible in one of them.
+		//
+		// Ours, not Wails'. This said icons.SystrayMacTemplate for a while, which is the
+		// Wails logo, and put a W in the menu bar of a program that is not Wails.
+		systemTray.SetTemplateIcon(trayDark)
 	} else {
+		// Two flat images and the platform picks: no tinting to rely on here.
 		systemTray.SetIcon(trayLight).SetDarkModeIcon(trayDark)
 	}
 	systemTray.OnClick(func() { openWindow(ctx, core) })

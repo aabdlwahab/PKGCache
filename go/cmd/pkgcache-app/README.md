@@ -34,6 +34,23 @@ For a GTK3 build — WebKit2GTK 4.1, which is what the helper this replaces link
 add `-tags gtk3`. Whether that or GTK4 is the right default is still open; see
 [the plan](../../../docs/client-app-plan.md).
 
+## Icons
+
+Three images, two jobs:
+
+| | where | why |
+|---|---|---|
+| `icons/tray-dark.png` | status bar on light panels; the macOS template | black plus alpha, which is what a template image is — macOS tints it per theme and while the menu is open |
+| `icons/tray-light.png` | status bar on dark panels | Linux and Windows do not tint, so they get both and pick |
+| `icons/appicon.png` | `application.Options.Icon` | the full logo at 512px, for an about box rather than a 22px menu bar |
+
+The tray glyph is the project logo with the rounded card taken off, because a status bar
+icon sits on the panel's own background and a filled tile reads as a sticker stuck on the
+bar rather than part of it.
+
+The macOS Dock icon is not set from here at all — it comes from the `.app` bundle's
+`CFBundleIconFile`, so a bare binary shows a generic one. That lands with the packaging.
+
 ## Where the logic is
 
 Almost nothing is in this package. `internal/appcore` decides what the cache is doing,
