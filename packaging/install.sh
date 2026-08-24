@@ -24,10 +24,13 @@
 #                   when that is not writable and sudo is unavailable)
 #   --limit SIZE    disk budget to configure, e.g. 25G (default: 25G)
 #   --sha256 HEX    expected checksum when --from cannot supply one
+#   --no-app        install the daemon and CLI only, with no desktop app. What a
+#                   server, a CI runner or a container wants: the app needs GTK and a
+#                   WebKit, and a machine with no screen should carry neither.
 #   --no-configure  install only; do not run `pkgcache setup`
 set -eu
 
-SERVER=""; PIN=""; FROM=""; PREFIX=""; LIMIT="25G"; WANT_SUM=""; CONFIGURE=1
+SERVER=""; PIN=""; FROM=""; PREFIX=""; LIMIT="25G"; WANT_SUM=""; CONFIGURE=1; WANT_APP=1
 TOOL="pkgcache"
 
 die() { printf 'pkgcache install: %s\n' "$*" >&2; exit 1; }
@@ -41,6 +44,7 @@ while [ $# -gt 0 ]; do
 	--prefix) PREFIX="${2:-}"; shift 2 ;;
 	--limit) LIMIT="${2:-}"; shift 2 ;;
 	--sha256) WANT_SUM="${2:-}"; shift 2 ;;
+	--no-app) WANT_APP=0; shift ;;
 	--no-configure) CONFIGURE=0; shift ;;
 	-h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 	*) die "unknown option $1" ;;
@@ -136,6 +140,77 @@ fingerprint you gave.
   expected: $PIN
 Nothing was installed. Either the fingerprint is stale or this is not the cache you meant."
 	note "CA verified against the fingerprint you gave"
+
+	# ---- on Debian and Ubuntu, install from the repository ------------------------
+	#
+	# The repository is what makes this one command rather than two downloads: apt
+	# resolves pkgcache-desktop's dependency on pkgcache itself, so a laptop gets both
+	# halves and a server can still ask for the daemon alone. It also means `apt upgrade`
+	# keeps this current, which nothing else here does.
+	#
+	# Skipped, not failed, where apt is absent or the caller asked for no app: the binary
+	# path below this works everywhere and was the whole installer until now.
+	if [ "$OS" = linux ] && [ "$WANT_APP" -eq 1 ] && command -v apt-get >/dev/null 2>&1; then
+		if [ "$(id -u)" = 0 ]; then APT_SUDO=""
+		elif command -v sudo >/dev/null 2>&1; then APT_SUDO="sudo"
+		else APT_SUDO="unavailable"; fi
+
+		if [ "$APT_SUDO" = unavailable ]; then
+			note "apt is here but root is not; installing the binary instead"
+		else
+			HOST="$(printf '%s' "$SERVER" | sed 's|^[a-z]*://||; s|/.*$||; s|:.*$||')"
+			note "installing from the apt repository at $SERVER/apt"
+
+			KEYRING="$WORK/pkgcache-archive-keyring.asc"
+			fetch "$SERVER/apt/pkgcache-archive-keyring.asc" "$KEYRING" "$CA" ||
+				die "could not fetch the repository key from $SERVER/apt.
+  The operator publishes it with \`pkgreg publish-apt\`."
+
+			# The CA is trusted for this one host rather than installed into the system
+			# store. apt fetches over HTTPS and would otherwise refuse a private CA, and
+			# the alternative — update-ca-certificates — makes every program on the
+			# machine trust it to reach anything, which is far more than was asked for.
+			$APT_SUDO install -d -m 0755 /usr/local/share/pkgcache /usr/share/keyrings
+			$APT_SUDO install -m 0644 "$CA" /usr/local/share/pkgcache/ca.crt
+			$APT_SUDO install -m 0644 "$KEYRING" \
+				/usr/share/keyrings/pkgcache-archive-keyring.asc
+			printf 'Acquire::https::%s::CaInfo "/usr/local/share/pkgcache/ca.crt";\n' \
+				"$HOST" | $APT_SUDO tee /etc/apt/apt.conf.d/99pkgcache >/dev/null
+
+			# deb822, so the keyring is named rather than every key on the system being
+			# trusted for every repository.
+			printf '%s\n' \
+				"# Written by the pkgcache installer. Remove this file to stop using it." \
+				"Types: deb" \
+				"URIs: $SERVER/apt" \
+				"Suites: stable" \
+				"Components: main" \
+				"Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc" |
+				$APT_SUDO tee /etc/apt/sources.list.d/pkgcache.sources >/dev/null
+
+			# Scoped to this one source. A plain `apt-get update` would fail the install
+			# over an unrelated repository the machine happens to have.
+			if $APT_SUDO apt-get update \
+				-o Dir::Etc::sourcelist=sources.list.d/pkgcache.sources \
+				-o Dir::Etc::sourceparts=/dev/null \
+				-o APT::Get::List-Cleanup=0 &&
+			   $APT_SUDO apt-get install -y pkgcache-desktop; then
+				note "installed pkgcache and pkgcache-desktop"
+				if [ -n "$SERVER" ] && [ "$CONFIGURE" -eq 1 ]; then
+					note ""
+					note "pointing this machine at $SERVER"
+					pkgcache setup -server "$SERVER" -ca-sha256 "$PIN" -limit "$LIMIT"
+				fi
+				note ""
+				note "\`apt upgrade\` keeps this current from now on."
+				exit 0
+			fi
+			# Left in place deliberately: the source and key are correct even if this
+			# instance publishes no packages yet, and removing them would make the next
+			# attempt start over.
+			note "the repository could not be used; installing the binary instead"
+		fi
+	fi
 
 	note "asking $SERVER what it publishes"
 	LIST="$WORK/downloads.json"

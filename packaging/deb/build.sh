@@ -1,21 +1,47 @@
 #!/bin/sh
-# Build a .deb for pkgcache, without dpkg-deb.
+# Build the pkgcache .deb packages, without dpkg-deb.
 #
 # A .deb is an ar archive of exactly three members in order: debian-binary, then
 # control.tar.gz, then data.tar.gz. Building it with ar and tar means this runs on the
 # machine that already cross-compiles every other target, rather than requiring a Debian
 # host to package a static binary that has no Debian dependencies anyway.
 #
-# usage: build.sh <binary> <arch> <version> [outdir]
+# Two packages, not one, and the reason is the app:
+#
+#   pkgcache          the daemon and the CLI. One static binary, no dependencies, and the
+#                     only thing a CI runner, a build box or a container should install.
+#   pkgcache-desktop  the app, its icon, its launcher entry and its login item. Needs GTK
+#                     and a WebKit, which is a desktop graphics stack no headless machine
+#                     should be made to carry.
+#
+# Split so that `apt install pkgcache-desktop` pulls both — one command on a laptop — while
+# `apt install pkgcache` stays the small thing a server wants. That only works from a
+# repository, which is what `pkgreg publish-apt` serves.
+#
+# usage: build.sh <daemon-binary> <arch> <version> [outdir]
+#
+# environment:
+#   PKGCACHE_APP    the desktop app binary. Without it only the daemon package is built,
+#                   which is what a host with no GUI toolchain can honestly produce.
+#   PKGCACHE_ICON   the icon, an SVG. Defaults to assets/logo.svg beside this repo.
+#   PKGCACHE_GUI_DEPENDS
+#                   what the app links against. Defaults to the GTK4 stack Wails prefers;
+#                   set it to "libgtk-3-0, libwebkit2gtk-4.1-0" for a -tags gtk3 build.
 set -eu
 
-BINARY="${1:?usage: build.sh <binary> <arch> <version> [outdir]}"
+BINARY="${1:?usage: build.sh <daemon-binary> <arch> <version> [outdir]}"
 ARCH="${2:?arch: amd64 or arm64}"
 VERSION="${3:?version}"
 OUT="${4:-.}"
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
+APP="${PKGCACHE_APP:-}"
+ICON="${PKGCACHE_ICON:-$HERE/../../assets/logo.svg}"
+GUI_DEPENDS="${PKGCACHE_GUI_DEPENDS:-libgtk-4-1, libwebkitgtk-6.0-4}"
+
 [ -f "$BINARY" ] || { echo "no such binary: $BINARY" >&2; exit 1; }
 case "$ARCH" in amd64|arm64) ;; *) echo "arch must be amd64 or arm64" >&2; exit 1 ;; esac
+[ -z "$APP" ] || [ -f "$APP" ] || { echo "no such app binary: $APP" >&2; exit 1; }
 
 # A Debian version may not carry a leading 'v' or any '-' beyond the revision, and our
 # build stamps look like "23888d5-dirty". Normalised rather than rejected: the package
@@ -25,33 +51,53 @@ DEBVER="$(printf '%s' "$VERSION" | sed 's/^v//; s/-/+/g')"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
-ROOT="$WORK/root"
-CTRL="$WORK/control"
-mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/applications" \
-	"$ROOT/usr/share/doc/pkgcache" "$CTRL"
 
+mkdir -p "$OUT"
+# Resolved before anything changes directory: the ar call runs inside a work directory,
+# and a relative output path would be relative to that instead of to the caller.
+OUT="$(cd "$OUT" && pwd)"
+
+# --sort=name and a fixed mtime make the package reproducible: two builds of the same
+# binary produce byte-identical .deb files, so a checksum means something.
+TAROPTS="--owner=0 --group=0 --numeric-owner --sort=name --mtime=@0"
+
+# assemble <name> <root> <controldir> — turns a staged tree into a .deb.
+#
+# The member order is part of the format, not a convention. -D is deterministic mode:
+# without it ar stamps each member with the clock and the builder's uid, and two builds of
+# one binary would differ for no reason anybody can act on.
+assemble() {
+	_name="$1"; _root="$2"; _ctrl="$3"
+	_stage="$WORK/stage-$_name"
+	mkdir -p "$_stage"
+	printf '2.0\n' > "$_stage/debian-binary"
+
+	# md5sums lets `dpkg -V` verify the package after installation.
+	( cd "$_root" && find . -type f -printf '%P\0' 2>/dev/null | sort -z |
+		xargs -0 -r md5sum > "$_ctrl/md5sums" ) 2>/dev/null || \
+	( cd "$_root" && find . -type f | sed 's|^\./||' | sort | while read -r f; do
+		md5sum "$f"; done > "$_ctrl/md5sums" )
+
+	# shellcheck disable=SC2086
+	tar $TAROPTS -czf "$_stage/data.tar.gz" -C "$_root" .
+	_members="./control ./md5sums"
+	[ -f "$_ctrl/postinst" ] && _members="$_members ./postinst"
+	[ -f "$_ctrl/prerm" ] && _members="$_members ./prerm"
+	[ -f "$_ctrl/conffiles" ] && _members="$_members ./conffiles"
+	# shellcheck disable=SC2086
+	tar $TAROPTS -czf "$_stage/control.tar.gz" -C "$_ctrl" $_members
+
+	_deb="$OUT/${_name}_${DEBVER}_${ARCH}.deb"
+	rm -f "$_deb"
+	( cd "$_stage" && ar rcD "$_deb" debian-binary control.tar.gz data.tar.gz )
+	echo "$_deb"
+}
+
+# ---- pkgcache: the daemon and the CLI --------------------------------------------
+ROOT="$WORK/root-daemon"
+CTRL="$WORK/ctrl-daemon"
+mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/doc/pkgcache" "$CTRL"
 install -m 0755 "$BINARY" "$ROOT/usr/bin/pkgcache"
-
-# The window helper is optional: it needs cgo and WebKitGTK, so it is not built on every
-# host. When it is absent pkgcache falls back to a browser tab, which is why this is a
-# Recommends below and not a Depends.
-if [ -n "${PKGCACHE_WINDOW:-}" ] && [ -f "$PKGCACHE_WINDOW" ]; then
-	install -m 0755 "$PKGCACHE_WINDOW" "$ROOT/usr/bin/pkgcache-window"
-fi
-
-cat > "$ROOT/usr/share/applications/pkgcache.desktop" <<'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=pkgcache
-GenericName=Package cache
-Comment=Keep this machine's package downloads in your status bar
-Exec=pkgcache tray
-Icon=pkgcache
-Terminal=false
-Categories=Development;Utility;
-Keywords=cache;packages;docker;pip;npm;
-StartupNotify=false
-DESKTOP
 
 cat > "$ROOT/usr/share/doc/pkgcache/copyright" <<'COPY'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
@@ -64,10 +110,8 @@ COPY
 # produce identical packages. `date -R` here would put the clock in the archive and make
 # every rebuild differ.
 STAMP="$(date -R -u -d "@${SOURCE_DATE_EPOCH:-0}" 2>/dev/null || date -u -r "${SOURCE_DATE_EPOCH:-0}" +"%a, %d %b %Y %H:%M:%S +0000")"
-printf 'pkgcache (%s) stable; urgency=low\n\n  * Built from source.\n\n -- pkgreg <root@localhost>  %s\n' \
-	"$DEBVER" "$STAMP" | gzip -9n > "$ROOT/usr/share/doc/pkgcache/changelog.Debian.gz"
-
-INSTALLED_KB="$(du -sk "$ROOT" | cut -f1)"
+CHANGELOG="pkgcache ($DEBVER) stable; urgency=low\n\n  * Built from source.\n\n -- pkgreg <root@localhost>  $STAMP\n"
+printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/pkgcache/changelog.Debian.gz"
 
 cat > "$CTRL/control" <<CONTROL
 Package: pkgcache
@@ -76,53 +120,135 @@ Section: devel
 Priority: optional
 Architecture: $ARCH
 Maintainer: pkgreg <root@localhost>
-Installed-Size: $INSTALLED_KB
-Recommends: libwebkit2gtk-4.1-0, libgtk-3-0
+Installed-Size: $(du -sk "$ROOT" | cut -f1)
+Suggests: pkgcache-desktop
 Description: Package cache for one machine
  pkgcache keeps this machine's package downloads — pip, npm, Docker images, apt and
  git — on local disk, and can sit in front of a team cache so a download crosses the
  network once for everyone rather than once for each person.
  .
- It is a single static binary with no runtime dependencies. The recommended GTK and
- WebKit libraries are needed only for the native window; without them the console
- opens in a browser tab instead.
+ One static binary with no runtime dependencies, which is what makes it safe to install
+ on a build box or in a container image. The desktop app that watches it is a separate
+ package, pkgcache-desktop, so that a machine with no screen carries no graphics stack.
 CONTROL
 
-# md5sums lets `dpkg -V` verify the package after installation.
-( cd "$ROOT" && find . -type f -printf '%P\0' | sort -z |
-	xargs -0 -r md5sum > "$CTRL/md5sums" ) 2>/dev/null || \
-( cd "$ROOT" && find . -type f | sed 's|^\./||' | sort | while read -r f; do
-	md5sum "$f"; done > "$CTRL/md5sums" )
+# Nothing is printed here on purpose. The old version of this package ended by telling
+# somebody to run two more commands, which is the whole feeling this split exists to
+# remove: installing is the install.
+assemble pkgcache "$ROOT" "$CTRL"
 
+# ---- pkgcache-desktop: the app ---------------------------------------------------
+if [ -z "$APP" ]; then
+	echo "note: PKGCACHE_APP is unset, so only the daemon package was built." >&2
+	exit 0
+fi
+[ -f "$ICON" ] || { echo "no such icon: $ICON" >&2; exit 1; }
+
+ROOT="$WORK/root-desktop"
+CTRL="$WORK/ctrl-desktop"
+mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/etc/xdg/autostart" \
+	"$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/usr/share/doc/pkgcache-desktop" "$CTRL"
+
+install -m 0755 "$APP" "$ROOT/usr/bin/pkgcache-app"
+# Scalable, so one file covers every panel size and no rasteriser is needed at build
+# time. Its absence is why the launcher entry has shown a blank square until now: the
+# old package shipped a .desktop naming an icon it never installed.
+install -m 0644 "$ICON" "$ROOT/usr/share/icons/hicolor/scalable/apps/pkgcache.svg"
+
+cat > "$ROOT/usr/share/applications/pkgcache.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=pkgcache
+GenericName=Package cache
+Comment=Watch what this machine is caching
+Exec=pkgcache-app
+Icon=pkgcache
+Terminal=false
+Categories=Development;Utility;
+Keywords=cache;packages;docker;pip;npm;apt;
+StartupNotify=true
+StartupWMClass=pkgcache
+DESKTOP
+
+# Started for every user who logs in, because an app that has to be launched from a
+# terminal before it can watch anything is not installed, it is merely present.
+#
+# A person who does not want it does not edit this file: the desktop way to opt out is a
+# per-user override in ~/.config/autostart, which is what `pkgcache-app --off-login`
+# writes and what any desktop's own Startup Applications panel writes too.
+cat > "$ROOT/etc/xdg/autostart/pkgcache.desktop" <<'AUTOSTART'
+[Desktop Entry]
+Type=Application
+Name=pkgcache
+Comment=Keep pkgcache in the status bar
+Exec=pkgcache-app --background
+Icon=pkgcache
+Terminal=false
+X-GNOME-Autostart-enabled=true
+AUTOSTART
+
+# A file under /etc a local administrator may reasonably want to change, which is exactly
+# what conffiles is for: dpkg then asks before replacing an edited copy on upgrade.
+echo "/etc/xdg/autostart/pkgcache.desktop" > "$CTRL/conffiles"
+
+cat > "$ROOT/usr/share/doc/pkgcache-desktop/copyright" <<'COPY'
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: pkgcache
+COPY
+printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/pkgcache-desktop/changelog.Debian.gz"
+
+cat > "$CTRL/control" <<CONTROL
+Package: pkgcache-desktop
+Source: pkgcache
+Version: $DEBVER
+Section: devel
+Priority: optional
+Architecture: $ARCH
+Maintainer: pkgreg <root@localhost>
+Installed-Size: $(du -sk "$ROOT" | cut -f1)
+Depends: pkgcache (= $DEBVER), $GUI_DEPENDS
+Description: Desktop app for pkgcache
+ A window and a status bar item for the cache pkgcache keeps on this machine: what is
+ downloading, how much of the disk budget is used, how much is being served from here,
+ and a notification when the cache fills up and stops storing.
+ .
+ It depends on the exact same version of pkgcache, because the app talks to the daemon
+ over a local API and two halves of one product drifting apart on a machine produces a
+ bug report nobody can read.
+CONTROL
+
+# Icon and desktop caches are indexed, not scanned, so a newly installed launcher entry
+# does not appear until the index is told. Both tools are absent on a minimal system and
+# their absence is not a failure — the entry is still correct, it just shows up on the
+# next login instead of immediately.
 cat > "$CTRL/postinst" <<'POSTINST'
 #!/bin/sh
 set -e
 if [ "$1" = configure ]; then
-	echo "pkgcache installed. Point it at your team cache with:"
-	echo "  pkgcache setup -server https://<cache>:8443 -ca-sha256 <fingerprint> -limit 25G"
-	echo "Then keep it in your status bar with: pkgcache tray"
+	if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+		gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+	fi
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database -q /usr/share/applications 2>/dev/null || true
+	fi
 fi
 POSTINST
 chmod 0755 "$CTRL/postinst"
 
-printf '2.0\n' > "$WORK/debian-binary"
+# Removing the package should stop the app, not leave a window belonging to software that
+# is no longer installed. The daemon is deliberately left alone: it is the other package's,
+# it exits on its own when idle, and stopping somebody's cache because they removed a
+# window would be a surprise.
+cat > "$CTRL/prerm" <<'PRERM'
+#!/bin/sh
+set -e
+case "$1" in
+	remove|deconfigure|upgrade)
+		pkill -x pkgcache-app 2>/dev/null || true
+		;;
+esac
+exit 0
+PRERM
+chmod 0755 "$CTRL/prerm"
 
-# --sort=name and a fixed mtime make the package reproducible: two builds of the same
-# binary produce byte-identical .deb files, so a checksum means something.
-TAROPTS="--owner=0 --group=0 --numeric-owner --sort=name --mtime=@0"
-# shellcheck disable=SC2086
-tar $TAROPTS -czf "$WORK/data.tar.gz" -C "$ROOT" ./usr
-# shellcheck disable=SC2086
-tar $TAROPTS -czf "$WORK/control.tar.gz" -C "$CTRL" ./control ./md5sums ./postinst
-
-mkdir -p "$OUT"
-# Resolved before anything changes directory: the ar call runs inside $WORK, and a
-# relative output directory would be relative to that instead of to the caller.
-OUT="$(cd "$OUT" && pwd)"
-DEB="$OUT/pkgcache_${DEBVER}_${ARCH}.deb"
-rm -f "$DEB"
-# The member order is part of the format, not a convention. -D is deterministic mode:
-# without it ar stamps each member with the clock and the builder's uid, and two builds
-# of one binary would differ for no reason anybody can act on.
-( cd "$WORK" && ar rcD "$DEB" debian-binary control.tar.gz data.tar.gz )
-echo "$DEB"
+assemble pkgcache-desktop "$ROOT" "$CTRL"

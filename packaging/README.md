@@ -7,9 +7,32 @@ that as a step to remember.
 | platform | artefact | built by |
 |---|---|---|
 | macOS | `pkgcache-<version>.pkg` | `packaging/macos/build-pkg.sh`, **on a Mac** |
-| Ubuntu / Debian | `pkgcache_<version>_<arch>.deb` | `make deb` |
+| Ubuntu / Debian | `pkgcache_<v>_<arch>.deb` and `pkgcache-desktop_<v>_<arch>.deb` | `make deb` |
 | Windows | `install.ps1` | `make installers` |
 | macOS / Linux (script) | `install.sh` | `make installers` |
+
+## Two packages on Linux, one command
+
+The app cannot run without GTK and a WebKit, so a single package containing it would have
+to declare them as `Depends` — dragging a desktop graphics stack onto every CI runner,
+build box and container that installs pkgcache. So the Debian build produces two:
+
+| package | contains | depends on |
+|---|---|---|
+| `pkgcache` | daemon, CLI | nothing; the static binary it has always been |
+| `pkgcache-desktop` | app, icon, launcher entry, login item | `pkgcache (= same version)`, GTK4, WebKitGTK 6.0 |
+
+It is still one command, because apt resolves the dependency:
+
+```sh
+apt install pkgcache-desktop      # pulls pkgcache in with it
+apt install pkgcache              # headless: no desktop stack
+```
+
+That needs a repository, which `pkgreg publish-apt` serves from the instance the packages
+came from — and which `install.sh` configures for you. The version lock is deliberate: the
+app talks to the daemon over a local API, and two halves of one product drifting apart on
+a machine produces a bug report nobody can read.
 
 ## macOS
 
@@ -33,12 +56,19 @@ Open, or `sudo installer -pkg pkgcache-1.0.0.pkg -target /`. To ship without tha
 ## Ubuntu and Debian
 
     make deb                      # from go/
-    sudo apt install ./pkgcache_1.0.0_amd64.deb
+    sudo apt install ./pkgcache_1.0.0_amd64.deb ./pkgcache-desktop_1.0.0_amd64.deb
 
-Ships the binary and a desktop entry. GTK and WebKit are `Recommends`, not `Depends`:
-without them the console opens in a browser tab instead of a native window. Built with `ar`
-and `tar` rather than `dpkg-deb`, so it cross-builds from any host, and reproducibly — two
-builds of one binary are byte-identical.
+From a repository it is one name and apt finds the other; from local files both are named
+because apt cannot fetch a sibling that is not in a repository.
+
+`make deb` builds the desktop half only where a `bin/pkgcache-app-linux-<arch>` exists.
+The app needs cgo, so a host that cannot build it still produces a complete daemon package
+rather than failing — which is also what a release runner does for the architecture it is
+not native to.
+
+Built with `ar` and `tar` rather than `dpkg-deb`, so it cross-builds from any host, and
+reproducibly: two builds of one binary are byte-identical, and that property is the reason
+this is still a shell script rather than nfpm.
 
 ## Windows
 

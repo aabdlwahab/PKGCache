@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release menubar window window-windows test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release menubar window window-windows app test race lint fmt tidy clean help
 
 all: build
 
@@ -107,6 +107,31 @@ window-windows: ## Build the Windows application-window helper (cross-compiles)
 	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
 	  -o bin/pkgcache-window-windows-amd64.exe ./cmd/pkgcache-window
 
+# The desktop app, which replaces the three helpers above once it reaches parity. It is a
+# separate binary from pkgcache for the reason the helpers were: pkgcache stays
+# CGO_ENABLED=0 on five targets from one host, and the app is where cgo is allowed.
+# The app is built natively, so its name carries the host's architecture rather than a
+# cross-compilation target.
+GOARCH ?= $(shell go env GOARCH)
+
+app: ## Build the desktop app for this platform
+	@case "$$(uname)" in \
+	  Linux) \
+	    pkg-config --exists gtk4 webkitgtk-6.0 || { \
+	      echo "the app needs GTK4 and WebKitGTK 6.0:"; \
+	      echo "  sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev"; \
+	      echo "For a GTK3 build instead, add -tags gtk3 and install"; \
+	      echo "  libgtk-3-dev libwebkit2gtk-4.1-dev"; \
+	      exit 1; }; \
+	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
+	      -o bin/pkgcache-app-linux-$(GOARCH) ./cmd/pkgcache-app ;; \
+	  Darwin) \
+	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
+	      -o bin/pkgcache-app-darwin-$(GOARCH) ./cmd/pkgcache-app ;; \
+	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \
+	     exit 1 ;; \
+	esac
+
 menubar: ## Build the macOS menu bar helper and its window (macOS only)
 	@test "$$(uname)" = "Darwin" || { \
 	  echo "the menu bar helper needs a Mac: NSStatusItem is Cocoa, and pkgcache itself"; \
@@ -140,11 +165,22 @@ installers: pkgcache-release deb ## Build the .deb packages and stage the instal
 	@echo "  install.ps1   Windows"
 	@echo "  *.deb         Ubuntu and Debian"
 
-deb: ## Build Debian packages for amd64 and arm64
+# Two packages per architecture: pkgcache for any machine, pkgcache-desktop for one with
+# a screen. The desktop half is built only where an app binary for that architecture
+# exists — the app needs cgo, so a host that cannot build it still produces a complete
+# daemon package rather than failing.
+deb: ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
 	@test -f bin/pkgcache-linux-amd64 || { \
 		echo "build the binaries first: make pkgcache-release" >&2; exit 1; }
-	sh ../packaging/deb/build.sh bin/pkgcache-linux-amd64 amd64 "$(VERSION)" bin
-	sh ../packaging/deb/build.sh bin/pkgcache-linux-arm64 arm64 "$(VERSION)" bin
+	@for arch in amd64 arm64; do \
+		app="bin/pkgcache-app-linux-$$arch"; \
+		if test ! -f "$$app"; then \
+			echo "note: no $$app, so only the daemon package for $$arch"; \
+			app=""; \
+		fi; \
+		PKGCACHE_APP="$$app" sh ../packaging/deb/build.sh \
+			"bin/pkgcache-linux-$$arch" "$$arch" "$(VERSION)" bin; \
+	done
 
 test: ## Run tests
 	go test ./...
