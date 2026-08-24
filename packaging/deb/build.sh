@@ -120,6 +120,12 @@ CTRL="$WORK/ctrl-daemon"
 mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/doc/pkgcache" "$CTRL"
 install -m 0755 "$BINARY" "$ROOT/usr/bin/pkgcache"
 
+# The docker-compatible shim, where the build produced one. Optional the same way the app
+# is: a host that did not build it still gets a complete daemon package.
+if [ -n "${PKGCACHE_SHIM:-}" ] && [ -f "$PKGCACHE_SHIM" ]; then
+	install -m 0755 "$PKGCACHE_SHIM" "$ROOT/usr/bin/pkgcache-docker"
+fi
+
 cat > "$ROOT/usr/share/doc/pkgcache/copyright" <<'COPY'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: pkgcache

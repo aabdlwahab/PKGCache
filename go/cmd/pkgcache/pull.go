@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
@@ -88,20 +87,19 @@ flags:
 	}
 
 	for _, image := range fs.Args() {
-		mapped := dockerfile.MapImage(image, registry)
-		if mapped == "" {
-			// Not a registry this cache serves. Said out loud: somebody running this
-			// expects the cache to be involved, and silently pulling from the internet
-			// would leave them believing something that is not true.
-			fmt.Fprintf(os.Stderr,
-				"pkgcache: %s is not served by this cache; pulling it directly\n", image)
-			mapped = image
-		}
 		if *dryRun {
+			mapped := dockerfile.MapImage(image, registry)
+			if mapped == "" {
+				fmt.Fprintf(os.Stderr,
+					"pkgcache: %s is not served by this cache; pulling it directly\n", image)
+				mapped = image
+			}
 			fmt.Printf("%s\n  <- %s\n", image, mapped)
 			continue
 		}
-		if err := pullThrough(ctx, image, mapped, *keep); err != nil {
+		if err := clientbuild.Pull(ctx, image, clientbuild.PullOptions{
+			Registry: registry, Keep: *keep, Notes: os.Stderr,
+		}); err != nil {
 			return err
 		}
 	}
@@ -109,38 +107,4 @@ flags:
 		return full
 	}
 	return nil
-}
-
-// pullThrough fetches one image and puts it back under the name that was asked for.
-func pullThrough(ctx context.Context, image, mapped string, keep bool) error {
-	if err := docker(ctx, "pull", mapped); err != nil {
-		return fmt.Errorf("pull %s: %w", image, err)
-	}
-	if mapped == image {
-		return nil
-	}
-	// Tagged back, because the cache's address is how this image was fetched and not what
-	// it is. A Compose file or a Makefile naming alpine:3.20 has to find it afterwards.
-	if err := docker(ctx, "tag", mapped, image); err != nil {
-		return fmt.Errorf("tag %s: %w", image, err)
-	}
-	if keep {
-		return nil
-	}
-	// The cache-addressed tag is removed rather than left beside it: two names for one
-	// image is a puzzle in `docker images`, and the address is the less useful of them.
-	// Untagging cannot delete the image itself — the original name still refers to it.
-	if err := docker(ctx, "rmi", mapped); err != nil {
-		fmt.Fprintf(os.Stderr, "pkgcache: %s is pulled, but %s is still tagged: %v\n",
-			image, mapped, err)
-	}
-	return nil
-}
-
-// docker runs one docker command, quietly unless it fails.
-func docker(ctx context.Context, args ...string) error {
-	// #nosec G204 -- the arguments are an image reference this program derived.
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
 }

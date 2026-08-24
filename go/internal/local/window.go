@@ -48,6 +48,25 @@ var helperPathFor = func(name string) (string, bool) {
 	return found, err == nil
 }
 
+// DaemonPath finds the pkgcache binary that holds the cache.
+//
+// Every program here that is not pkgcache itself needs this, and each one that forgot it
+// found out the same way: local.Ensure re-executes os.Executable when it is not told
+// otherwise, which is right for pkgcache starting pkgcache and silently wrong for anything
+// else. The app launched itself as a cache and waited thirty seconds; the docker shim ran
+// `docker -data-dir …` and got "unknown shorthand flag: 'd'".
+//
+// So it lives here, once, next to the rule it exists to satisfy. A caller that uses it
+// must also set EnsureOptions.DifferentBinary, or the version check reads a daemon of
+// another build as a stale one and stops it on every call.
+func DaemonPath() (string, bool) {
+	name := "pkgcache"
+	if runtime.GOOS == "windows" {
+		name = "pkgcache.exe"
+	}
+	return helperPathFor(name)
+}
+
 // AppPath returns the desktop app's path, if this machine has it installed.
 func AppPath() (string, bool) { return helperPathFor(appName()) }
 

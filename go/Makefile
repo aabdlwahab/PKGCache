@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -155,6 +155,12 @@ app-windows: ## Cross-compile the desktop app for Windows
 # depend on them. Before this it only checked they existed, which meant `git pull && make
 # deb` happily packaged yesterday's binary and the new command was missing from the
 # package with nothing said about why.
+# The docker-compatible shim, built for every target pkgcache itself is. It is pure Go
+# and CGO_ENABLED=0 like the daemon: it drives docker, it does not link anything.
+shim: ## Build the docker-compatible shim for this host
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' \
+		-o bin/pkgcache-docker ./cmd/pkgcache-docker
+
 pkgcache-linux: ## Cross-compile pkgcache for Linux, both architectures
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
@@ -219,7 +225,9 @@ deb: pkgcache-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for
 			echo "note: no $$app, so only the daemon package for $$arch"; \
 			app=""; \
 		fi; \
-		PKGCACHE_APP="$$app" sh ../packaging/deb/build.sh \
+		shim="bin/pkgcache-docker-linux-$$arch"; \
+		test -f "$$shim" || shim=""; \
+		PKGCACHE_APP="$$app" PKGCACHE_SHIM="$$shim" sh ../packaging/deb/build.sh \
 			"bin/pkgcache-linux-$$arch" "$$arch" "$(VERSION)" bin; \
 	done
 
