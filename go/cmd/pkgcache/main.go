@@ -29,6 +29,7 @@ var commands = map[string]struct {
 	"env":                {"print the settings that point tools at the cache", runEnv},
 	"build":              {"run docker build through the cache", runBuild},
 	"pull":               {"docker pull through the cache, keeping the image's own name", runPull},
+	"warmlock":           {"warm the cache from a uv.lock, and point the lock at it", runWarmlock},
 	"compose":            {"run docker compose through the cache", runCompose},
 	"persist":            {"settings that outlive the session", runPersist},
 	"docker-setup":       {"teach the Docker daemon about this cache", runDockerSetup},
@@ -52,7 +53,7 @@ var commands = map[string]struct {
 // order fixes the help text, which a map iteration would shuffle between runs.
 var order = []string{
 	"setup", "project", "run", "shell", "env", "build", "compose",
-	"pull", "persist", "docker-setup", "docker-build-setup",
+	"pull", "warmlock", "persist", "docker-setup", "docker-build-setup",
 	"checkpoint", "export", "import", "snapshots", "rollback",
 	"widget", "tray", "console",
 	"limit", "status", "prune", "stop", "serve", "version",
