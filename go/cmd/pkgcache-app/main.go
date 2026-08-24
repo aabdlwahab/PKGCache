@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	_ "embed"
@@ -255,29 +256,55 @@ func run(background, onLogin, offLogin bool) error {
 // would be ceremony.
 var window application.Window
 
-// showWindow points the window at the cache and brings it forward.
+// One window, one goroutine touching it at a time.
 //
-// This is the one path allowed to start the daemon: somebody has asked to look at the
-// cache, and a window that opened onto "nothing is running" when starting it takes a
-// second would be a worse answer than the second.
+// This is not defensive tidiness, it is a crash that happened. showWindow is reached from
+// a tray click, a menu item and a second launch, and the first call can be waiting the
+// full daemon start timeout when the next arrives. Two goroutines then drove the same
+// window: one inside SetURL while the other was still in Show, which is where Wails
+// builds the native webview. The second reached navigationLoadURL with a webview that was
+// half-constructed and took the process down with a SIGSEGV in cgo.
 //
-// Off the UI thread, and that is the whole reason for the goroutine. Starting a cold
-// daemon means opening two SQLite databases and sweeping interrupted downloads, which the
-// client waits up to thirty seconds for — on the UI thread that is a frozen menu and a
-// spinning cursor for however long it takes. SetURL, Show and Focus each marshal
-// themselves back onto the main thread, so nothing here has to.
+// The lock is held across the whole sequence, daemon start included. A click that arrives
+// during a cold start waits for it rather than racing it, and every click after that is
+// instant because the address is already known.
+var (
+	windowMu  sync.Mutex
+	windowURL string
+)
+
+// showWindow brings the window forward and points it at the cache.
+//
+// Always on its own goroutine, and that matters in both directions: the caller is usually
+// the UI thread inside a click handler, so this must not block it, and resolving the
+// address may start a cold daemon that the client waits up to thirty seconds for.
+//
+// Shown before the address is known, deliberately. The window carries a line of HTML that
+// says the cache is starting, so somebody who clicks gets a window immediately and watches
+// it fill in — rather than clicking, seeing nothing at all for half a minute, and clicking
+// again. That second click is what crashed this.
+//
+// SetURL, Show and Focus each marshal themselves onto the main thread, so nothing here
+// needs InvokeSync.
 func showWindow(ctx context.Context, core *appcore.Core) {
 	go func() {
-		url, err := core.WindowURL(ctx, tray.ActionWidget)
-		if err != nil {
-			// Not fatal, and not silent: the address is the useful half of the answer,
-			// and over SSH or in a container it is the whole of it.
-			fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
-			url = core.FallbackURL()
-		}
-		window.SetURL(url)
+		windowMu.Lock()
+		defer windowMu.Unlock()
+
 		window.Show()
 		window.Focus()
+
+		if windowURL == "" {
+			url, err := core.WindowURL(ctx, tray.ActionWidget)
+			if err != nil {
+				// Not fatal, and not silent: the address is the useful half of the
+				// answer, and over SSH or in a container it is the whole of it.
+				fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
+				url = core.FallbackURL()
+			}
+			windowURL = url
+		}
+		window.SetURL(windowURL)
 	}()
 }
 

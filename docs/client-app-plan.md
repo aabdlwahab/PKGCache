@@ -120,11 +120,25 @@ project with no frontend, and a badly misleading one here, where the frontend is
 server that has not finished starting. The window now opens on one line of inline HTML that
 says what is happening.
 
+The fifth launch reached the status bar. The icon was there and it responded to a click —
+and then took the process down with a SIGSEGV inside `navigationLoadURL`, which is cgo, on
+the main thread.
+
+Not a Wails fault. `showWindow` spawns a goroutine per call and there was nothing stopping
+two of them existing: the first was still waiting on a cold daemon when the click arrived,
+so one goroutine was inside `SetURL` while the other was still in `Show` — which is where
+Wails builds the native webview. The second reached a half-constructed object.
+
+The lock is now held across the whole sequence, and the window is shown *before* the
+address is resolved. That second part is the actual cure rather than the mutex: a click
+that produced nothing at all for thirty seconds was always going to be clicked again, and
+the crash needed that second click.
+
 ### Still unknown
 
-Whether it *behaves*. Each fix compiles on Ubuntu 24.04, but nobody has yet seen the widget
-render, the icon land in the menu bar, or the menu grey out correctly when the daemon
-sleeps.
+Whether the widget renders. Five launches have each got further — no window, then a crash,
+then a service refusing to start, then a window with the wrong page, then a working status
+bar icon that crashed on click. Nobody has yet seen the cache's own UI appear inside it.
 
 ## The split
 

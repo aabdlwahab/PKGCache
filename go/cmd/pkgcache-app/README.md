@@ -41,7 +41,15 @@ what a menu item should say, and whether something has changed enough to interru
 somebody — and it has no toolkit in it, so it is tested on machines with no display. What
 is left here is the wiring.
 
-Three things in that wiring are load-bearing and easy to undo by accident:
+Four things in that wiring are load-bearing and easy to undo by accident:
+
+- **One goroutine touches the window at a time.** `showWindow` is reached from a tray
+  click, a menu item and a second launch, and the first call can be waiting the full
+  daemon start timeout when the next arrives. Two goroutines then drove the same window —
+  one inside `SetURL` while the other was still in `Show`, which is where Wails builds the
+  native webview — and the process died with a SIGSEGV in `navigationLoadURL`. The window
+  is also shown *before* the address is resolved, so a click produces a window
+  immediately rather than nothing for half a minute followed by a second click.
 
 - **Nothing touches the application before `ApplicationStarted`.** `InvokeSync` reaches
   `dispatchOnMainThread`, which dereferences an `impl` that `app.Run()` creates — calling
