@@ -132,6 +132,9 @@ GOARCH ?= $(shell go env GOARCH)
 # -mmacosx-version-min is already given, which for Wails is nearly everywhere.
 MACOS_MIN ?= 11.0
 
+# Built from inside cmd/pkgcache-app, because it is its own module: the main module does
+# not contain that package, so `go build ./cmd/pkgcache-app` from here cannot find it.
+# The output path is relative to that directory for the same reason.
 app: ## Build the desktop app for this platform
 	@case "$$(uname)" in \
 	  Linux) \
@@ -141,12 +144,13 @@ app: ## Build the desktop app for this platform
 	      echo "For a GTK3 build instead, add -tags gtk3 and install"; \
 	      echo "  libgtk-3-dev libwebkit2gtk-4.1-dev"; \
 	      exit 1; }; \
-	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
-	      -o bin/pkgcache-app-linux-$(GOARCH) ./cmd/pkgcache-app ;; \
+	    cd cmd/pkgcache-app && go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
+	      -o ../../bin/pkgcache-app-linux-$(GOARCH) . ;; \
 	  Darwin) \
+	    cd cmd/pkgcache-app && \
 	    CGO_CFLAGS="-mmacosx-version-min=$(MACOS_MIN)" \
-	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
-	      -o bin/pkgcache-app-darwin-$(GOARCH) ./cmd/pkgcache-app ;; \
+	      go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
+	      -o ../../bin/pkgcache-app-darwin-$(GOARCH) . ;; \
 	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \
 	     exit 1 ;; \
 	esac
