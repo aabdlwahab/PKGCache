@@ -33,6 +33,10 @@ import (
 // stopped doing that.
 type Core struct {
 	snap *config.Snapshot
+	// daemon is the pkgcache binary to start when something needs a cache that is not
+	// running. Empty means "re-execute whoever is calling", which is local.Ensure's
+	// default and is only correct for pkgcache itself. See UseDaemon.
+	daemon string
 	// seen is the last state Observe was given, and the whole of the memory this keeps.
 	// Notifications are transitions, so something has to remember the previous edge.
 	seen     tray.State
@@ -41,6 +45,26 @@ type Core struct {
 
 // New builds a Core over a loaded configuration.
 func New(snap *config.Snapshot) *Core { return &Core{snap: snap} }
+
+// UseDaemon names the pkgcache binary to start when the cache is not running.
+//
+// pkgcache itself leaves this alone, and local.Ensure re-executes the calling binary,
+// which is exactly right there: pkgcache starting pkgcache cannot produce a client and a
+// daemon from different builds.
+//
+// The app is a different binary, and that default is actively wrong for it — re-executing
+// pkgcache-app as a daemon starts a second app, not a cache. So the app has to say where
+// the daemon is, and this is where it says it.
+func (c *Core) UseDaemon(path string) { c.daemon = path }
+
+// ensure reaches the daemon, starting one only when allowed to.
+//
+// One place, so no caller can forget the executable and silently get the wrong default.
+func (c *Core) ensure(ctx context.Context, start bool) (local.State, error) {
+	return local.Ensure(ctx, local.EnsureOptions{
+		Snapshot: c.snap, Executable: c.daemon, NoStart: !start,
+	})
+}
 
 // State reports what the icon, the tooltip and the window title should say.
 //
@@ -57,7 +81,7 @@ func (c *Core) State(ctx context.Context) tray.State {
 		state.Used, state.Full, state.Reason = usage.Bytes, usage.Full, usage.Reason
 	}
 
-	daemon, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: c.snap, NoStart: true})
+	daemon, err := c.ensure(ctx, false)
 	if err != nil {
 		return state
 	}
@@ -87,14 +111,14 @@ func (c *Core) State(ctx context.Context) tray.State {
 func (c *Core) Do(ctx context.Context, action tray.Action) error {
 	switch action {
 	case tray.ActionOffline:
-		daemon, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: c.snap, NoStart: true})
+		daemon, err := c.ensure(ctx, false)
 		if err != nil {
 			return err
 		}
 		return local.ToggleOffline(ctx, daemon, local.CurrentProject(c.snap.DataDir))
 
 	case tray.ActionPrune:
-		daemon, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: c.snap, NoStart: true})
+		daemon, err := c.ensure(ctx, false)
 		if err != nil {
 			return err
 		}
@@ -117,7 +141,7 @@ func (c *Core) WindowURL(ctx context.Context, action tray.Action) (string, error
 	if action == tray.ActionConsole {
 		path = "/console"
 	}
-	daemon, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: c.snap})
+	daemon, err := c.ensure(ctx, true)
 	if err != nil {
 		return "", err
 	}

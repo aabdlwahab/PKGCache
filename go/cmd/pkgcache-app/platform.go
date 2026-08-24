@@ -1,10 +1,32 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
+
+// startingHTML is what the window shows until the cache answers.
+//
+// Deliberately one file with no assets: it exists for the second or two before the daemon
+// is listening, and anything that had to be fetched would be fetched from the server that
+// is not up yet.
+const startingHTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<style>
+  :root { color-scheme: dark light }
+  body { margin:0; height:100vh; display:grid; place-items:center;
+         background:#10151a; color:#8b98a5;
+         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif }
+  @media (prefers-color-scheme: light) { body { background:#fff; color:#5b6770 } }
+  .g { text-align:center }
+  .b { color:#45d98a; font-weight:600; letter-spacing:.02em }
+</style></head>
+<body><div class="g"><div class="b">pkgcache</div><div>starting the cache&hellip;</div></div></body>
+</html>`
 
 // isDarwin is runtime.GOOS in one place, so the tray setup reads as a choice about icons
 // rather than as platform plumbing.
@@ -35,4 +57,35 @@ func notificationsAvailable() bool {
 		return false
 	}
 	return strings.Contains(executable, ".app/Contents/MacOS/")
+}
+
+// daemonPath finds the pkgcache binary this app starts when the cache is not running.
+//
+// Beside this program first, because that is what every installer here produces: the .deb
+// puts both in /usr/bin, the .pkg puts both under /usr/local/bin, and somebody who copied
+// two files onto a machine has them in one directory. PATH second, for a development tree
+// where the two are built to different places.
+//
+// An error rather than a fallback, and deliberately so. The fallback that local.Ensure
+// applies on its own — re-execute whoever is calling — is silent, wrong for this binary,
+// and costs thirty seconds of a spinning window before it admits anything is amiss.
+func daemonPath() (string, error) {
+	name := "pkgcache"
+	if runtime.GOOS == "windows" {
+		name = "pkgcache.exe"
+	}
+	if self, err := os.Executable(); err == nil {
+		beside := filepath.Join(filepath.Dir(self), name)
+		if info, statErr := os.Stat(beside); statErr == nil && !info.IsDir() {
+			return beside, nil
+		}
+	}
+	found, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf(
+			"cannot find the %s binary, which is what holds the cache.\n"+
+				"  It is installed beside this app; if you are running from a build tree, put it\n"+
+				"  on PATH or in this directory:  make pkgcache", name)
+	}
+	return found, nil
 }

@@ -99,6 +99,13 @@ func run(background, onLogin, offLogin bool) error {
 
 	ctx := context.Background()
 	core := appcore.New(snapshot)
+	// Without this the app re-executes itself as the daemon, waits thirty seconds for a
+	// cache that was never going to appear, and shows an empty window while it does.
+	daemon, err := daemonPath()
+	if err != nil {
+		return err
+	}
+	core.UseDaemon(daemon)
 
 	// Registered only where it can work. See notificationsAvailable: on macOS this needs
 	// a bundle identifier, and Wails makes a service that fails to start fatal — which
@@ -146,8 +153,15 @@ func run(background, onLogin, offLogin bool) error {
 		Width:  420,
 		Height: 660,
 		// The console is already a complete UI served on the loopback port, so the app
-		// loads it rather than carrying a second copy of the same HTML. One frontend.
-		URL:              "",
+		// loads it rather than carrying a second copy of the same HTML. One frontend —
+		// which means this window has nothing to show until the daemon is up.
+		//
+		// So it starts on one line of inline HTML instead. With an empty URL the webview
+		// lands on Wails' asset server, finds no index.html and renders its own "Missing
+		// index.html" error — which is a true statement about a project that has no
+		// frontend, and a completely misleading one here, where the frontend is a web
+		// server that has not finished starting.
+		HTML:             startingHTML,
 		Hidden:           true,
 		BackgroundColour: application.NewRGB(16, 21, 26),
 	})

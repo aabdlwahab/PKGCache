@@ -102,11 +102,29 @@ can work, and the app says so and carries on.
 That also settles something the plan had left implicit: **the macOS `.app` bundle is not
 packaging polish, it is a runtime requirement.** Notifications only exist inside one.
 
+The fourth launch got a window, and the window was wrong — which turned out to be the most
+useful failure of the set, because it was a real defect in the split rather than a Wails
+quirk. `local.Ensure` re-executes the calling binary as the daemon, and that default is
+exactly right for pkgcache starting pkgcache: a client and its daemon can never be
+different builds. Moving that code into a second binary made it silently wrong. The app was
+launching *itself* as a cache, waiting thirty seconds for something that was never going to
+answer, and showing an empty window while it did.
+
+`Core.UseDaemon` makes the daemon explicit, and the app resolves the real `pkgcache` beside
+itself or on PATH — the same order every installer here produces. Not finding it is now an
+error at startup rather than a thirty-second pause and a blank page.
+
+The blank page was its own small lesson. With no URL the webview lands on Wails' asset
+server, finds no `index.html`, and renders "Missing index.html" — a true statement about a
+project with no frontend, and a badly misleading one here, where the frontend is a web
+server that has not finished starting. The window now opens on one line of inline HTML that
+says what is happening.
+
 ### Still unknown
 
-Whether it *behaves*. Each fix compiles on Ubuntu 24.04, but nobody has yet watched the
-window appear, the icon land in the menu bar, or the menu grey out correctly when the
-daemon sleeps.
+Whether it *behaves*. Each fix compiles on Ubuntu 24.04, but nobody has yet seen the widget
+render, the icon land in the menu bar, or the menu grey out correctly when the daemon
+sleeps.
 
 ## The split
 
