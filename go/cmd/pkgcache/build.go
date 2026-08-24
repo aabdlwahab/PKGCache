@@ -108,6 +108,9 @@ flags:
 		options.Project = local.CurrentProject(snap.DataDir)
 	}
 	options.AptProxy = state.BaseURL()
+	// A base image that already exists here is not rewritten: it may be one this build
+	// or a previous one produced, with no upstream to be fetched from.
+	options.LocalImage = clientbuild.DefaultLocalImage("")
 	options.GitHosts = splitList(*gitHosts)
 	options = clientbuild.FromEnvironment(options)
 

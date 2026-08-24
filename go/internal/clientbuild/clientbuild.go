@@ -59,6 +59,11 @@ type Options struct {
 	Stdout, Stderr io.Writer
 	// Runner executes the docker command. Injected so the tests never need Docker.
 	Runner func(ctx context.Context, name string, args []string) error
+
+	// LocalImage reports whether a base image already exists on this machine, so a
+	// locally built base is not rewritten into a registry reference for something that
+	// was never published. Nil means the check is skipped; DefaultLocalImage asks Docker.
+	LocalImage func(ref string) bool
 }
 
 // FromEnvironment fills in what a pkgreg shell already exported.
@@ -92,6 +97,24 @@ func FromEnvironment(o Options) Options {
 	return o
 }
 
+// DefaultLocalImage asks the container command whether a reference is already an image
+// here, for Options.LocalImage.
+//
+// `image inspect` and not `images`: it takes the reference as written — tag, digest,
+// registry prefix and all — and answers with an exit status, which is the whole question.
+// Output is discarded; a missing image is not an error worth printing.
+func DefaultLocalImage(docker string) func(string) bool {
+	if docker == "" {
+		docker = "docker"
+	}
+	return func(ref string) bool {
+		// #nosec G204 -- the reference comes from a Dockerfile the caller is building.
+		cmd := exec.Command(docker, "image", "inspect", ref)
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		return cmd.Run() == nil
+	}
+}
+
 // DefaultHostGateway is the name a build resolves this machine by. Docker Desktop
 // provides it; on native Linux `--add-host` supplies it, which Build adds.
 const DefaultHostGateway = "host.docker.internal"
@@ -101,6 +124,7 @@ func (o Options) rewriteOptions() (dockerfile.Options, error) {
 	options := dockerfile.Options{
 		Project: o.Project, AptProxy: o.AptProxy,
 		GitHosts: o.GitHosts, SkipFrom: o.SkipFrom,
+		LocalImage: o.LocalImage,
 	}
 	if o.CacheAddress {
 		if o.Server == "" {

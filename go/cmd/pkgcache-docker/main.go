@@ -139,6 +139,11 @@ func runBuild(
 		// variable, which is the one channel that reaches this without going through
 		// crate.
 		HostAddress: truthy(os.Getenv("PKGCACHE_HOST_ADDRESS")),
+		// A base that is already here is left alone. This is the case the shim exists
+		// for: an orchestrator that builds a shared base image first and then builds
+		// every service FROM it. Rewriting that name sends the build to a registry for
+		// something never published.
+		LocalImage: clientbuild.DefaultLocalImage(docker),
 	}
 	// clientbuild names "docker" when it runs the build. A Runner that substitutes the
 	// command is how this program can sit in front of podman or nerdctl, which is the

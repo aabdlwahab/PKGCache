@@ -80,6 +80,16 @@ type Options struct {
 	// the cache by itself — a registry mirror makes this rewrite redundant, and a
 	// rewrite nobody needs is a parsing risk nobody needs.
 	SkipFrom bool
+
+	// LocalImage reports whether a reference already names an image on this machine.
+	//
+	// A base that exists locally is left alone: it may have no upstream at all — crate's
+	// prebuilds are exactly this, a shared base built from a Dockerfile in the tree — and
+	// rewriting one produces a registry reference for something never published.
+	//
+	// Optional. Nil means "assume nothing is local", which is the old behaviour and the
+	// right default for a caller with no cheap way to ask.
+	LocalImage func(ref string) bool
 }
 
 // Change records one rewritten FROM, for reporting. A tool that silently alters what
@@ -402,6 +412,21 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 	// reference to something that has never existed, and the build fails with a
 	// registry error for an image the author never mentioned.
 	if stages[strings.ToLower(ref)] {
+		return line, nil
+	}
+	// Neither is an image that already exists on this machine, and for the same reason
+	// one stage further out: a base built locally has no upstream to be fetched from.
+	//
+	// This is what crate's prebuilds are — a shared base image built from a Dockerfile in
+	// the tree, which every service then builds FROM. `FROM mold:latest` looks exactly
+	// like a Docker Hub reference and is nothing of the kind, so it was rewritten to
+	// dockerhub/library/mold and every one of those services failed on an image that has
+	// never been published anywhere.
+	//
+	// Skipping a public image that happens to be local too is not a loss. Nothing is
+	// fetched either way — Docker uses what it has — so the only thing the rewrite could
+	// have added is a pull that was not going to happen.
+	if o.LocalImage != nil && o.LocalImage(ref) {
 		return line, nil
 	}
 	mapped := mapImage(ref, o.Registry)

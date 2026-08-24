@@ -387,3 +387,55 @@ func TestApkRewriteIsGuardedForImagesWithoutApk(t *testing.T) {
 		t.Errorf("the rewrite is unguarded and would fail on an image without apk:\n%s", body)
 	}
 }
+
+// A base image that already exists on this machine is left alone, because it may have no
+// upstream at all.
+//
+// This is crate's prebuilds: a shared base built from a Dockerfile in the tree, which
+// every service then builds FROM. `FROM mold:latest` looks exactly like a Docker Hub
+// reference and is nothing of the kind — it was rewritten to dockerhub/library/mold, and
+// every service in the manifest failed on an image that has never been published.
+func TestLocalBaseImageIsNotRewritten(t *testing.T) {
+	local := map[string]bool{"mold:latest": true}
+	options := Options{
+		Project: "global", Base: "http://127.0.0.1:41780", Registry: "127.0.0.1:41780",
+		Mode:       Bridge,
+		LocalImage: func(ref string) bool { return local[ref] },
+	}
+
+	result, err := Rewrite([]byte("FROM mold:latest\nRUN true\n"), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Content), "FROM mold:latest") {
+		t.Errorf("a locally built base was rewritten:\n%s", result.Content)
+	}
+	if len(result.Changes) != 0 {
+		t.Errorf("a skipped FROM was reported as a change: %+v", result.Changes)
+	}
+
+	// And the other direction, or the check would be a way to disable the rewrite.
+	result, err = Rewrite([]byte("FROM alpine:3.20\nRUN true\n"), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Content), "127.0.0.1:41780/dockerhub/library/alpine:3.20") {
+		t.Errorf("an image that is not local should still go through the cache:\n%s",
+			result.Content)
+	}
+}
+
+func TestLocalImageCheckIsOptional(t *testing.T) {
+	// Nil means "assume nothing is local", which is what a caller with no cheap way to
+	// ask should get — and what every caller got before the check existed.
+	result, err := Rewrite([]byte("FROM mold:latest\n"), Options{
+		Project: "global", Base: "http://127.0.0.1:41780", Registry: "127.0.0.1:41780",
+		Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Content), "dockerhub/library/mold") {
+		t.Errorf("with no LocalImage set the rewrite should be unchanged:\n%s", result.Content)
+	}
+}
