@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/dockerfile"
 )
@@ -45,15 +46,19 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 		}
 		mapped = image
 	}
-	if err := runDocker(ctx, o, "pull", mapped); err != nil {
-		return fmt.Errorf("pull %s: %w", image, err)
+	// Docker's own message goes to stderr and its exit error says only "exit status 1",
+	// so the interesting text is captured on the way past rather than inferred from the
+	// error. Bounded, because this is a diagnostic and not a log.
+	var said boundedBuffer
+	if err := runDocker(ctx, o, &said, "pull", mapped); err != nil {
+		return pullFailure(image, mapped, said.String(), err)
 	}
 	if mapped == image {
 		return nil
 	}
 	// Tagged back, because the cache's address is how this was fetched and not what it
 	// is. A compose file or a manifest naming alpine:3.20 has to find it afterwards.
-	if err := runDocker(ctx, o, "tag", mapped, image); err != nil {
+	if err := runDocker(ctx, o, nil, "tag", mapped, image); err != nil {
 		return fmt.Errorf("tag %s: %w", image, err)
 	}
 	if o.Keep {
@@ -61,14 +66,58 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 	}
 	// Two names for one image is a puzzle in `docker images`, and the address is the less
 	// useful of them. Untagging cannot delete the image: the real name still refers to it.
-	if err := runDocker(ctx, o, "rmi", mapped); err != nil && o.Notes != nil {
+	if err := runDocker(ctx, o, nil, "rmi", mapped); err != nil && o.Notes != nil {
 		fmt.Fprintf(o.Notes, "pkgcache: %s is pulled, but %s is still tagged: %v\n",
 			image, mapped, err)
 	}
 	return nil
 }
 
-func runDocker(ctx context.Context, o PullOptions, args ...string) error {
+// pullFailure explains a failed pull in terms of the image somebody asked for.
+//
+// The address in Docker's message is the cache's, because that is where the pull was
+// sent, and the status is whatever the registry behind it gave — so a repository that
+// does not exist arrives as "401 Unauthorized" against a loopback address. That reads as
+// a broken cache and is not one: Docker Hub answers 401 rather than 404 for a repository
+// it will not confirm, so that it does not leak which private repositories exist.
+//
+// Without this, the first thing anybody does is investigate the cache.
+func pullFailure(image, mapped, said string, err error) error {
+	if mapped == image {
+		return fmt.Errorf("pull %s: %w", image, err)
+	}
+	text := said + " " + err.Error()
+	hint := ""
+	for _, marker := range []string{"401", "Unauthorized", "404", "not found"} {
+		if strings.Contains(text, marker) {
+			hint = "\n  That address is this cache, and the status came from the registry" +
+				" behind it.\n  Docker Hub answers 401 for a repository that does not exist" +
+				" as well as for one that\n  is private, so check the name first:" +
+				" `docker pull " + image + "` reports the same\n  thing with no cache in" +
+				" the way."
+			break
+		}
+	}
+	return fmt.Errorf("pull %s (through %s): %w%s", image, mapped, err, hint)
+}
+
+// boundedBuffer keeps the first few KiB of what a command said. A registry error is one
+// line; anything longer is a progress display nobody needs a second copy of.
+type boundedBuffer struct{ b []byte }
+
+func (w *boundedBuffer) Write(p []byte) (int, error) {
+	if room := 8192 - len(w.b); room > 0 {
+		if len(p) < room {
+			room = len(p)
+		}
+		w.b = append(w.b, p[:room]...)
+	}
+	return len(p), nil
+}
+
+func (w *boundedBuffer) String() string { return string(w.b) }
+
+func runDocker(ctx context.Context, o PullOptions, tap io.Writer, args ...string) error {
 	command := o.Docker
 	if command == "" {
 		command = "docker"
@@ -81,6 +130,11 @@ func runDocker(ctx context.Context, o PullOptions, args ...string) error {
 	}
 	if cmd.Stderr == nil {
 		cmd.Stderr = os.Stderr
+	}
+	if tap != nil {
+		// Still shown, and also kept: the person reading the terminal needs it now and
+		// pullFailure needs it a moment later.
+		cmd.Stderr = io.MultiWriter(cmd.Stderr, tap)
 	}
 	return cmd.Run()
 }
