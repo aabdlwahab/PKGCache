@@ -9,6 +9,7 @@
 ;
 ;   pkgcache.exe      the daemon and the CLI
 ;   pkgcache-app.exe  the window and the notification-area icon
+;   pkgcache-docker.exe  docker, with build and pull served from the cache
 ;   a Start Menu shortcut, so it is launchable without a terminal
 ;   an Add/Remove Programs entry, so it is removable the way everything else is
 ;   PATH, for this user only
@@ -105,6 +106,7 @@ Section "pkgcache" SecMain
   SetOverwrite try
   File "pkgcache.exe"
   File "pkgcache-app.exe"
+  File "pkgcache-docker.exe"
   File "pkgcache.ico"
 
   WriteRegStr HKCU "Software\${NAME}" "InstallDir" "$INSTDIR"
@@ -234,6 +236,7 @@ Section "Uninstall"
 
   Delete "$INSTDIR\pkgcache.exe"
   Delete "$INSTDIR\pkgcache-app.exe"
+  Delete "$INSTDIR\pkgcache-docker.exe"
   Delete "$INSTDIR\pkgcache.ico"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"

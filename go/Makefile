@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim shim-linux shim-windows pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -146,6 +146,11 @@ app: ## Build the desktop app for this platform
 # -H windowsgui, or the app flashes a console window every time it opens — including once
 # per login, from the startup entry, which is exactly the sort of thing somebody turns off
 # and never turns back on.
+shim-windows: ## Cross-compile the docker shim for Windows
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+	  -ldflags '-s -w $(LDFLAGS)' \
+	  -o bin/pkgcache-docker-windows-amd64.exe ./cmd/pkgcache-docker
+
 app-windows: ## Cross-compile the desktop app for Windows
 	cd cmd/pkgcache-app && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
 	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
@@ -160,6 +165,19 @@ app-windows: ## Cross-compile the desktop app for Windows
 shim: ## Build the docker-compatible shim for this host
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' \
 		-o bin/pkgcache-docker ./cmd/pkgcache-docker
+
+# The names the .deb looks for, which is why this exists separately from `shim` above.
+#
+# It was a plain mismatch before: `shim` wrote bin/pkgcache-docker and the packaging
+# looked for bin/pkgcache-docker-linux-<arch>, so the shim was never packaged and the
+# installed .deb had no pkgcache-docker in it. Nothing said so, because the packaging
+# treats a missing shim as "this host did not build one" — which is right for the app and
+# wrong for this, since it is pure Go and cross-compiles anywhere.
+shim-linux: ## Cross-compile the shim for Linux, both architectures
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-docker-linux-amd64 ./cmd/pkgcache-docker
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-docker-linux-arm64 ./cmd/pkgcache-docker
 
 pkgcache-linux: ## Cross-compile pkgcache for Linux, both architectures
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
@@ -204,18 +222,20 @@ installers: pkgcache-release deb ## Build the .deb packages and stage the instal
 # The Windows installer, which cross-builds completely: makensis runs on Linux and both
 # binaries are pure Go for that target. Nothing about the Windows client needs a Windows
 # machine until somebody wants to run it.
-windows-installer: pkgcache-windows app-windows ## Build the Windows installer (needs makensis)
+windows-installer: pkgcache-windows app-windows shim-windows ## Build the Windows installer (needs makensis)
 	@command -v makensis >/dev/null || { \
 		echo "makensis is missing: dnf install mingw32-nsis, or apt install nsis" >&2; \
 		exit 1; }
 	cp bin/pkgcache-windows-amd64.exe ../packaging/windows/pkgcache.exe
 	cp bin/pkgcache-app-windows-amd64.exe ../packaging/windows/pkgcache-app.exe
+	cp bin/pkgcache-docker-windows-amd64.exe ../packaging/windows/pkgcache-docker.exe
 	cd ../packaging/windows && makensis -DVERSION=$(VERSION) pkgcache.nsi
-	rm -f ../packaging/windows/pkgcache.exe ../packaging/windows/pkgcache-app.exe
+	rm -f ../packaging/windows/pkgcache.exe ../packaging/windows/pkgcache-app.exe \
+		../packaging/windows/pkgcache-docker.exe
 	mv ../packaging/windows/pkgcache-*-setup.exe bin/
 	@echo "built bin/pkgcache-$(VERSION)-setup.exe"
 
-deb: pkgcache-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
+deb: pkgcache-linux shim-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
 	@for arch in amd64 arm64; do \
 		app="bin/pkgcache-app-linux-$$arch"; \
 		if test -f "$$app"; then \
@@ -226,7 +246,10 @@ deb: pkgcache-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for
 			app=""; \
 		fi; \
 		shim="bin/pkgcache-docker-linux-$$arch"; \
-		test -f "$$shim" || shim=""; \
+		if test ! -f "$$shim"; then \
+			echo "note: no $$shim, so the package has no docker shim"; \
+			shim=""; \
+		fi; \
 		PKGCACHE_APP="$$app" PKGCACHE_SHIM="$$shim" sh ../packaging/deb/build.sh \
 			"bin/pkgcache-linux-$$arch" "$$arch" "$(VERSION)" bin; \
 	done
