@@ -8,7 +8,7 @@ that as a step to remember.
 |---|---|---|
 | macOS | `pkgcache-<version>.pkg` | `packaging/macos/build-pkg.sh`, **on a Mac** |
 | Ubuntu / Debian | `pkgcache_<v>_<arch>.deb` and `pkgcache-desktop_<v>_<arch>.deb` | `make deb` |
-| Windows | `install.ps1` | `make installers` |
+| Windows | `pkgcache-<version>-setup.exe` | `make windows-installer` |
 | macOS / Linux (script) | `install.sh` | `make installers` |
 
 ## Two packages on Linux, one command
@@ -70,12 +70,37 @@ Built with `ar` and `tar` rather than `dpkg-deb`, so it cross-builds from any ho
 reproducibly: two builds of one binary are byte-identical, and that property is the reason
 this is still a shell script rather than nfpm.
 
+## macOS: the app bundle
+
+    cd go && make pkgcache && make app
+    ./packaging/macos/bundle.sh --install
+
+Three things exist only inside a bundle, and all three cost a debugging round while this
+was being built: notifications, because `UNUserNotificationCenter` refuses to work without
+a bundle identifier; the Dock and Launchpad icon, which comes from `CFBundleIconFile` and
+nowhere else; and being launchable by `open -a` or Spotlight at all.
+
+`pkgcache` goes *inside* the bundle, with symlinks into it from `/usr/local/bin`. An update
+replaces the bundle, so both halves of the product move together — the app talks to the
+daemon over a local API, and a mismatched pair is a bug report nobody can read.
+
+`--uninstall` removes the bundle, both symlinks and the login item, and tells you where the
+cache directory is rather than deleting it.
+
 ## Windows
 
-    .\install.ps1 -Server https://cache.internal:8443 -CaSha256 AA:BB:...
+    .\pkgcache-1.0.0-setup.exe
 
-Installs into `%LOCALAPPDATA%\Programs\pkgcache` and adds it to the user's PATH, so no
-elevation is needed.
+Per-user, so there is no UAC prompt and no administrator needed — everything lands under
+`%LOCALAPPDATA%\Programs\pkgcache` and `HKCU`. It installs both binaries, a Start Menu
+shortcut, an Add/Remove Programs entry, the PATH edit and optionally the login item, and
+`makensis -DSERVER=… -DCASHA256=…` bakes in a cache so that installing is also the setup.
+
+The uninstaller removes the login entry and the PATH edit as well as the files, which are
+the two things an uninstaller usually forgets and the two that leave a machine haunted.
+
+`install.ps1` remains as the scriptable path, for CI and for anyone who would rather not
+run an installer.
 
 ## The script, anywhere
 

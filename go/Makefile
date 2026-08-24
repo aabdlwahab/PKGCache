@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -167,6 +167,25 @@ installers: pkgcache-release deb ## Build the .deb packages and stage the instal
 # a screen. The desktop half is built only where an app binary for that architecture
 # exists — the app needs cgo, so a host that cannot build it still produces a complete
 # daemon package rather than failing.
+# The Windows installer. makensis runs on Linux, so this cross-builds like everything
+# else — but it needs both Windows binaries, and the app cannot be cross-compiled: Wails
+# needs cgo, so pkgcache-app-windows-amd64.exe comes from a Windows runner.
+windows-installer: ## Build the Windows installer (needs makensis and both .exe files)
+	@command -v makensis >/dev/null || { \
+		echo "makensis is missing: dnf install mingw32-nsis, or apt install nsis" >&2; \
+		exit 1; }
+	@test -f bin/pkgcache-windows-amd64.exe || { \
+		echo "build it first: make pkgcache-release" >&2; exit 1; }
+	@test -f bin/pkgcache-app-windows-amd64.exe || { \
+		echo "no bin/pkgcache-app-windows-amd64.exe — build it on a Windows runner" >&2; \
+		exit 1; }
+	cp bin/pkgcache-windows-amd64.exe ../packaging/windows/pkgcache.exe
+	cp bin/pkgcache-app-windows-amd64.exe ../packaging/windows/pkgcache-app.exe
+	cd ../packaging/windows && makensis -DVERSION=$(VERSION) pkgcache.nsi
+	rm -f ../packaging/windows/pkgcache.exe ../packaging/windows/pkgcache-app.exe
+	mv ../packaging/windows/pkgcache-*-setup.exe bin/
+	@echo "built bin/pkgcache-$(VERSION)-setup.exe"
+
 deb: ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
 	@test -f bin/pkgcache-linux-amd64 || { \
 		echo "build the binaries first: make pkgcache-release" >&2; exit 1; }
