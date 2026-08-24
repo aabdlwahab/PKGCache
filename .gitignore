@@ -39,6 +39,8 @@ packaging/windows/pkgcache.exe
 packaging/windows/pkgcache-app.exe
 packaging/windows/*-setup.exe
 
-# An embedded git checkout that lives here but is not part of this repository.
-# It was committed once as a bare gitlink by accident; this stops that recurring.
+# Embedded git checkouts that live here but are not part of this repository. Each was
+# committed once as a bare gitlink by a `git add -A` before this existed, which a clone
+# cannot populate and cannot explain. Anything alongside them belongs here too.
 crate/
+gamma/
