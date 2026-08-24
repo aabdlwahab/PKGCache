@@ -5,19 +5,22 @@
 # .pkg is a xar archive carrying a Bill of Materials in a binary format that only Apple's
 # tools write correctly, and a package with a subtly wrong BOM installs and then misbehaves
 # in ways that are very hard to diagnose from the receiving end. pkgbuild and productbuild
-# ship with the Command Line Tools that swiftc already came from, so the machine that can
-# build the menu bar helper can build the installer too.
+# ship with the Command Line Tools, as do sips and iconutil, so the Mac that builds the
+# app can build the installer too.
 #
 # What the package installs:
 #
-#   /usr/local/bin/pkgcache                             the cache itself
-#   /Applications/pkgcache.app                          the menu bar item, as a real app
-#   /usr/local/bin/pkgcache-menubar -> the app's binary  so `pkgcache tray` finds it
+#   /Applications/pkgcache.app                      the app, with pkgcache inside it
+#   /usr/local/bin/pkgcache      -> into the bundle
+#   /usr/local/bin/pkgcache-app  -> into the bundle
 #
-# The symlink matters: pkgcache looks for its helper beside itself and then on PATH, and
-# resolving through it means one binary rather than two copies that can drift. Launched
-# that way the helper still belongs to the bundle, which is what lets a status item behave
-# like an application rather than a stray process.
+# Both binaries live inside the bundle and both symlinks point into it. That is not
+# tidiness: an update replaces the bundle, so the daemon and the app move together. They
+# talk over a local API, and this branch has already proved that a mismatched pair is a
+# failure nobody can diagnose from the outside.
+#
+# The bundle itself is built by bundle.sh, which is also what somebody uses to install
+# from a build tree. This wraps it in a .pkg for the people who want to double-click.
 #
 # usage:
 #   ./build-pkg.sh --version 1.2.3
@@ -26,7 +29,8 @@
 # options:
 #   --binary-arm64 PATH   pkgcache for Apple Silicon  (default ../../go/bin/pkgcache-darwin-arm64)
 #   --binary-amd64 PATH   pkgcache for Intel          (default ../../go/bin/pkgcache-darwin-amd64)
-#   --swift PATH          menu bar source             (default ../../go/tools/menubar/main.swift)
+#   --app-arm64 PATH      pkgcache-app for Apple Silicon (default ../../go/bin/pkgcache-app-darwin-arm64)
+#   --app-amd64 PATH      pkgcache-app for Intel         (default ../../go/bin/pkgcache-app-darwin-amd64)
 #   --version V           package version             (default: git describe, else 0.0.0)
 #   --server URL          bake in a cache to configure on install
 #   --ca-sha256 PIN       its CA fingerprint; required with --server
@@ -39,7 +43,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ARM64="$HERE/../../go/bin/pkgcache-darwin-arm64"
 AMD64="$HERE/../../go/bin/pkgcache-darwin-amd64"
-SWIFT="$HERE/../../go/tools/menubar/main.swift"
+APP_ARM64="$HERE/../../go/bin/pkgcache-app-darwin-arm64"
+APP_AMD64="$HERE/../../go/bin/pkgcache-app-darwin-amd64"
 VERSION=""; SERVER=""; PIN=""; LIMIT="25G"
 SIGN_APP=""; SIGN_PKG=""; OUT="."
 IDENTIFIER="org.pkgreg.pkgcache"
@@ -50,7 +55,8 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--binary-arm64) ARM64="$2"; shift 2 ;;
 	--binary-amd64) AMD64="$2"; shift 2 ;;
-	--swift) SWIFT="$2"; shift 2 ;;
+	--app-arm64) APP_ARM64="$2"; shift 2 ;;
+	--app-amd64) APP_AMD64="$2"; shift 2 ;;
 	--version) VERSION="$2"; shift 2 ;;
 	--server) SERVER="$2"; shift 2 ;;
 	--ca-sha256) PIN="$2"; shift 2 ;;
@@ -66,7 +72,7 @@ done
 [ "$(uname -s)" = Darwin ] || die "this builds a macOS installer and has to run on macOS"
 command -v pkgbuild >/dev/null || die "pkgbuild is missing; install the Command Line Tools:
   xcode-select --install"
-command -v swiftc >/dev/null || die "swiftc is missing; install the Command Line Tools:
+command -v iconutil >/dev/null || die "iconutil is missing; install the Command Line Tools:
   xcode-select --install"
 [ -n "$SERVER" ] && [ -z "$PIN" ] && die "--server needs --ca-sha256"
 
@@ -106,22 +112,48 @@ Build them with \`make pkgcache-release\` and copy bin/pkgcache-darwin-* here."
 fi
 chmod 755 "$ROOT/usr/local/bin/pkgcache"
 
-# ---- the menu bar helper ----------------------------------------------------------
-echo "==> menu bar helper"
-[ -f "$SWIFT" ] || die "no menu bar source at $SWIFT"
-HELPER="$APP/Contents/MacOS/pkgcache-menubar"
-# Built per architecture and joined, so the app matches the universal binary beside it.
-if swiftc -O -target arm64-apple-macos11 -o "$WORK/menubar-arm64" "$SWIFT" 2>/dev/null &&
-   swiftc -O -target x86_64-apple-macos11 -o "$WORK/menubar-amd64" "$SWIFT" 2>/dev/null; then
-	lipo -create "$WORK/menubar-arm64" "$WORK/menubar-amd64" -output "$HELPER"
-	echo "    universal: $(lipo -archs "$HELPER")"
+# ---- the app ----------------------------------------------------------------------
+echo "==> the app"
+BINARY="$APP/Contents/MacOS/pkgcache-app"
+if [ -f "$APP_ARM64" ] && [ -f "$APP_AMD64" ]; then
+	lipo -create "$APP_ARM64" "$APP_AMD64" -output "$BINARY"
+	echo "    universal: $(lipo -archs "$BINARY")"
+elif [ -f "$APP_ARM64" ]; then
+	cp "$APP_ARM64" "$BINARY"; echo "    arm64 only"
+elif [ -f "$APP_AMD64" ]; then
+	cp "$APP_AMD64" "$BINARY"; echo "    amd64 only"
 else
-	# One architecture is better than none: a Mac that cannot cross-compile still gets a
-	# working menu bar item for itself.
-	echo "    cross-compile unavailable; building for this Mac only"
-	swiftc -O -o "$HELPER" "$SWIFT"
+	die "no pkgcache-app binary found.
+Looked for:
+  $APP_ARM64
+  $APP_AMD64
+The app needs cgo, so it is built natively rather than cross-compiled:
+  cd ../../go && make app"
 fi
-chmod 755 "$HELPER"
+chmod 755 "$BINARY"
+
+# pkgcache goes inside the bundle too, so an update moves both halves at once. The copy
+# in /usr/local/bin below is a symlink into here rather than a second file.
+cp "$ROOT/usr/local/bin/pkgcache" "$APP/Contents/MacOS/pkgcache"
+chmod 755 "$APP/Contents/MacOS/pkgcache"
+rm -f "$ROOT/usr/local/bin/pkgcache"
+
+# ---- the icon ---------------------------------------------------------------------
+#
+# Generated from the same SVG as every other icon in this project. sips and iconutil are
+# Command Line Tools, so this needs no third-party image tooling.
+echo "==> icon"
+ICON="${ICON:-$HERE/appicon-1024.png}"
+[ -f "$ICON" ] || die "no icon at $ICON"
+ICONSET="$WORK/pkgcache.iconset"
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+	sips -z "$size" "$size" "$ICON" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+	double=$((size * 2))
+	sips -z "$double" "$double" "$ICON" \
+		--out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/pkgcache.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -130,24 +162,27 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
 	<key>CFBundleName</key><string>pkgcache</string>
 	<key>CFBundleDisplayName</key><string>pkgcache</string>
-	<key>CFBundleIdentifier</key><string>$IDENTIFIER.menubar</string>
-	<key>CFBundleExecutable</key><string>pkgcache-menubar</string>
+	<key>CFBundleIdentifier</key><string>$IDENTIFIER.app</string>
+	<key>CFBundleExecutable</key><string>pkgcache-app</string>
+	<key>CFBundleIconFile</key><string>pkgcache</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$SHORT</string>
 	<key>CFBundleVersion</key><string>$NUMERIC</string>
 	<key>LSMinimumSystemVersion</key><string>11.0</string>
-	<!-- An agent: it lives in the menu bar, so it has no Dock icon, no application
-	     menu and no entry in the app switcher. Without this the status item would
-	     come with a second, redundant presence the person never asked for. -->
-	<key>LSUIElement</key><true/>
+	<!-- No LSUIElement, deliberately. The Swift helper this replaces was an agent —
+	     menu bar only, no Dock icon, no place in the app switcher. This is a real
+	     application with a window, which is the point of the exercise; see
+	     docs/client-app-plan.md. -->
 	<key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
 
-# Found beside pkgcache, resolving into the bundle. See the note at the top.
-ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache-menubar \
-	"$ROOT/usr/local/bin/pkgcache-menubar"
+# Both resolve into the bundle. See the note at the top: one update, both halves.
+ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache \
+	"$ROOT/usr/local/bin/pkgcache"
+ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache-app \
+	"$ROOT/usr/local/bin/pkgcache-app"
 
 # ---- what happens after the files land --------------------------------------------
 cat > "$SCRIPTS/postinstall" <<POSTINSTALL
@@ -195,8 +230,8 @@ cat >> "$SCRIPTS/postinstall" <<'POSTINSTALL'
 
 # A menu bar item that has to be started from a terminal is not a menu bar item. It is
 # registered to start at login and opened now, so installing is the whole of it.
-run_as_user /usr/local/bin/pkgcache tray -on-login >/dev/null 2>&1 ||
-	echo "could not register the login item; run: pkgcache tray -on-login" >&2
+run_as_user /usr/local/bin/pkgcache-app -on-login >/dev/null 2>&1 ||
+	echo "could not register the login item; run: pkgcache-app -on-login" >&2
 
 # launchctl asuser is what puts this in the person's GUI session. Plain sudo would start
 # it in root's, where a menu bar has nowhere to appear.
@@ -209,7 +244,7 @@ fi
 
 echo ""
 echo "pkgcache is in your menu bar, and will be there when you log in."
-echo "To stop that:  pkgcache tray -off-login"
+echo "To stop that:  pkgcache-app -off-login"
 exit 0
 POSTINSTALL
 chmod 755 "$SCRIPTS/postinstall"
@@ -219,9 +254,11 @@ if [ -n "$SIGN_APP" ]; then
 	echo "==> signing the app"
 	# The helper is signed inside the bundle, then the bundle itself: a nested binary
 	# signed after its container invalidates the container's signature.
-	codesign --force --options runtime --timestamp -s "$SIGN_APP" "$HELPER"
+	codesign --force --options runtime --timestamp -s "$SIGN_APP" \
+		"$APP/Contents/MacOS/pkgcache"
+	codesign --force --options runtime --timestamp -s "$SIGN_APP" \
+		"$APP/Contents/MacOS/pkgcache-app"
 	codesign --force --options runtime --timestamp -s "$SIGN_APP" "$APP"
-	codesign --force --options runtime --timestamp -s "$SIGN_APP" "$ROOT/usr/local/bin/pkgcache"
 	codesign --verify --deep --strict --verbose=2 "$APP"
 fi
 
@@ -238,9 +275,9 @@ COMPONENT="$WORK/component.pkg"
 # system whether a copy of this bundle identifier already exists anywhere and, if one does,
 # installs the update *there* instead of where the payload says. For an ordinary app that
 # is a courtesy to somebody who keeps their apps in a different folder. Here it is a trap:
-# /usr/local/bin/pkgcache-menubar is an absolute symlink into /Applications/pkgcache.app,
-# so an install redirected anywhere else leaves that symlink dangling and `pkgcache tray`
-# fails — invisibly, because a GUI launch has no stderr anybody reads.
+# /usr/local/bin/pkgcache and /usr/local/bin/pkgcache-app are absolute symlinks into
+# /Applications/pkgcache.app, so an install redirected anywhere else leaves both dangling:
+# no cache, no app, and no stderr anybody reads because a GUI launch has none.
 cat > "$WORK/component.plist" <<COMPONENTPLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

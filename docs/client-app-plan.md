@@ -30,7 +30,8 @@ Wails v3 beta.12 held on both platforms, which was the one genuine risk in this 
 | `cmd/pkgcache-app` — the Wails app | compiles on macOS and Linux; **runs** — window, menu bar icon, working menu |
 | macOS app bundle (`packaging/macos/bundle.sh`) | written, not run — needs `sips`/`iconutil` |
 | **Phase 5 cutover** | **done** — 1,944 lines deleted, suite green |
-| Windows NSIS installer, `build-pkg.sh` rewrite | not started |
+| Windows installer (`packaging/windows/pkgcache.nsi`) | written, not compiled — needs `makensis` |
+| `build-pkg.sh` rewritten for the app | written, not run — needs a Mac |
 
 ### What real apt does with this
 
@@ -278,6 +279,15 @@ measured against it:
 | `.deb` | yes | *optional* | **no** | `.desktop` | **no** | **no** | `dpkg -r` |
 | `install.ps1` | yes | **no** | **no** | **no** | **no** | yes | **no** |
 | `install.sh` | yes | **no** | **no** | **no** | **no** | yes | **no** |
+
+And where it stands now — every cell filled, though only the Linux column is verified:
+
+| | binary | app | icon | launcher entry | autostart | configures | uninstall |
+|---|---|---|---|---|---|---|---|
+| macOS `.pkg` / `bundle.sh` | yes | yes | `.icns` | Applications | yes | yes | yes |
+| `.deb` ×2 | yes | yes | scalable SVG | `.desktop` | `/etc/xdg/autostart` | via `install.sh` | `apt remove` |
+| Windows `setup.exe` | yes | yes | `.ico` | Start Menu | yes | yes | Add/Remove |
+| `install.sh` | yes | via apt | yes | yes | yes | yes | `apt remove` |
 
 The `.deb` postinst currently ends by printing two more commands to run. That is the
 patchwork feeling, stated out loud by the software itself.
