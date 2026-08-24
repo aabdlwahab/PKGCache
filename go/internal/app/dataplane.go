@@ -163,6 +163,12 @@ func (a *App) serveUnified(w http.ResponseWriter, r *http.Request) {
 		a.Console.ServeHTTP(w, r)
 		return
 	}
+	// Before the data plane, which would otherwise read "/apt/..." as a request for a
+	// project named "apt" and answer with a 404 from the wrong subsystem.
+	if aptPath(r.URL.EscapedPath()) {
+		a.serveApt(w, r)
+		return
+	}
 	switch r.URL.EscapedPath() {
 	case "/healthz":
 		a.unifiedHealth(w, r)

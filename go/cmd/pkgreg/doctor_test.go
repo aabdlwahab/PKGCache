@@ -1,13 +1,19 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/feed"
 )
 
 // doctorOn runs the real command against a data directory and reports the error it
@@ -173,7 +179,7 @@ func initializedDataDir(t *testing.T, overrideYAML string) string {
 func TestHelpIsNotAnError(t *testing.T) {
 	for _, command := range []string{
 		"serve", "init", "doctor", "audit", "checkpoint", "rollback", "export",
-		"import", "lockwarm", "gc", "evict", "publish-client", "version",
+		"import", "lockwarm", "gc", "evict", "publish-client", "publish-apt", "version",
 	} {
 		for _, form := range []string{"-h", "--help"} {
 			t.Run(command+" "+form, func(t *testing.T) {
@@ -251,5 +257,126 @@ func TestExitCodeMapping(t *testing.T) {
 		if got := exitCode(tc.err); got != tc.want {
 			t.Errorf("exitCode(%v) = %d, want %d", tc.err, got, tc.want)
 		}
+	}
+}
+
+// The apt repository check answers, on the server, the question apt asks on every client.
+// These are the two failures worth catching: a signature that does not verify, and an
+// index that has been rewritten since the Release covering it was signed.
+
+// publishTestRepo writes a small signed repository into a data directory.
+func publishTestRepo(t *testing.T, dataDir string) {
+	t.Helper()
+	control := "Package: pkgcache\nVersion: 1.2.0\nArchitecture: amd64\n" +
+		"Maintainer: pkgreg <root@localhost>\nDescription: test\n"
+
+	var tarball bytes.Buffer
+	zip := gzip.NewWriter(&tarball)
+	archive := tar.NewWriter(zip)
+	body := []byte(control)
+	if err := archive.WriteHeader(&tar.Header{
+		Name: "./control", Mode: 0o644, Size: int64(len(body)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archive.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zip.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var deb bytes.Buffer
+	deb.WriteString("!<arch>\n")
+	member := func(name string, content []byte) {
+		fmt.Fprintf(&deb, "%-16s%-12d%-6d%-6d%-8o%-10d`\n", name, 0, 0, 0, 0o644, len(content))
+		deb.Write(content)
+		if len(content)%2 == 1 {
+			deb.WriteByte('\n')
+		}
+	}
+	member("debian-binary", []byte("2.0\n"))
+	member("control.tar.gz", tarball.Bytes())
+	member("data.tar.gz", []byte("payload"))
+
+	source := t.TempDir()
+	path := filepath.Join(source, "pkgcache_1.2.0_amd64.deb")
+	if err := os.WriteFile(path, deb.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err := feed.GenerateKey(feed.KeyOptions{
+		Name: "test", Email: "t@example.invalid", Algorithm: feed.KeyEd25519,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := feed.WriteRepository(feed.RepoOptions{
+		Root: feed.RepoDir(dataDir), Debs: []string{path}, Key: key,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDoctorAcceptsAFreshlyPublishedRepository(t *testing.T) {
+	dataDir := t.TempDir()
+	publishTestRepo(t, dataDir)
+
+	d := &diagnosis{}
+	d.checkAptRepository(dataDir)
+	if d.failures != 0 || d.warnings != 0 {
+		t.Errorf("a good repository should pass cleanly:\n%s",
+			strings.Join(d.lines, "\n"))
+	}
+	if !strings.Contains(strings.Join(d.lines, "\n"), "verifies") {
+		t.Errorf("the check should say what it verified:\n%s",
+			strings.Join(d.lines, "\n"))
+	}
+}
+
+func TestDoctorIsQuietWhenNothingIsPublished(t *testing.T) {
+	// The normal state of most instances, and not a fault.
+	d := &diagnosis{}
+	d.checkAptRepository(t.TempDir())
+	if d.failures != 0 || d.warnings != 0 {
+		t.Errorf("an instance with no repository is healthy:\n%s",
+			strings.Join(d.lines, "\n"))
+	}
+}
+
+func TestDoctorCatchesARewrittenIndex(t *testing.T) {
+	// This is the failure that would otherwise surface as a hash mismatch on somebody
+	// else's laptop, with a message that names neither end of the problem.
+	dataDir := t.TempDir()
+	publishTestRepo(t, dataDir)
+
+	index := filepath.Join(feed.RepoDir(dataDir),
+		"dists", "stable", "main", "binary-amd64", "Packages")
+	if err := os.WriteFile(index, []byte("Package: something-else\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &diagnosis{}
+	d.checkAptRepository(dataDir)
+	if d.failures == 0 {
+		t.Fatalf("a rewritten index must fail the check:\n%s", strings.Join(d.lines, "\n"))
+	}
+}
+
+func TestDoctorCatchesAMissingKeyring(t *testing.T) {
+	// A signed repository nobody can verify is one nobody can install from.
+	dataDir := t.TempDir()
+	publishTestRepo(t, dataDir)
+	if err := os.Remove(filepath.Join(feed.RepoDir(dataDir),
+		"pkgcache-archive-keyring.asc")); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &diagnosis{}
+	d.checkAptRepository(dataDir)
+	if d.failures == 0 {
+		t.Fatalf("a missing keyring must fail the check:\n%s", strings.Join(d.lines, "\n"))
 	}
 }

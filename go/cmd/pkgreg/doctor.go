@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -17,6 +20,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/buildinfo"
 	"github.com/aabdlwahab/PKGCache/internal/clientrelease"
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/feed"
 	"github.com/aabdlwahab/PKGCache/internal/pki"
 	consoleweb "github.com/aabdlwahab/PKGCache/internal/web"
 )
@@ -82,6 +86,7 @@ exit status:
 	d.checkGit(ctx)
 	d.checkConsole()
 	d.checkClientDownloads(snap.DataDir)
+	d.checkAptRepository(snap.DataDir)
 	d.checkFileLimits()
 
 	d.report()
@@ -397,6 +402,73 @@ func (d *diagnosis) checkClientDownloads(dataDir string) {
 		d.ok("clients", fmt.Sprintf(
 			"%d platform binaries published with matching checksums", total))
 	}
+}
+
+// checkAptRepository asks, on the server, the question apt will ask on every client.
+//
+// The failure this catches is quiet and total: a Release whose recorded hash no longer
+// matches the index beside it, or a signature that does not verify, produces a repository
+// every machine refuses — and refuses with a message about hashes that tells the person
+// reading it nothing about which end is wrong. Answering it here means the operator finds
+// out while looking at the server rather than from somebody whose `apt update` broke.
+func (d *diagnosis) checkAptRepository(dataDir string) {
+	root := feed.RepoDir(dataDir)
+	signed, err := os.ReadFile(filepath.Join(root, "dists", "stable", "InRelease"))
+	if errors.Is(err, os.ErrNotExist) {
+		// Not a fault. Plenty of instances never publish packages, and the ones that do
+		// have to start somewhere.
+		d.ok("apt", "no repository published (`pkgreg publish-apt` creates one)")
+		return
+	}
+	if err != nil {
+		d.warn("apt", "cannot read the published repository: "+err.Error())
+		return
+	}
+	public, err := os.ReadFile(filepath.Join(root, "pkgcache-archive-keyring.asc"))
+	if err != nil {
+		d.fail("apt", "the repository is signed but publishes no keyring, so no client can\n"+
+			"    verify it — re-run `pkgreg publish-apt`")
+		return
+	}
+	release, err := feed.VerifyClearSigned(public, signed)
+	if err != nil {
+		d.fail("apt", "InRelease does not verify against the published keyring: "+err.Error()+
+			"\n    Every client will refuse this repository — re-run `pkgreg publish-apt`")
+		return
+	}
+
+	// The signature covers Release; Release covers the indexes by hash. An index that has
+	// been rewritten since the signature will verify here and fail on every client, so the
+	// hashes are the half worth checking.
+	suite := filepath.Join(root, "dists", "stable")
+	indexes, stale := 0, []string{}
+	for _, line := range strings.Split(string(release), "\n") {
+		if !strings.HasPrefix(line, " ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		// " <sha256> <size> <path>", and only the SHA256 section carries 64-hex digests.
+		if len(fields) != 3 || len(fields[0]) != 64 {
+			continue
+		}
+		body, readErr := os.ReadFile(filepath.Join(suite, filepath.FromSlash(fields[2])))
+		if readErr != nil {
+			stale = append(stale, fields[2]+" (missing)")
+			continue
+		}
+		indexes++
+		if sum := sha256.Sum256(body); hex.EncodeToString(sum[:]) != fields[0] {
+			stale = append(stale, fields[2])
+		}
+	}
+	if len(stale) > 0 {
+		d.fail("apt", "these indexes do not match the hashes Release vouches for: "+
+			strings.Join(stale, ", ")+
+			"\n    Every client will report a hash mismatch — re-run `pkgreg publish-apt`")
+		return
+	}
+	d.ok("apt", fmt.Sprintf(
+		"repository verifies: %d index(es) match a signed Release", indexes))
 }
 
 func (d *diagnosis) checkFileLimits() {
