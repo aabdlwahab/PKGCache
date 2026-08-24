@@ -30,7 +30,7 @@ Wails v3 beta.12 held on both platforms, which was the one genuine risk in this 
 | `cmd/pkgcache-app` — the Wails app | compiles on macOS and Linux; **runs** — window, menu bar icon, working menu |
 | macOS app bundle (`packaging/macos/bundle.sh`) | written, not run — needs `sips`/`iconutil` |
 | **Phase 5 cutover** | **done** — 1,944 lines deleted, suite green |
-| Windows installer (`packaging/windows/pkgcache.nsi`) | written, not compiled — needs `makensis` |
+| Windows installer (`packaging/windows/pkgcache.nsi`) | **compiles clean**, 12 MB `setup.exe`; never run on Windows |
 | `build-pkg.sh` rewritten for the app | written, not run — needs a Mac |
 
 ### What real apt does with this
@@ -192,6 +192,22 @@ lines each: find the app, start it, or explain that it is not installed. `widget
 falls back to a chromeless browser window on a machine that took the daemon package and
 not the desktop one, which is what it did before any of the helpers existed.
 
+### Windows, which turned out to be free
+
+The app cross-compiles for Windows with `CGO_ENABLED=0`, and `makensis` runs on Linux, so
+the entire Windows client — both binaries and the installer — builds on the same host as
+everything else. Nothing about it needs a Windows machine until somebody wants to *run* it.
+
+Two defects came out of compiling it rather than assuming:
+
+- The app built as a **console** executable, so it would have flashed a terminal on every
+  launch, including once per login from the startup entry. `-H windowsgui` fixes it — the
+  same flag the helper it replaces already carried, and which was lost in the rewrite.
+- `MUI_FUNCTION_DESCRIPTION_BEGIN` without `MUI_PAGE_COMPONENTS` is eight makensis
+  warnings and one real gap: the section descriptions had nowhere to appear, and neither
+  did the checkboxes for PATH and the login item. An installer that adds a startup entry
+  without asking is one people uninstall.
+
 ### Still unknown
 
 Whether the widget renders inside the window. Five launches have each got further — no window, then a crash,
@@ -239,7 +255,10 @@ Requirements, all of which are already met or nearly so:
 - Linux: `gcc`, `gtk4` and `webkitgtk-6.0`, or GTK3 and WebKit2GTK 4.1 under `-tags gtk3`.
   Ubuntu 24.04 — the target the current helper is already specialised to — has both.
 - macOS 10.15+ with the Command Line Tools, which is what builds the Swift helper today.
-- Windows: the WebView2 runtime, which is what `go-webview2` needs today.
+- Windows: the WebView2 runtime at run time, and **nothing at build time** — Wails reaches
+  it through COM rather than a C wrapper, so the app is pure Go for that target and
+  cross-compiles from any host. This was wrong in an earlier draft of this plan, which
+  assumed cgo everywhere and sent the Windows build to a Windows runner it never needed.
 
 **It is beta.** As of August 2026 Wails v3 has not cut 3.0. The desktop API is declared
 stable and it is in production use, but this is the one genuine risk in the plan, and

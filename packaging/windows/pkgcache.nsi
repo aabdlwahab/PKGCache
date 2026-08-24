@@ -50,7 +50,6 @@ ShowUninstDetails show
 ; Without these the ${StrStr} and ${StrRep} below are undefined macros, which is a
 ; compile error rather than a silent one, but only for somebody who runs makensis.
 ${StrStr}
-${StrRep}
 ${UnStrRep}
 
 !define MUI_ICON "pkgcache.ico"
@@ -59,6 +58,11 @@ ${UnStrRep}
 !define MUI_FINISHPAGE_RUN "$INSTDIR\pkgcache-app.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open pkgcache"
 
+; Components before directory: PATH and the login item are genuinely optional, and an
+; installer that adds a startup entry without asking is one people uninstall. The
+; descriptions below are written for this page — without it makensis warns that they have
+; nowhere to go, which is how their absence was noticed.
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH

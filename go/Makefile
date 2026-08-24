@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app windows-installer test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -137,6 +137,24 @@ app: ## Build the desktop app for this platform
 	     exit 1 ;; \
 	esac
 
+# Windows cross-compiles, and this is the one platform where it can.
+#
+# Wails' Windows backend reaches WebView2 through COM rather than a C wrapper, so it is
+# pure Go: CGO_ENABLED=0 and the .exe builds on any host. Linux and macOS both need their
+# platform's toolchain and are built natively.
+#
+# -H windowsgui, or the app flashes a console window every time it opens — including once
+# per login, from the startup entry, which is exactly the sort of thing somebody turns off
+# and never turns back on.
+app-windows: ## Cross-compile the desktop app for Windows
+	cd cmd/pkgcache-app && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+	  -ldflags '-s -w -H windowsgui $(LDFLAGS)' \
+	  -o ../../bin/pkgcache-app-windows-amd64.exe .
+
+pkgcache-windows: ## Cross-compile pkgcache itself for Windows
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-windows-amd64.exe ./cmd/pkgcache
+
 pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
@@ -167,17 +185,12 @@ installers: pkgcache-release deb ## Build the .deb packages and stage the instal
 # a screen. The desktop half is built only where an app binary for that architecture
 # exists — the app needs cgo, so a host that cannot build it still produces a complete
 # daemon package rather than failing.
-# The Windows installer. makensis runs on Linux, so this cross-builds like everything
-# else — but it needs both Windows binaries, and the app cannot be cross-compiled: Wails
-# needs cgo, so pkgcache-app-windows-amd64.exe comes from a Windows runner.
-windows-installer: ## Build the Windows installer (needs makensis and both .exe files)
+# The Windows installer, which cross-builds completely: makensis runs on Linux and both
+# binaries are pure Go for that target. Nothing about the Windows client needs a Windows
+# machine until somebody wants to run it.
+windows-installer: pkgcache-windows app-windows ## Build the Windows installer (needs makensis)
 	@command -v makensis >/dev/null || { \
 		echo "makensis is missing: dnf install mingw32-nsis, or apt install nsis" >&2; \
-		exit 1; }
-	@test -f bin/pkgcache-windows-amd64.exe || { \
-		echo "build it first: make pkgcache-release" >&2; exit 1; }
-	@test -f bin/pkgcache-app-windows-amd64.exe || { \
-		echo "no bin/pkgcache-app-windows-amd64.exe — build it on a Windows runner" >&2; \
 		exit 1; }
 	cp bin/pkgcache-windows-amd64.exe ../packaging/windows/pkgcache.exe
 	cp bin/pkgcache-app-windows-amd64.exe ../packaging/windows/pkgcache-app.exe

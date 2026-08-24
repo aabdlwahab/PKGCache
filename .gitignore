@@ -33,3 +33,8 @@ packaging/**/*.deb
 # What the removed Python stack's Docker builds left behind. Root-owned, so it takes
 # `sudo rm -rf webui` to clear; ignored until then so it does not sit in every status.
 /webui/
+
+# Staged into the NSIS build and removed again; never committed.
+packaging/windows/pkgcache.exe
+packaging/windows/pkgcache-app.exe
+packaging/windows/*-setup.exe
