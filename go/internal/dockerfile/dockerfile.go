@@ -363,6 +363,14 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 }
 
 // mapImage returns the cache path for a Docker image reference, or "" to leave it.
+// MapImage rewrites one image reference to fetch through a cache at registry, or returns
+// "" for a reference that should be left alone.
+//
+// Exported for `pkgcache pull`, which needs exactly the rewrite a FROM line gets — an
+// image pulled by hand and an image pulled by a build should resolve to the same bytes,
+// and two implementations of this would eventually disagree about which.
+func MapImage(ref, registry string) string { return mapImage(ref, registry) }
+
 func mapImage(ref, registry string) string {
 	switch {
 	case registry == "", ref == "", ref == "scratch":

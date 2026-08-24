@@ -52,6 +52,7 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache shell` | the same, as a child shell; type `exit` to leave |
 | `pkgcache env` | print the exports, for a shell that has to keep them |
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
+pkgcache pull alpine:3.20      # a pull through the cache, still named alpine:3.20
 | `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
 | `pkgcache project` | the projects this cache serves: `ls`, `create`, `rm`, `use` |
 | `pkgcache limit 25G \| none` | change the budget later |

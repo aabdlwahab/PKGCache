@@ -274,3 +274,33 @@ func TestHTTPSCacheIsNotMarkedTrusted(t *testing.T) {
 		t.Errorf("an HTTPS cache was marked insecure:\n%s", out)
 	}
 }
+
+// MapImage is exported for `pkgcache pull`, which needs the rewrite a FROM line gets.
+// These are the cases that command meets on a command line rather than in a Dockerfile.
+func TestMapImageForPull(t *testing.T) {
+	const registry = "127.0.0.1:41780"
+	for _, testCase := range []struct{ ref, want string }{
+		// The most common image in the world, and the one whose tag colon used to read
+		// as a port and leave it pointing at Docker Hub.
+		{"alpine:3.20", registry + "/dockerhub/library/alpine:3.20"},
+		{"alpine", registry + "/dockerhub/library/alpine"},
+		// An org image is not an official one and does not gain library/.
+		{"grafana/grafana:11.0.0", registry + "/dockerhub/grafana/grafana:11.0.0"},
+		{"ghcr.io/astral-sh/uv:latest", registry + "/ghcr/astral-sh/uv:latest"},
+		{"quay.io/oauth2-proxy/oauth2-proxy:v7", registry + "/quay/oauth2-proxy/oauth2-proxy:v7"},
+		{"docker.io/library/redis:7", registry + "/dockerhub/library/redis:7"},
+		// Left alone, each for its own reason: a registry this cache does not serve,
+		// the empty base, and a name the author is choosing themselves.
+		{"example.com/private/thing:1", ""},
+		{"scratch", ""},
+		{"$BASE_IMAGE", ""},
+	} {
+		if got := MapImage(testCase.ref, registry); got != testCase.want {
+			t.Errorf("MapImage(%q) = %q, want %q", testCase.ref, got, testCase.want)
+		}
+	}
+	// No cache address means no rewrite, rather than a reference beginning with a slash.
+	if got := MapImage("alpine:3.20", ""); got != "" {
+		t.Errorf("with no registry, MapImage = %q, want empty", got)
+	}
+}
