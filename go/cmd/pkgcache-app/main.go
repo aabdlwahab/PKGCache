@@ -274,6 +274,10 @@ func run(background, onLogin, offLogin bool) error {
 var (
 	windowMu sync.Mutex
 	window   application.Window
+	// windowIsError marks a window showing why the cache could not be reached rather than
+	// the cache itself. Such a window is thrown away and rebuilt on the next request,
+	// because the reason it exists is usually one command away from being fixed.
+	windowIsError bool
 	// app is the running application, kept here because the single-instance callback is
 	// constructed inside the call that produces it and so cannot name the local. It is
 	// only ever read after Run has started, which is the only time any of these fire.
@@ -294,48 +298,62 @@ func openWindow(ctx context.Context, core *appcore.Core) {
 		windowMu.Lock()
 		defer windowMu.Unlock()
 
-		if window != nil {
+		switch {
+		case window != nil && !windowIsError:
 			window.Show()
 			window.Focus()
 			return
+		case window != nil:
+			// An error window, and somebody has asked again — which usually means they
+			// have just fixed the thing it was complaining about. Thrown away so the
+			// address is resolved afresh below. It carries no closing hook, so this
+			// really closes rather than hiding.
+			window.Close()
+			window, windowIsError = nil, false
+		}
+
+		options := application.WebviewWindowOptions{
+			Name:             "pkgcache",
+			Title:            "pkgcache",
+			Width:            420,
+			Height:           660,
+			BackgroundColour: application.NewRGB(16, 21, 26),
 		}
 
 		url, err := core.WindowURL(ctx, tray.ActionWidget)
 		if err != nil {
-			// Not fatal, and not silent: the address is the useful half of the answer,
-			// and over SSH or in a container it is the whole of it.
+			// Into the window, not only to stderr. The Windows build is linked
+			// -H windowsgui and has no console at all, so anything printed here reaches
+			// nobody — and these messages are the useful kind, naming the command that
+			// answers them. Loading the cache's address instead produces a webview error
+			// about a refused connection, which explains nothing and is what somebody
+			// actually saw.
 			fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
-			// The configured address rather than a bound one, which is a guess: a daemon
-			// that took an ephemeral port is not on it. Said out loud below for that
-			// reason — "Load failed" in a webview names neither the address nor the
-			// reason, and this is the only place that knows both.
-			url = core.FallbackURL()
-			fmt.Fprintf(os.Stderr,
-				"pkgcache-app: falling back to %s, which may not be where the cache is\n", url)
+			options.HTML = errorHTML(err)
+			windowIsError = true
 		} else {
 			fmt.Fprintf(os.Stderr, "pkgcache-app: window on %s\n", url)
-		}
-
-		created := app.Window.NewWithOptions(application.WebviewWindowOptions{
-			Name:   "pkgcache",
-			Title:  "pkgcache",
-			Width:  420,
-			Height: 660,
 			// The console is already a complete UI served on the loopback port, so the
 			// app loads it rather than carrying a second copy of the same HTML.
-			URL:              url,
-			BackgroundColour: application.NewRGB(16, 21, 26),
-		})
+			options.URL = url
+		}
+
+		created := app.Window.NewWithOptions(options)
 
 		// Closing hides it rather than destroying it. This is a status bar application:
 		// the icon stays whatever the window does, and a closed window that had been
 		// destroyed would leave the variable above pointing at something Wails has torn
 		// down — the next click would then be reaching into freed memory, which is the
 		// same class of fault as the one this shape exists to avoid.
-		created.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-			created.Hide()
-			e.Cancel()
-		})
+		//
+		// Not for an error window: that one is meant to be disposable.
+		if !windowIsError {
+			created.RegisterHook(events.Common.WindowClosing,
+				func(e *application.WindowEvent) {
+					created.Hide()
+					e.Cancel()
+				})
+		}
 
 		window = created
 		window.Show()
