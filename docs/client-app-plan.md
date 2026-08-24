@@ -92,10 +92,21 @@ the same mistake — touching the application before `app.Run()` had built it:
 Both now wait for `events.Common.ApplicationStarted`, which is the first moment either is
 safe. No test could have caught these: they need a running application, and CI has none.
 
+Launching it again got past the crash and into a third fault, this one macOS's rather than
+ours: `UNUserNotificationCenter` refuses to work without a bundle identifier, so a bare
+binary cannot post notifications — and Wails treats a service that fails to start as
+fatal. "No notifications" became "the app does not launch", which is the wrong way round
+for the least important thing on the surface. The service is now registered only where it
+can work, and the app says so and carries on.
+
+That also settles something the plan had left implicit: **the macOS `.app` bundle is not
+packaging polish, it is a runtime requirement.** Notifications only exist inside one.
+
 ### Still unknown
 
-Whether it *behaves*. The fix compiles on Ubuntu 24.04; nobody has yet watched the window
-appear, the icon land in the bar, or the menu grey out correctly when the daemon sleeps.
+Whether it *behaves*. Each fix compiles on Ubuntu 24.04, but nobody has yet watched the
+window appear, the icon land in the menu bar, or the menu grey out correctly when the
+daemon sleeps.
 
 ## The split
 

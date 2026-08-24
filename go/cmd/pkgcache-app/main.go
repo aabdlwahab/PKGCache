@@ -99,12 +99,26 @@ func run(background, onLogin, offLogin bool) error {
 
 	ctx := context.Background()
 	core := appcore.New(snapshot)
-	notifier := notifications.New()
+
+	// Registered only where it can work. See notificationsAvailable: on macOS this needs
+	// a bundle identifier, and Wails makes a service that fails to start fatal — which
+	// would turn "no notifications" into "the app does not launch".
+	var (
+		notifier *notifications.NotificationService
+		services []application.Service
+	)
+	if notificationsAvailable() {
+		notifier = notifications.New()
+		services = append(services, application.NewService(notifier))
+	} else {
+		fmt.Fprintln(os.Stderr,
+			"pkgcache-app: no app bundle, so no notifications — the tooltip says the same things")
+	}
 
 	app := application.New(application.Options{
 		Name:        "pkgcache",
 		Description: "A package cache for this machine",
-		Services:    []application.Service{application.NewService(notifier)},
+		Services:    services,
 		// One icon in the bar, not one per launch. Clicking a launcher twice, or the
 		// login entry racing a manual start, should reach the app that is already there.
 		SingleInstance: &application.SingleInstanceOptions{
@@ -174,6 +188,13 @@ func run(background, onLogin, offLogin bool) error {
 			}
 		})
 
+		if notifier == nil {
+			// Nothing to say it to, but Observe is still called: it is what records the
+			// edge, and skipping it entirely would leave the next poll comparing against
+			// a state from before whatever just happened.
+			core.Observe(state)
+			return
+		}
 		for _, note := range core.Observe(state) {
 			// Best effort. A machine with no notification daemon — a bare window manager,
 			// a container — is not a broken machine, and the tooltip still says the same
