@@ -111,6 +111,9 @@ flags:
 	// A base image that already exists here is not rewritten: it may be one this build
 	// or a previous one produced, with no upstream to be fetched from.
 	options.LocalImage = clientbuild.DefaultLocalImage("")
+	// Indexes this cache serves, so a Dockerfile naming one directly — an
+	// --extra-index-url for a CUDA torch build, say — is served from here too.
+	options.Indexes = clientbuild.DiscoverIndexes(ctx, state.BaseURL(), options.Project)
 	options.GitHosts = splitList(*gitHosts)
 	options = clientbuild.FromEnvironment(options)
 

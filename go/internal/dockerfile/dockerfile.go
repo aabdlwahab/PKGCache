@@ -20,6 +20,7 @@ import (
 	"net"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -80,6 +81,17 @@ type Options struct {
 	// the cache by itself — a registry mirror makes this rewrite redundant, and a
 	// rewrite nobody needs is a parsing risk nobody needs.
 	SkipFrom bool
+
+	// Indexes maps an upstream package index's origin URL to the cache's name for it,
+	// so a Dockerfile that names one directly is served from here instead.
+	//
+	// PIP_INDEX_URL covers the default index and nothing else. A build that adds
+	// `--extra-index-url https://download.pytorch.org/whl/cu130` has named a second one
+	// on the command line, and that one went straight past the cache — which for a torch
+	// wheel is several gigabytes, the largest single download in the build.
+	//
+	// Keyed on the origin as configured, matched with or without a trailing slash.
+	Indexes map[string]string
 
 	// LocalImage reports whether a reference already names an image on this machine.
 	//
@@ -237,10 +249,16 @@ func Rewrite(source []byte, options Options) (Result, error) {
 			}
 		case options.Mode == CacheAddress && isRun(item.text):
 			replaced, mounted := mountCA(item.text)
+			replaced, indexed := rewriteIndexURLs(replaced, options)
 			rewritten = append(rewritten, replaced)
 			result.NeedsSecret = result.NeedsSecret || mounted
+			result.Changes = append(result.Changes, indexed...)
 		default:
-			rewritten = append(rewritten, item.text)
+			// An index URL is worth replacing wherever it appears: an ARG default, an
+			// --extra-index-url written inline, a pip.conf written by a RUN.
+			replaced, indexed := rewriteIndexURLs(item.text, options)
+			rewritten = append(rewritten, replaced)
+			result.Changes = append(result.Changes, indexed...)
 		}
 	}
 
@@ -286,6 +304,42 @@ func apkToPlainHTTP() string {
 func apkRestore() string {
 	return "RUN if [ -f " + apkBackup + " ]; then mv " + apkBackup +
 		" /etc/apk/repositories; fi"
+}
+
+// rewriteIndexURLs points a directly named package index at the cache.
+//
+// The injected PIP_INDEX_URL and UV_DEFAULT_INDEX cover the default index and nothing
+// else. A Dockerfile that writes an index URL itself — `--extra-index-url` on a uv or pip
+// command, or an ARG holding one — has named a second index that those variables do not
+// touch, and it went straight to the internet. For a CUDA torch wheel that is several
+// gigabytes fetched past a cache that was sitting right there.
+//
+// Only indexes the cache actually serves are replaced. Rewriting an unknown one would
+// point the build at a path that 404s, which is worse than letting it go upstream.
+//
+// Sorted longest first, so an origin that is a prefix of another cannot claim its URL.
+func rewriteIndexURLs(line string, o Options) (string, []Change) {
+	if len(o.Indexes) == 0 || o.Base == "" || o.Project == "" {
+		return line, nil
+	}
+	origins := make([]string, 0, len(o.Indexes))
+	for origin := range o.Indexes {
+		origins = append(origins, origin)
+	}
+	sort.Slice(origins, func(i, j int) bool { return len(origins[i]) > len(origins[j]) })
+
+	var changes []Change
+	for _, origin := range origins {
+		trimmed := strings.TrimRight(origin, "/")
+		if trimmed == "" || !strings.Contains(line, trimmed) {
+			continue
+		}
+		target := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/pypi/" +
+			strings.Trim(o.Indexes[origin], "/") + "/+simple"
+		line = strings.ReplaceAll(line, trimmed, target)
+		changes = append(changes, Change{From: trimmed, To: target})
+	}
+	return line, changes
 }
 
 // buildArgs is the block declared after every FROM.

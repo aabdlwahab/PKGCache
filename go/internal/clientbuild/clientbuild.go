@@ -14,10 +14,12 @@ package clientbuild
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +62,10 @@ type Options struct {
 	// Runner executes the docker command. Injected so the tests never need Docker.
 	Runner func(ctx context.Context, name string, args []string) error
 
+	// Indexes maps an upstream package index origin to the cache's name for it, so a
+	// Dockerfile naming one directly is served from here. DiscoverIndexes asks the cache.
+	Indexes map[string]string
+
 	// LocalImage reports whether a base image already exists on this machine, so a
 	// locally built base is not rewritten into a registry reference for something that
 	// was never published. Nil means the check is skipped; DefaultLocalImage asks Docker.
@@ -97,6 +103,52 @@ func FromEnvironment(o Options) Options {
 	return o
 }
 
+// DiscoverIndexes asks a running cache which package indexes it serves, as origin URL to
+// index name.
+//
+// From the cache rather than from a table here, because an operator can add one — a
+// pytorch build for a CUDA version this project has never heard of, a private wheelhouse
+// — and a build should pick that up without a new release of this program.
+//
+// Best effort: a cache that cannot be asked is not a reason to fail a build, it only
+// means the directly named indexes go upstream as they always did.
+func DiscoverIndexes(ctx context.Context, base, project string) map[string]string {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(base, "/")+"/api/v1/projects/"+project+"/upstreams", nil)
+	if err != nil {
+		return nil
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return nil
+	}
+	var body struct {
+		Upstreams []struct {
+			Eco     string `json:"eco"`
+			Name    string `json:"name"`
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"upstreams"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, upstream := range body.Upstreams {
+		// pypi only: this exists for index URLs, and an npm registry or an OCI origin
+		// written into a Dockerfile is a different rewrite with a different path shape.
+		if upstream.Eco != "pypi" || !upstream.Enabled || upstream.URL == "" {
+			continue
+		}
+		out[upstream.URL] = upstream.Name
+	}
+	return out
+}
+
 // DefaultLocalImage asks the container command whether a reference is already an image
 // here, for Options.LocalImage.
 //
@@ -124,7 +176,7 @@ func (o Options) rewriteOptions() (dockerfile.Options, error) {
 	options := dockerfile.Options{
 		Project: o.Project, AptProxy: o.AptProxy,
 		GitHosts: o.GitHosts, SkipFrom: o.SkipFrom,
-		LocalImage: o.LocalImage,
+		LocalImage: o.LocalImage, Indexes: o.Indexes,
 	}
 	if o.CacheAddress {
 		if o.Server == "" {

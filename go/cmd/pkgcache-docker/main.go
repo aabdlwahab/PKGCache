@@ -144,6 +144,8 @@ func runBuild(
 		// every service FROM it. Rewriting that name sends the build to a registry for
 		// something never published.
 		LocalImage: clientbuild.DefaultLocalImage(docker),
+		Indexes: clientbuild.DiscoverIndexes(ctx, state.BaseURL(),
+			local.CurrentProject(snapshot.DataDir)),
 	}
 	// clientbuild names "docker" when it runs the build. A Runner that substitutes the
 	// command is how this program can sit in front of podman or nerdctl, which is the

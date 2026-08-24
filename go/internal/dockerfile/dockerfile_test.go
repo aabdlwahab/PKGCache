@@ -493,3 +493,82 @@ func TestSplitTagKnowsAPortFromATag(t *testing.T) {
 		}
 	}
 }
+
+// An index the Dockerfile names itself. PIP_INDEX_URL covers the default index and
+// nothing else, so `--extra-index-url https://download.pytorch.org/whl/cu130` named a
+// second one that went straight past the cache — several gigabytes for a CUDA torch
+// wheel, the largest single download in that build.
+func TestDirectlyNamedIndexesArePointedAtTheCache(t *testing.T) {
+	options := Options{
+		Project: "global", Base: "http://127.0.0.1:41777", Registry: "127.0.0.1:41777",
+		Mode: Bridge,
+		Indexes: map[string]string{
+			"https://download.pytorch.org/whl/cu130": "root/pytorch-cu130",
+			"https://pypi.org/simple":                "root/pypi",
+		},
+	}
+	source := "FROM python:3.12-slim\n" +
+		"ARG TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu130\n" +
+		"RUN uv pip install --extra-index-url \"${TORCH_CUDA_INDEX}\" torch\n"
+
+	result, err := Rewrite([]byte(source), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	if strings.Contains(body, "https://download.pytorch.org") {
+		t.Errorf("the pytorch index still points upstream:\n%s", body)
+	}
+	if !strings.Contains(body,
+		"http://127.0.0.1:41777/global/pypi/root/pytorch-cu130/+simple") {
+		t.Errorf("the pytorch index was not pointed at the cache:\n%s", body)
+	}
+	// Reported, because a tool that silently alters what gets built is one people stop
+	// trusting — the same rule the FROM rewrite follows.
+	var reported bool
+	for _, change := range result.Changes {
+		if strings.Contains(change.From, "download.pytorch.org") {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("the substitution was not reported: %+v", result.Changes)
+	}
+}
+
+func TestUnknownIndexesAreLeftUpstream(t *testing.T) {
+	// Rewriting an index the cache does not serve would point the build at a path that
+	// 404s, which is worse than letting it go upstream.
+	result, err := Rewrite([]byte(
+		"FROM python:3.12-slim\nRUN pip install --extra-index-url https://wheels.example.com/x y\n"),
+		Options{
+			Project: "global", Base: "http://127.0.0.1:41777", Registry: "127.0.0.1:41777",
+			Mode:    Bridge,
+			Indexes: map[string]string{"https://download.pytorch.org/whl/cu130": "root/pytorch-cu130"},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Content), "https://wheels.example.com/x") {
+		t.Errorf("an index the cache does not serve was rewritten:\n%s", result.Content)
+	}
+}
+
+// An origin that is a prefix of another must not claim its URL.
+func TestLongerIndexOriginWins(t *testing.T) {
+	result, err := Rewrite([]byte(
+		"FROM python:3.12-slim\nARG I=https://download.pytorch.org/whl/cu130\n"),
+		Options{
+			Project: "global", Base: "http://c", Registry: "c", Mode: Bridge,
+			Indexes: map[string]string{
+				"https://download.pytorch.org/whl":       "root/pytorch",
+				"https://download.pytorch.org/whl/cu130": "root/pytorch-cu130",
+			},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Content), "root/pytorch-cu130/+simple") {
+		t.Errorf("the shorter origin claimed the URL:\n%s", result.Content)
+	}
+}
