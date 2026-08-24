@@ -63,6 +63,10 @@ func (c *Core) UseDaemon(path string) { c.daemon = path }
 func (c *Core) ensure(ctx context.Context, start bool) (local.State, error) {
 	return local.Ensure(ctx, local.EnsureOptions{
 		Snapshot: c.snap, Executable: c.daemon, NoStart: !start,
+		// Set exactly when a daemon binary was named, which is the app's case and not
+		// the CLI's. Without it the version check treats every poll as an upgrade and
+		// stops the cache two seconds after starting it.
+		DifferentBinary: c.daemon != "",
 	})
 }
 

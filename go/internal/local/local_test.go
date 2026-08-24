@@ -361,6 +361,79 @@ func TestVersionMismatchReplacesTheDaemon(t *testing.T) {
 	}
 }
 
+// The desktop app is a different binary from the daemon it starts, so their versions
+// legitimately differ. Without DifferentBinary the check above reads that as an upgrade
+// on every call — and on the NoStart path it stopped the cache two seconds after starting
+// it, forever, which is what the app actually did.
+func TestDifferentBinaryKeepsADaemonOfAnotherVersion(t *testing.T) {
+	snap := testSnapshot(t, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	first, err := Ensure(ctx, EnsureOptions{Snapshot: snap, Executable: os.Args[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopDaemon(t, snap.DataDir) })
+
+	// As though the daemon were pkgcache and the caller were pkgcache-app: a running,
+	// healthy cache whose version is not this build's.
+	stale := first
+	stale.Version = "0.0.1-a-different-binary"
+	if err := WriteState(snap.DataDir, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := Ensure(ctx, EnsureOptions{
+		Snapshot: snap, Executable: os.Args[0], DifferentBinary: true,
+	})
+	if err != nil {
+		t.Fatalf("a healthy daemon of another version should be used, not refused: %v", err)
+	}
+	if second.PID != first.PID {
+		t.Error("the daemon was replaced; a different binary is not a stale one")
+	}
+}
+
+// The same call on the poll path, which is where this actually bit: the app reads state
+// every two seconds and must never stop the cache as a side effect of looking at it.
+func TestDifferentBinaryDoesNotStopTheDaemonWhenOnlyLooking(t *testing.T) {
+	snap := testSnapshot(t, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	running, err := Ensure(ctx, EnsureOptions{Snapshot: snap, Executable: os.Args[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopDaemon(t, snap.DataDir) })
+
+	stale := running
+	stale.Version = "0.0.1-a-different-binary"
+	if err := WriteState(snap.DataDir, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		if _, err := Ensure(ctx, EnsureOptions{
+			Snapshot: snap, Executable: os.Args[0], NoStart: true, DifferentBinary: true,
+		}); err != nil {
+			t.Fatalf("looking at the cache reported it gone: %v", err)
+		}
+	}
+	// Still the same daemon, still answering.
+	after, err := ReadState(snap.DataDir)
+	if err != nil {
+		t.Fatalf("the daemon's state is gone: %v", err)
+	}
+	if after.PID != running.PID {
+		t.Errorf("polling replaced the daemon: was %d, now %d", running.PID, after.PID)
+	}
+	if !after.Alive(ctx) {
+		t.Error("polling left the cache not answering")
+	}
+}
+
 // A busy fixed port must not be fatal, and must not be silent either: settings written
 // by `pkgcache persist` name the fixed port and cannot follow a daemon that moved.
 func TestPortFallbackIsAnnounced(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,6 +81,19 @@ flags:
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// Refused rather than ignored. flag.Parse leaves positional arguments alone, so
+	// `pkgcache-app status` used to open a window and say nothing — and somebody reaching
+	// for the CLI on this binary is going to try `status`, `serve` or `setup` before they
+	// try anything else. Twice, during the debugging of this very program.
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr,
+			"pkgcache-app: %q is not something this program does — it is the window and the\n"+
+				"  status bar icon, and it takes no commands. The cache itself is `pkgcache`:\n"+
+				"      pkgcache %s\n",
+			flag.Arg(0), strings.Join(flag.Args(), " "))
+		os.Exit(2)
+	}
 
 	if err := run(*background, *onLogin, *offLogin); err != nil {
 		fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)

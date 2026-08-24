@@ -147,6 +147,28 @@ it was solving a real second problem — and closing the window now hides it rat
 destroying it, since a destroyed window would leave the package variable pointing at freed
 memory.
 
+The seventh launch produced a window, our icon in the menu bar, a working menu — and
+"Load failed" in the page. The daemon log is what explained it, and the explanation was
+the worst kind: a design invariant this plan broke without noticing.
+
+`local.Ensure` compares the running daemon's version against `buildinfo.Get().Version` —
+*the calling process's* version — and stops the daemon when they differ. `spawn`'s own
+comment says why that is safe: "a client and the daemon it starts are always the same
+build, because the client re-executes itself." The app is a different binary. So the check
+fired on every call, and on the `NoStart` path that the poll loop uses, every tick stopped
+the cache. The log shows it plainly: three `ready` lines in seven seconds and no shutdown
+line between them.
+
+`EnsureOptions.DifferentBinary` says the caller is a different program, so a daemon whose
+version does not match is normal rather than stale. Keeping the daemon's version honest is
+pkgcache's own business — any `pkgcache` command replaces a stale one — and an app that is
+only watching should not be policing it. Two regression tests cover it, one of them
+specifically the poll path.
+
+This is the fault worth remembering out of all of them. Every other one was a mistake
+inside the new code; this one was correct code elsewhere whose stated precondition the
+split quietly removed.
+
 ### Still unknown
 
 Whether the widget renders. Five launches have each got further — no window, then a crash,

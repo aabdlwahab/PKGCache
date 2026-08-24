@@ -31,6 +31,20 @@ type EnsureOptions struct {
 	// NoStart returns ErrNoDaemon rather than starting one. `pkgcache status` uses it:
 	// asking whether the cache is running should not be the thing that starts it.
 	NoStart bool
+	// DifferentBinary declares that Executable is a different program from the caller,
+	// so a daemon whose version does not match this build is normal rather than stale.
+	//
+	// This exists because the version check below assumes what spawn's comment states:
+	// that a client and its daemon are the same build, because the client re-executes
+	// itself. The desktop app broke that — it is its own binary and starts pkgcache — and
+	// without this the check fires on every single call. On the NoStart path that meant
+	// stopping the daemon every two seconds, restarting it, and stopping it again, which
+	// looks from the outside like a cache that will not stay up.
+	//
+	// Keeping the daemon's version honest is then pkgcache's own business: any pkgcache
+	// command will notice a stale daemon and replace it. An app that is only watching
+	// should not be policing it.
+	DifferentBinary bool
 }
 
 // Ensure returns a daemon that is serving this cache, starting one if necessary.
@@ -48,7 +62,7 @@ func Ensure(ctx context.Context, o EnsureOptions) (State, error) {
 		case !state.Alive(ctx):
 			// Stale: the daemon died without tidying up. Nothing to do here — the file
 			// is replaced by whoever starts the next one.
-		case state.Version != buildinfo.Get().Version:
+		case !o.DifferentBinary && state.Version != buildinfo.Get().Version:
 			// An upgraded binary talking to a daemon from the previous version is the
 			// one way this design can serve yesterday's behaviour indefinitely, since
 			// nothing else ever restarts it.
@@ -85,8 +99,8 @@ func Ensure(ctx context.Context, o EnsureOptions) (State, error) {
 
 	// Someone else may have started one while we waited for the lock. This second look
 	// is what turns twenty spawns into one.
-	if state, err := ReadState(dataDir); err == nil &&
-		state.Alive(ctx) && state.Version == buildinfo.Get().Version {
+	if state, err := ReadState(dataDir); err == nil && state.Alive(ctx) &&
+		(o.DifferentBinary || state.Version == buildinfo.Get().Version) {
 		return state, nil
 	}
 
