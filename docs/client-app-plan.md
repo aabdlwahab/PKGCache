@@ -49,7 +49,7 @@ is the whole claim of the two-package split, demonstrated rather than argued.
 ### What building it found
 
 The app was written against the Wails API read from the module source, without a compiler.
-Three real defects came out of that, all fixed:
+Two real defects came out of that, both fixed:
 
 - `MenuItem.SetLabel` and `SetEnabled` do **not** marshal onto the UI thread, unlike
   `SystemTray.SetTooltip`, which does. Updating the menu from the poll ticker without
@@ -57,12 +57,20 @@ Three real defects came out of that, all fixed:
   about.
 - `showWindow` may start a cold daemon, which the client waits up to thirty seconds for.
   On the UI thread that is a frozen menu.
-- **`MACOSX_DEPLOYMENT_TARGET` has to be set.** Go links a darwin binary at a minimum of
-  11.0, but cgo hands the Objective-C to clang with no floor, so those objects are built
-  for whatever SDK the Mac has — 26.0 on a current one. The linker warns and then produces
-  a binary claiming to support 11.0 while containing objects that do not, which is exactly
-  the promise `build-pkg.sh` writes into `LSMinimumSystemVersion`. Set to 11.0 to match.
-  *Reasoned from the linker warnings; not yet confirmed silent on a Mac.*
+Only two, in fact. A third thing I reported as a defect was not one, and the correction
+is worth keeping written down:
+
+- The macOS build prints twenty-five `built for newer 'macOS' version` linker warnings. I
+  read those as a binary promising macOS 11.0 support it did not have — a crash on older
+  Macs that would never reproduce on a new one. `otool -l` says otherwise: the linked
+  binary declares `minos 11.0`, which is exactly what `build-pkg.sh` writes into
+  `LSMinimumSystemVersion`. The two already agreed and there was no defect.
+  `CGO_CFLAGS=-mmacosx-version-min=11.0` takes the twenty-five warnings down to one, which
+  is worth doing so real warnings stay visible, but it is tidying and not a fix. Six of
+  Wails' darwin files pass only `-x objective-c` and compile against the host SDK; the
+  survivor is Go's own runtime object at 13.0. `MACOSX_DEPLOYMENT_TARGET` does nothing
+  here — clang ignores it wherever `-mmacosx-version-min` is already given, which for
+  Wails is nearly everywhere.
 
 A fourth finding shaped the design rather than fixing a bug: `getDownload` in the control
 API matches filenames against a strict single-segment grammar, so it **cannot** serve

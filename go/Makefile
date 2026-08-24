@@ -114,13 +114,22 @@ window-windows: ## Build the Windows application-window helper (cross-compiles)
 # cross-compilation target.
 GOARCH ?= $(shell go env GOARCH)
 
-# The macOS floor, and it has to be stated rather than left to default.
+# The macOS floor handed to cgo, which is noise reduction and nothing more.
 #
-# Go links a darwin binary with a minimum of 11.0, but cgo hands the Objective-C to clang
-# with no floor at all, so those objects are built for whatever SDK the machine has — on a
-# current Mac, macOS 26. The linker warns about the mismatch and then produces a binary
-# claiming to support 11.0 while containing objects that do not. Setting this makes both
-# halves agree, and 11.0 is the number build-pkg.sh already puts in LSMinimumSystemVersion.
+# The linked binary declares minos 11.0 — matching the LSMinimumSystemVersion that
+# build-pkg.sh writes — so nothing here is load-bearing. What it fixes is a wall of
+# linker warnings: Wails sets -mmacosx-version-min in most of its darwin #cgo CFLAGS
+# but six files pass only -x objective-c, so those compile against whatever SDK the Mac
+# has (macOS 26 on a current one) and the linker complains about each. Twenty-five
+# warnings become one, and a build whose output is legible is a build whose real warnings
+# get read.
+#
+# The survivor is Go's own runtime object, built for 13.0, which no flag here reaches.
+# Raising the floor to silence it would narrow the Macs this runs on to buy tidier
+# output, which is the wrong trade.
+#
+# MACOSX_DEPLOYMENT_TARGET does not work for this: clang ignores it wherever
+# -mmacosx-version-min is already given, which for Wails is nearly everywhere.
 MACOS_MIN ?= 11.0
 
 app: ## Build the desktop app for this platform
@@ -135,7 +144,7 @@ app: ## Build the desktop app for this platform
 	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
 	      -o bin/pkgcache-app-linux-$(GOARCH) ./cmd/pkgcache-app ;; \
 	  Darwin) \
-	    MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN) \
+	    CGO_CFLAGS="-mmacosx-version-min=$(MACOS_MIN)" \
 	    go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
 	      -o bin/pkgcache-app-darwin-$(GOARCH) ./cmd/pkgcache-app ;; \
 	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \

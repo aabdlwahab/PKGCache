@@ -22,7 +22,7 @@ sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev
 go build -o ../../bin/pkgcache-app-linux-amd64 .
 
 # macOS — needs the Command Line Tools
-MACOSX_DEPLOYMENT_TARGET=11.0 go build -o ../../bin/pkgcache-app-darwin-arm64 .
+CGO_CFLAGS="-mmacosx-version-min=11.0" go build -o ../../bin/pkgcache-app-darwin-arm64 .
 
 # Windows — needs the WebView2 runtime at run time, nothing extra to build
 go build -o ../../bin/pkgcache-app-windows-amd64.exe .
@@ -48,11 +48,14 @@ Two things in that wiring are load-bearing and easy to undo by accident:
   object on whatever goroutine calls them. The ticker is not that thread.
 - **`showWindow` runs off the UI thread.** It may start a cold daemon, which the client
   waits up to thirty seconds for. On the UI thread that is a frozen menu.
-- **`MACOSX_DEPLOYMENT_TARGET` is not optional on macOS.** Go links a darwin binary with a
-  minimum of 11.0, but cgo hands the Objective-C to clang with no floor, so those objects
-  are built for whatever SDK the machine has. Without it the linker prints a screen of
-  "built for newer macOS version" warnings and then produces a binary that claims to
-  support 11.0 while containing objects that do not.
+- **`CGO_CFLAGS=-mmacosx-version-min=11.0` on macOS is cosmetic, not correctness.** The
+  linked binary declares `minos 11.0` either way, matching what `build-pkg.sh` puts in
+  `LSMinimumSystemVersion`. The flag exists because six of Wails' darwin files pass only
+  `-x objective-c` and so compile against the host SDK, and the linker then prints
+  twenty-five "built for newer macOS version" warnings that bury anything real. With it,
+  one remains — Go's own runtime object at 13.0, which no flag here reaches.
+  `MACOSX_DEPLOYMENT_TARGET` does nothing: clang ignores it wherever
+  `-mmacosx-version-min` is already given.
 
 ## The rule
 
