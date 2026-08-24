@@ -77,11 +77,25 @@ API matches filenames against a strict single-segment grammar, so it **cannot** 
 `dists/stable/InRelease`. The repository needed its own handler, which is why the signing
 key is a sibling of the served tree rather than inside it.
 
+### What running it found
+
+It crashed on launch, and the traceback paid for itself twice over. Both faults were in
+the same mistake — touching the application before `app.Run()` had built it:
+
+- `application.InvokeSync` reaches `dispatchOnMainThread`, which dereferences an `impl`
+  that `Run` is what creates. The poll goroutine raced `Run` and panicked with a nil
+  pointer on its first tick.
+- `WebviewWindow.Show` returns *silently* when that same `impl` is nil. So the initial
+  window show was not early — it never happened. Had the panic not fired first, the app
+  would have come up with no window and no explanation, which is the harder bug of the two.
+
+Both now wait for `events.Common.ApplicationStarted`, which is the first moment either is
+safe. No test could have caught these: they need a running application, and CI has none.
+
 ### Still unknown
 
-Nobody has watched the app run. It compiles on both platforms and its logic is tested, but
-whether the window appears, the icon lands in the bar, and the menu greys correctly when
-the daemon sleeps are all unobserved.
+Whether it *behaves*. The fix compiles on Ubuntu 24.04; nobody has yet watched the window
+appear, the icon land in the bar, or the menu grey out correctly when the daemon sleeps.
 
 ## The split
 

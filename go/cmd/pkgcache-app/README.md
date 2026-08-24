@@ -41,7 +41,14 @@ what a menu item should say, and whether something has changed enough to interru
 somebody — and it has no toolkit in it, so it is tested on machines with no display. What
 is left here is the wiring.
 
-Two things in that wiring are load-bearing and easy to undo by accident:
+Three things in that wiring are load-bearing and easy to undo by accident:
+
+- **Nothing touches the application before `ApplicationStarted`.** `InvokeSync` reaches
+  `dispatchOnMainThread`, which dereferences an `impl` that `app.Run()` creates — calling
+  it earlier is a nil-pointer panic, not a wait. And `WebviewWindow.Show` returns
+  *silently* when that same `impl` is nil, so showing the window before `Run` does not
+  happen early, it does not happen at all. The first cost a crash on launch; the second
+  cost a window that never appeared and said nothing about why.
 
 - **Menu updates go through `application.InvokeSync`.** `SystemTray.SetTooltip` marshals
   itself; `MenuItem.SetLabel` and `SetEnabled` do not — they reach into the platform menu

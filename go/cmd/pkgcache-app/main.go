@@ -28,6 +28,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/local"
 	"github.com/aabdlwahab/PKGCache/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/icons"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
@@ -185,20 +186,31 @@ func run(background, onLogin, offLogin bool) error {
 		}
 	}
 
-	if !background {
-		showWindow(ctx, core)
-	}
-
-	// One goroutine, and it only ever reads. Wails marshals the calls it makes back onto
-	// the UI thread itself, which is the reason this can be this plain.
-	go func() {
-		refresh()
-		ticker := time.NewTicker(pollInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			refresh()
-		}
-	}()
+	// Everything that touches the running application waits for it to be running.
+	//
+	// Both halves of this were bugs, and both were invisible until it was launched.
+	// InvokeSync reaches globalApplication.dispatchOnMainThread, which dereferences an
+	// impl that app.Run() is what creates — so a poll started before Run panics with a
+	// nil pointer rather than waiting. And WebviewWindow.Show returns silently when that
+	// same impl is nil, so showing the window early is not early, it simply never
+	// happens: the app would have come up with no window and no explanation.
+	//
+	// ApplicationStarted fires once the platform application exists, which is the first
+	// moment either is safe.
+	app.Event.OnApplicationEvent(events.Common.ApplicationStarted,
+		func(*application.ApplicationEvent) {
+			if !background {
+				showWindow(ctx, core)
+			}
+			go func() {
+				refresh()
+				ticker := time.NewTicker(pollInterval)
+				defer ticker.Stop()
+				for range ticker.C {
+					refresh()
+				}
+			}()
+		})
 
 	return app.Run()
 }
