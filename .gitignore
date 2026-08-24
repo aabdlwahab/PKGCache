@@ -38,3 +38,7 @@ packaging/**/*.deb
 packaging/windows/pkgcache.exe
 packaging/windows/pkgcache-app.exe
 packaging/windows/*-setup.exe
+
+# An embedded git checkout that lives here but is not part of this repository.
+# It was committed once as a bare gitlink by accident; this stops that recurring.
+crate/
