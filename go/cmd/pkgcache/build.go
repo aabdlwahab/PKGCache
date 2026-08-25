@@ -113,9 +113,7 @@ flags:
 	}
 	options.AptProxy = state.BaseURL()
 	if autoGateway && options.HostAddress {
-		_, port, _ := strings.Cut(state.Addr, ":")
-		fmt.Fprintln(os.Stderr,
-			clientbuild.GatewayNote(clientbuild.DefaultHostGateway+":"+port))
+		fmt.Fprintln(os.Stderr, clientbuild.GatewayNote(clientbuild.GatewayAuthority(state.Addr)))
 	}
 	// A base image that already exists here is not rewritten: it may be one this build
 	// or a previous one produced, with no upstream to be fetched from.

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
 	"github.com/aabdlwahab/PKGCache/internal/config"
@@ -89,11 +88,10 @@ flags:
 	}
 	registry := state.Addr
 	if gateway {
-		_, port, found := strings.Cut(state.Addr, ":")
-		if !found {
+		registry = clientbuild.GatewayAuthority(state.Addr)
+		if registry == "" {
 			return fmt.Errorf("pull: cannot read a port from %q", state.Addr)
 		}
-		registry = clientbuild.DefaultHostGateway + ":" + port
 		if !flagGiven(fs, "host-address") {
 			fmt.Fprintln(os.Stderr, clientbuild.GatewayNote(registry))
 		}

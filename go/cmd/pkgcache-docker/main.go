@@ -21,11 +21,12 @@
 //	*       handed to docker untouched. run, ps, save, load, image inspect, compose —
 //	        everything else is not this program's business and is not slowed down by it.
 //
-// On Docker Desktop, WSL, or any daemon that cannot see this terminal's network, set
-// PKGCACHE_HOST_ADDRESS=1 so builds reach the cache by host.docker.internal instead of
-// loopback. There is no flag for it: the caller is another program's --runtime setting,
-// and an environment variable is the only channel that reaches here without that program
-// having to know about it.
+// Which address the cache is reached on is worked out rather than configured: a daemon
+// that cannot see this terminal's network — Docker Desktop, WSL, a VM — is given
+// host.docker.internal, and a daemon on this host is given loopback. That matters more
+// here than anywhere else, because the caller is another program's --runtime setting and
+// nobody is watching for a flag to add. PKGCACHE_HOST_ADDRESS=1 or =0 overrides the
+// decision where derivation cannot see the setup.
 //
 // It is deliberately not a general docker proxy. It does not parse docker's flags beyond
 // finding the verb, and it never rewrites a command it does not recognise.
@@ -110,18 +111,33 @@ func run(ctx context.Context, args []string) int {
 		return passthrough(ctx, docker, args)
 	}
 
+	// Decided once, for both verbs. The pull path used to skip this question entirely
+	// and always name loopback, which on macOS is an address the daemon cannot dial —
+	// so `crate prepare --runtime pkgcache-docker` fetched every image straight past the
+	// cache it was pointed at, and said `connection refused` while doing it.
+	gateway := clientbuild.GatewayDefault(ctx, docker)
+	if value, set := os.LookupEnv("PKGCACHE_HOST_ADDRESS"); set {
+		gateway = truthy(value)
+	}
+	registry := state.Addr
+	if gateway {
+		if authority := clientbuild.GatewayAuthority(state.Addr); authority != "" {
+			registry = authority
+		}
+	}
+
 	switch verb {
 	case "build":
-		return runBuild(ctx, snapshot, state, docker, args)
+		return runBuild(ctx, snapshot, state, docker, args, gateway)
 	default:
-		return runPull(ctx, state, docker, args)
+		return runPull(ctx, registry, docker, args)
 	}
 }
 
 // runBuild rewrites the Dockerfile and hands the build to docker.
 func runBuild(
 	ctx context.Context, snapshot *config.Snapshot, state local.State, docker string,
-	args []string,
+	args []string, gateway bool,
 ) int {
 	options := clientbuild.Options{
 		Bridge:   state.BaseURL(),
@@ -129,16 +145,11 @@ func runBuild(
 		Project:  local.CurrentProject(snapshot.DataDir),
 		AptProxy: state.BaseURL(),
 		GitHosts: []string{"github.com", "gitlab.com"},
-		// Loopback by default, which is what a native Linux daemon can reach and what
-		// `pkgcache build` also defaults to.
-		//
-		// host.docker.internal is the opposite trade and not a safe default: Docker
-		// Desktop and WSL resolve it and a native Linux daemon does not, so choosing it
-		// here fails with a DNS error on the commonest setup. There is no flag to pass —
-		// the caller is another program's --runtime — so the switch is an environment
-		// variable, which is the one channel that reaches this without going through
-		// crate.
-		HostAddress: truthy(os.Getenv("PKGCACHE_HOST_ADDRESS")),
+		// Neither address is a safe default on its own: host.docker.internal fails with
+		// a DNS error on a native Linux daemon, and loopback fails with connection
+		// refused on every Mac. So it is derived from what this daemon actually is —
+		// see clientbuild.NeedsHostGateway — and settled by the caller in run().
+		HostAddress: gateway,
 		// A base that is already here is left alone. This is the case the shim exists
 		// for: an orchestrator that builds a shared base image first and then builds
 		// every service FROM it. Rewriting that name sends the build to a registry for
@@ -168,7 +179,7 @@ func runBuild(
 }
 
 // runPull fetches each image through the cache, leaving docker's own flags alone.
-func runPull(ctx context.Context, state local.State, docker string, args []string) int {
+func runPull(ctx context.Context, registry, docker string, args []string) int {
 	rest := without(args, "pull")
 	var images, flags []string
 	for _, argument := range rest {
@@ -188,7 +199,7 @@ func runPull(ctx context.Context, state local.State, docker string, args []strin
 		return passthrough(ctx, docker, args)
 	}
 	if err := clientbuild.Pull(ctx, images[0], clientbuild.PullOptions{
-		Registry: state.Addr, Docker: docker, Notes: os.Stderr,
+		Registry: registry, Docker: docker, Notes: os.Stderr,
 	}); err != nil {
 		return fail(err)
 	}

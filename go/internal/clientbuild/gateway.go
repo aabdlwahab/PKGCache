@@ -73,6 +73,19 @@ func GatewayDefault(ctx context.Context, docker string) bool {
 	return NeedsHostGateway(ctx, runtime.GOOS, DockerInfo(docker))
 }
 
+// GatewayAuthority swaps a cache address for the name a container resolves this machine
+// by, keeping the port. "127.0.0.1:41780" becomes "host.docker.internal:41780".
+//
+// Empty when there is no port to keep, which is a caller's bug rather than a state a
+// person can reach: every address this is given comes from a listener that bound one.
+func GatewayAuthority(address string) string {
+	_, port, found := strings.Cut(address, ":")
+	if !found {
+		return ""
+	}
+	return DefaultHostGateway + ":" + port
+}
+
 // GatewayNote is the one line a command prints when it chose the gateway itself.
 //
 // Said rather than done silently: the address a pull goes through is then not the one
