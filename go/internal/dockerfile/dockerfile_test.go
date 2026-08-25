@@ -572,3 +572,27 @@ func TestLongerIndexOriginWins(t *testing.T) {
 		t.Errorf("the shorter origin claimed the URL:\n%s", result.Content)
 	}
 }
+
+// A cold cache is slower than the CDN the client defaults were chosen for. uv allows a
+// request 30 seconds; a 366 MB CUDA wheel took 142 through this cache on first fetch and
+// 0.1 on the next. At the default the first build times out, retries ten times, and
+// reports a server error for a cache that was working correctly.
+func TestClientTimeoutsAllowForAColdCache(t *testing.T) {
+	result, err := Rewrite([]byte("FROM python:3.12-slim\nRUN pip install x\n"), Options{
+		Project: "global", Base: "http://127.0.0.1:41780", Registry: "127.0.0.1:41780",
+		Mode: Bridge,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	for _, want := range []string{"ARG UV_HTTP_TIMEOUT=", "ARG PIP_TIMEOUT="} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s is missing, so a slow first fetch fails:\n%s", want, body)
+		}
+	}
+	// Bounded, not disabled: a request that hangs forever is its own kind of failure.
+	if strings.Contains(body, "TIMEOUT=0") {
+		t.Error("the timeout was disabled rather than raised")
+	}
+}

@@ -342,6 +342,12 @@ func rewriteIndexURLs(line string, o Options) (string, []Change) {
 	return line, changes
 }
 
+// slowFetchSeconds is how long a client should wait for one artifact through the cache.
+//
+// It bounds a single request, not a build: ten minutes of no progress on one file is a
+// stall worth failing, and anything less fails a genuinely slow first fetch instead.
+const slowFetchSeconds = "600"
+
 // buildArgs is the block declared after every FROM.
 //
 // ARG rather than ENV throughout: a RUN reads an ARG exactly as it reads an ENV, but
@@ -356,6 +362,19 @@ func buildArgs(o Options) []string {
 		"ARG PIP_INDEX_URL=" + index,
 		"ARG UV_DEFAULT_INDEX=" + index,
 		"ARG NPM_CONFIG_REGISTRY=" + npm,
+		// A cold cache is slower than the CDN these defaults were chosen for.
+		//
+		// uv gives a request 30 seconds and pip 15. That is generous against
+		// files.pythonhosted.org and not against a cache that is fetching the artifact
+		// upstream for the first time — a 366 MB CUDA wheel from pypi.nvidia.com took
+		// 142 seconds through this cache and 0.1 seconds on the next request. At the
+		// default, the first build times out, retries ten times, and reports a server
+		// error for a cache that was working exactly as intended.
+		//
+		// Raised rather than removed: a request that hangs forever is its own failure,
+		// and ten minutes is long enough for any single artifact on a slow upstream.
+		"ARG UV_HTTP_TIMEOUT=" + slowFetchSeconds,
+		"ARG PIP_TIMEOUT=" + slowFetchSeconds,
 	}
 	// pip refuses a plain-HTTP index unless the host is loopback, and it refuses it by
 	// *ignoring the index* — the error is "no matching distribution", which reads as a
