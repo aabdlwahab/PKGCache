@@ -34,9 +34,15 @@ packaging/**/*.deb
 # `sudo rm -rf webui` to clear; ignored until then so it does not sit in every status.
 /webui/
 
-# Staged into the NSIS build and removed again; never committed.
+# Staged into the NSIS build and removed again; never committed. The list has to match
+# what the makensis step copies in — a build that fails partway leaves whatever it had
+# already staged, and an untracked pkgcache-docker.exe in a `git status` is a puzzle
+# rather than a clue.
 packaging/windows/pkgcache.exe
 packaging/windows/pkgcache-app.exe
+packaging/windows/pkgcache-docker.exe
+packaging/windows/LICENSE.txt
+packaging/windows/NOTICE.txt
 packaging/windows/*-setup.exe
 
 # Embedded git checkouts that live here but are not part of this repository. Each was
