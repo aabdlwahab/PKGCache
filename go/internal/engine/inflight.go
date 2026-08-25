@@ -245,6 +245,50 @@ func (f *Fetch) Reader(ctx context.Context) (io.ReadCloser, error) {
 	return &follower{fetch: f, ctx: ctx}, nil
 }
 
+// maxResumeAttempts bounds how many times one artifact may be picked up again.
+//
+// Five, because the failure this exists for is an origin that drops a long transfer
+// partway, and each attempt keeps everything that arrived. An origin dropping it five
+// times in a row is not having a bad minute, it is unusable, and saying so beats
+// retrying until somebody notices.
+const maxResumeAttempts = 5
+
+// resumable reports whether an interrupted transfer is worth picking up again.
+//
+// Only when the length is known: without one there is no way to tell a truncation from a
+// body that has genuinely ended, and re-requesting a complete response would append it to
+// itself. And only when something arrived — an attempt that read nothing is a connection
+// problem, not a transfer to continue.
+func (e *Engine) resumable(total, written int64, attempt int) bool {
+	return total > 0 && written > 0 && written < total && attempt < maxResumeAttempts
+}
+
+// resume re-opens an artifact from the byte the last attempt reached.
+func (e *Engine) resume(
+	ctx context.Context, req upstream.Request, from int64,
+) (*http.Response, context.CancelFunc, error) {
+	ranged := req
+	ranged.Headers = req.Headers.Clone()
+	if ranged.Headers == nil {
+		ranged.Headers = http.Header{}
+	}
+	ranged.Headers.Set("Range", "bytes="+strconv.FormatInt(from, 10)+"-")
+
+	resp, cancel, err := e.pool.Open(ctx, ranged)
+	if err != nil {
+		return nil, nil, err
+	}
+	// 206 is the answer being asked for. A 200 means the origin ignored the Range and is
+	// starting over, which would duplicate everything already written — refused rather
+	// than corrupting the staging file, and the digest check would have caught it anyway.
+	if resp.StatusCode != http.StatusPartialContent {
+		_ = resp.Body.Close()
+		cancel()
+		return nil, nil, fmt.Errorf("origin answered %d, not 206", resp.StatusCode)
+	}
+	return resp, cancel, nil
+}
+
 // follower tail-follows the staging file.
 type follower struct {
 	fetch  *Fetch
@@ -429,7 +473,9 @@ func (e *Engine) stream(
 	if err != nil {
 		return "", 0, err
 	}
-	defer cancel()
+	// Named closures, not `defer cancel()`: a resume below swaps both, and the deferred
+	// call must release whichever response is the live one when this returns.
+	defer func() { cancel() }()
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -474,31 +520,77 @@ func (e *Engine) stream(
 	defer bufPool.Put(bufp)
 	buf := *bufp
 
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
-				return "", 0, werr
+	// Read the body, and pick up where it stopped if it stops early.
+	//
+	// A large artifact from a slow origin does not always arrive in one connection. A
+	// 423 MB CUDA wheel from pypi.nvidia.com was measured ending after 25 MB, and ending
+	// at a different point each time — and a plain curl straight to the same URL did
+	// exactly the same, so the origin is dropping it rather than anything here.
+	//
+	// Without a resume the whole fetch fails and the client is handed a 200 that stops
+	// short. It retries, gets another truncation, and eventually reports a server error
+	// for a cache that is doing what it was told. Resuming makes this cache better than
+	// the origin it is standing in front of, which is most of the point of having one:
+	// each attempt keeps what arrived, and the digest check below still decides whether
+	// the result is real.
+	for attempt := 0; ; attempt++ {
+		stopped := false
+		for {
+			n, rerr := resp.Body.Read(buf)
+			if n > 0 {
+				if _, werr := w.Write(buf[:n]); werr != nil {
+					return "", 0, werr
+				}
+				// A chunked response declares no length, so the quota can only be applied
+				// as the bytes arrive. Stopping here bounds the waste to one buffer.
+				if want.Room > 0 && w.Written() > want.Room {
+					return "", 0, e.quotaExceeded(project, w.Written())
+				}
+				// Only advertise bytes that are actually in the file, so a reader can
+				// never be told to read past what has been written.
+				f.advance(int64(n))
+				e.events.Publish(obs.Event{
+					Kind: obs.EventFetchProgress, Project: project,
+					Eco: f.Eco, ID: f.Key, Size: w.Written(), Total: total,
+				})
 			}
-			// A chunked response declares no length, so the quota can only be applied
-			// as the bytes arrive. Stopping here bounds the waste to one buffer.
-			if want.Room > 0 && w.Written() > want.Room {
-				return "", 0, e.quotaExceeded(project, w.Written())
-			}
-			// Only advertise bytes that are actually in the file, so a reader can
-			// never be told to read past what has been written.
-			f.advance(int64(n))
-			e.events.Publish(obs.Event{
-				Kind: obs.EventFetchProgress, Project: project,
-				Eco: f.Eco, ID: f.Key, Size: w.Written(), Total: total,
-			})
-		}
-		if rerr != nil {
-			if errors.Is(rerr, io.EOF) {
+			if rerr != nil {
+				if errors.Is(rerr, io.EOF) {
+					stopped = true
+				} else if !e.resumable(total, w.Written(), attempt) {
+					return "", 0, fmt.Errorf("engine: reading %s: %w", req.URL, rerr)
+				}
 				break
 			}
-			return "", 0, fmt.Errorf("engine: reading %s: %w", req.URL, rerr)
 		}
+		// A clean EOF at the declared length, or a length nobody declared, is the end.
+		if stopped && (total < 0 || w.Written() >= total) {
+			break
+		}
+		if !e.resumable(total, w.Written(), attempt) {
+			if stopped {
+				// Short and out of attempts. Said plainly rather than left for the
+				// digest check, so the log names the origin that keeps stopping.
+				return "", 0, fmt.Errorf("%w: %s declared %d bytes, delivered %d",
+					ErrSizeMismatch, req.URL, total, w.Written())
+			}
+			break
+		}
+
+		// Worth a line: a transfer that needs picking up says something about the origin,
+		// and without this the only visible symptom is a fetch that takes minutes.
+		obs.LoggerFrom(e.baseCtx).Warn("resuming an interrupted transfer",
+			"url", req.URL, "eco", f.Eco, "at", w.Written(), "total", total,
+			"attempt", attempt+1, "of", maxResumeAttempts)
+
+		resumed, resumedCancel, rerr := e.resume(ctx, req, w.Written())
+		if rerr != nil {
+			return "", 0, fmt.Errorf("engine: resuming %s at %d: %w",
+				req.URL, w.Written(), rerr)
+		}
+		_ = resp.Body.Close()
+		cancel()
+		resp, cancel = resumed, resumedCancel
 	}
 
 	written := w.Written()

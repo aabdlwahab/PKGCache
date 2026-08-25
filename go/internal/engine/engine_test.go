@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,8 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -946,5 +949,105 @@ func TestS2DistinctKeysFetchIndependently(t *testing.T) {
 		if n := h.origin.Hits(fmt.Sprintf("/pkg%d.whl", i)); n != 1 {
 			t.Fatalf("pkg%d fetched %d times", i, n)
 		}
+	}
+}
+
+// choppyOrigin serves an artifact in short bursts: every response declares all the
+// bytes that remain and then delivers only chunk of them before the connection dies.
+// It honours Range, so a client that comes back asking for the rest makes progress.
+//
+// This is pypi.nvidia.com as measured: a 423 MB CUDA wheel ended after ~25 MB, at a
+// different point each attempt, and a plain curl to the same URL did the same.
+func choppyOrigin(t *testing.T, body []byte, chunk int) (*httptest.Server, *int64) {
+	t.Helper()
+	var requests int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requests, 1)
+
+		start := 0
+		if rng := r.Header.Get("Range"); rng != "" {
+			if _, err := fmt.Sscanf(rng, "bytes=%d-", &start); err != nil || start > len(body) {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			w.Header().Set("Content-Range",
+				fmt.Sprintf("bytes %d-%d/%d", start, len(body)-1, len(body)))
+		}
+		rest := body[start:]
+		w.Header().Set("Content-Length", strconv.Itoa(len(rest)))
+		if start > 0 {
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		// Declare everything, deliver a burst. Writing fewer bytes than the declared
+		// length makes net/http drop the connection, which is the failure being modelled.
+		if len(rest) > chunk {
+			rest = rest[:chunk]
+		}
+		_, _ = w.Write(rest)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &requests
+}
+
+func TestInterruptedTransferResumesFromWhereItStopped(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("chunk-", 200_000)
+
+	// 200_000 bytes in 40_000-byte bursts is five responses: the first plus four
+	// resumes, inside the attempt cap.
+	srv, requests := choppyOrigin(t, body, 40_000)
+
+	res := h.resolution("/pkg.whl")
+	res.Upstream = upstream.Request{URL: srv.URL + "/pkg.whl"}
+
+	rec, _, err := h.serve(t, get("/pkg.whl"), res)
+	if err != nil {
+		t.Fatalf("a resumable transfer must complete: %v", err)
+	}
+	if got := rec.Body.Bytes(); !bytes.Equal(got, body) {
+		t.Fatalf("resumed body is wrong: got %d bytes, want %d", len(got), len(body))
+	}
+	if n := atomic.LoadInt64(requests); n < 2 {
+		t.Fatalf("origin saw %d requests, so nothing was actually resumed", n)
+	}
+
+	// The reassembled artifact is the one that got cached, so the next read is a hit
+	// that never touches the origin again.
+	before := atomic.LoadInt64(requests)
+	rec2, _, err := h.serve(t, get("/pkg.whl"), res)
+	if err != nil {
+		t.Fatalf("serving the cached copy: %v", err)
+	}
+	if !bytes.Equal(rec2.Body.Bytes(), body) {
+		t.Fatal("the cached copy does not match the original")
+	}
+	if n := atomic.LoadInt64(requests); n != before {
+		t.Fatalf("a cache hit went back to the origin (%d -> %d)", before, n)
+	}
+}
+
+func TestResumingGivesUpOnAHopelessOrigin(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("chunk-", 600_000)
+
+	// 15 bursts' worth of body against a cap of five resumes: this never finishes,
+	// and the point is that it stops rather than retrying forever.
+	srv, requests := choppyOrigin(t, body, 40_000)
+
+	res := h.resolution("/pkg.whl")
+	res.Upstream = upstream.Request{URL: srv.URL + "/pkg.whl"}
+
+	if _, _, err := h.serve(t, get("/pkg.whl"), res); err == nil {
+		t.Fatal("an origin that never delivers the whole artifact must fail")
+	}
+	if n := atomic.LoadInt64(requests); n > maxResumeAttempts+1 {
+		t.Fatalf("origin saw %d requests, more than the %d attempts allowed",
+			n, maxResumeAttempts+1)
+	}
+	// Nothing partial may be left behind to be served as if it were complete.
+	if _, cerr := h.cat.GetEntry(catalog.EntryKey{
+		Project: "global", Eco: "pypi", Key: "pkg.whl",
+	}); cerr == nil {
+		t.Fatal("an incomplete fetch wrote a catalog entry")
 	}
 }
