@@ -15,13 +15,25 @@ specific language governing permissions and limitations under the License.
 THIRD-PARTY SOFTWARE
 --------------------------------------------------------------------------------
 
-The `pkgreg` server binary statically links the modules listed below. The list is
-derived from the linked module set reported by `go version -m bin/pkgreg`, not
-from `go.mod`, so it names what is actually distributed rather than what is
-merely required for development or testing.
+Every binary this project distributes is listed below, because the installers
+ship more than the server does and a notice that named only `pkgreg` did not
+describe what a customer actually receives.
 
-`pkgreg-client` and `pkgreg-bridge` link no third-party modules at all — they are
-standard-library only.
+  pkgreg           the server
+  pkgcache         the single-machine cache — the daemon and the CLI
+  pkgcache-docker  the docker-compatible shim
+  pkgcache-app     the desktop app
+  pkgreg-client    the client installer   } standard library only; they link no
+  pkgreg-bridge    the loopback bridge    } third-party module at all
+
+The lists are derived from the linked module set — `go version -m` on each built
+binary, and `go list -deps` for the platform builds that cannot be produced on
+one host — not from go.mod, so they name what is actually distributed rather than
+what is merely required for development or testing.
+
+`pkgcache` and `pkgcache-docker` link the same set as `pkgreg`. `pkgcache-app`
+links that set plus the app's own, marked [app] below; three of those are
+platform-specific and are marked with the platform that links them.
 
   Apache License 2.0
     github.com/prometheus/client_golang
@@ -29,10 +41,16 @@ standard-library only.
     github.com/prometheus/common
     github.com/prometheus/procfs
 
+  BSD 2-Clause "Simplified" License
+    github.com/godbus/dbus/v5                        [app, Linux]
+
   BSD 3-Clause "New" or "Revised" License
+    github.com/cloudflare/circl
     github.com/google/uuid
     github.com/munnerz/goautoneg
+    github.com/ProtonMail/go-crypto
     github.com/remyoudompheng/bigfft
+    golang.org/x/crypto
     golang.org/x/sync
     golang.org/x/sys
     google.golang.org/protobuf
@@ -45,6 +63,13 @@ standard-library only.
     github.com/beorn7/perks
     github.com/cespare/xxhash/v2
     github.com/dustin/go-humanize
+    git.sr.ht/~jackmordaunt/go-toast/v2              [app, Windows]
+    github.com/adrg/xdg                              [app]
+    github.com/go-ole/go-ole                         [app, Windows]
+    github.com/mattn/go-colorable                    [app, Windows]
+    github.com/mattn/go-isatty                       [app]
+    github.com/ncruces/go-strftime                   [app, macOS and Windows]
+    github.com/wailsapp/wails/v3                     [app]
 
   MIT and Apache License 2.0 (dual)
     gopkg.in/yaml.v3
@@ -53,7 +78,12 @@ modernc.org/sqlite is a pure-Go translation of SQLite. SQLite itself is in the
 public domain; the translation carries the BSD 3-Clause license above, and its
 distribution includes the upstream SQLite notice as SQLITE-LICENSE.
 
+`pkgcache-app` also links against the platform's own web view at run time, and
+does not distribute it: WebKitGTK and GTK4 on Linux, which the pkgcache-desktop
+package declares as dependencies and the system provides; WebView2 on Windows;
+and WebKit on macOS.
+
 Full license texts for each module are available in the Go module cache under
 the module's own LICENSE file, and are reproduced in the third-party license
 inventory attached to each release. Exact pinned versions are recorded in
-go/go.mod and go/go.sum.
+go/go.mod, go/go.sum and go/cmd/pkgcache-app/go.mod.
