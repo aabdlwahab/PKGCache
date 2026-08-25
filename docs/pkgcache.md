@@ -208,12 +208,18 @@ serve them.
 On native Linux `pkgcache build` works with no setup — the daemon accepts loopback, and
 the build runs with `--network=host`.
 
-Elsewhere the daemon cannot see your loopback, so:
+Elsewhere the daemon cannot see your loopback — on macOS and Windows it is a virtual
+machine — so the build is pointed at `host.docker.internal` instead. That is worked out
+for you and printed when it happens; the daemon still has to be told once that a
+plain-HTTP registry at that address is acceptable:
 
 ```sh
 pkgcache docker-setup                 # one file, reversible with -uninstall
-pkgcache build -host-address -t app .
+pkgcache build -t app .
 ```
+
+`-host-address` forces the gateway and `-host-address=false` forces loopback, for a setup
+neither rule describes.
 
 `docker-setup -mirror` additionally makes `docker pull python:3.12` — unmodified, no
 wrapper — come from the cache. It is opt-in because it reroutes every pull on the

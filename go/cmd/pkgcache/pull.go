@@ -34,8 +34,8 @@ func runPull(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	hostAddress := fs.Bool("host-address", false,
-		"reach the cache through "+clientbuild.DefaultHostGateway+" instead of loopback, "+
-			"for a daemon that cannot see this terminal's network: Docker Desktop, WSL, CI")
+		"reach the cache through "+clientbuild.DefaultHostGateway+" instead of loopback "+
+			"(default: whichever this Docker daemon can actually reach)")
 	keep := fs.Bool("keep-cache-tag", false,
 		"leave the cache-addressed tag in place as well as the original name")
 	dryRun := fs.Bool("print", false, "print what would be pulled, and pull nothing")
@@ -79,13 +79,24 @@ flags:
 		return err
 	}
 
+	// Derived unless somebody said otherwise. On macOS and Windows the daemon is always
+	// a virtual machine and loopback is never right, which made -host-address a flag you
+	// had to know about before your first pull could work — a fact about the platform,
+	// asked as a question.
+	gateway := *hostAddress
+	if !flagGiven(fs, "host-address") {
+		gateway = clientbuild.GatewayDefault(ctx, "")
+	}
 	registry := state.Addr
-	if *hostAddress {
+	if gateway {
 		_, port, found := strings.Cut(state.Addr, ":")
 		if !found {
 			return fmt.Errorf("pull: cannot read a port from %q", state.Addr)
 		}
 		registry = clientbuild.DefaultHostGateway + ":" + port
+		if !flagGiven(fs, "host-address") {
+			fmt.Fprintln(os.Stderr, clientbuild.GatewayNote(registry))
+		}
 	}
 
 	for _, image := range fs.Args() {

@@ -12,6 +12,22 @@ import (
 
 // bindLocalFlags wires the flags every pkgcache command accepts, so `serve` and the
 // commands that auto-start it cannot disagree about what -addr or -data-dir mean.
+// flagGiven reports whether a flag was named on the command line, as opposed to left at
+// its default.
+//
+// The difference matters wherever a default is derived rather than fixed: -host-address
+// picks itself from what the Docker daemon can reach, and "false because nobody said
+// anything" has to stay distinguishable from "false because somebody wants loopback".
+func flagGiven(fs *flag.FlagSet, name string) bool {
+	given := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			given = true
+		}
+	})
+	return given
+}
+
 func bindLocalFlags(fs *flag.FlagSet) func() config.LocalFlags {
 	var (
 		dataDir     = fs.String("data-dir", "", "cache directory (default: this user's)")

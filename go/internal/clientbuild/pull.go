@@ -87,15 +87,41 @@ func pullFailure(image, mapped, said string, err error) error {
 		return fmt.Errorf("pull %s: %w", image, err)
 	}
 	text := said + " " + err.Error()
+	// A client that cannot reach its own daemon says so in these words, and it can say
+	// "connection refused" while doing it. That is a different failure from the one below
+	// — nothing was asked of the cache at all — and offering a different cache address for
+	// it would be a wrong guess stated confidently.
+	daemonDown := strings.Contains(text, "Cannot connect to the Docker daemon")
 	hint := ""
-	for _, marker := range []string{"401", "Unauthorized", "404", "not found"} {
-		if strings.Contains(text, marker) {
-			hint = "\n  That address is this cache, and the status came from the registry" +
-				" behind it.\n  Docker Hub answers 401 for a repository that does not exist" +
-				" as well as for one that\n  is private, so check the name first:" +
-				" `docker pull " + image + "` reports the same\n  thing with no cache in" +
-				" the way."
-			break
+	switch {
+	// The daemon never reached the cache at all. It is not a cache error and the cache
+	// is not down: the address belongs to whoever is dialling it, and a daemon in a
+	// virtual machine dials its own. Detection normally settles this before a pull is
+	// attempted, so reaching here means detection was wrong about this daemon.
+	case !daemonDown && (strings.Contains(text, "connection refused") ||
+		strings.Contains(text, "no such host") ||
+		strings.Contains(text, "i/o timeout")):
+		hint = "\n  The daemon could not reach that address, which usually means it does" +
+			" not share\n  this terminal's network — Docker Desktop, a remote daemon, CI." +
+			"\n  Try -host-address, which reaches the cache at " + DefaultHostGateway + "."
+	// The daemon found the cache and insisted on TLS. A laptop cache is plain HTTP on
+	// purpose, and one file has to say that is acceptable.
+	case strings.Contains(text, "server gave HTTP response to HTTPS client"),
+		strings.Contains(text, "http: server gave HTTP"):
+		hint = "\n  The daemon reached the cache but requires HTTPS from it. A cache on" +
+			" this machine\n  is plain HTTP by design; `pkgcache docker-setup` is the one" +
+			" file that says so.\n  Restart Docker afterwards — daemon.json is read at" +
+			" startup."
+	default:
+		for _, marker := range []string{"401", "Unauthorized", "404", "not found"} {
+			if strings.Contains(text, marker) {
+				hint = "\n  That address is this cache, and the status came from the registry" +
+					" behind it.\n  Docker Hub answers 401 for a repository that does not exist" +
+					" as well as for one that\n  is private, so check the name first:" +
+					" `docker pull " + image + "` reports the same\n  thing with no cache in" +
+					" the way."
+				break
+			}
 		}
 	}
 	return fmt.Errorf("pull %s (through %s): %w%s", image, mapped, err, hint)

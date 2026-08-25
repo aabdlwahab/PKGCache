@@ -62,8 +62,14 @@ pkgcache docker-setup            # once per machine
 ```
 
 Loopback is exempt from that rule by default; `host.docker.internal` is not, which is
-why this step exists at all. Add `-host-address` to `pkgcache build` on Docker Desktop,
-a remote daemon, or CI.
+why this step exists at all.
+
+Which address gets used is not a question you have to answer. `pkgcache build` and
+`pkgcache pull` derive it: on macOS and Windows there is no native Docker daemon at all —
+Docker Desktop, Colima, Rancher and OrbStack are virtual machines with their own
+loopback — so the gateway is always right there, and on Linux the only daemon that needs
+it is Docker Desktop, which `docker info` names. The choice is printed when it is made.
+`-host-address` and `-host-address=false` force either one.
 
 **Cache address** — tools point at a `pkgreg` server's own HTTPS address, and its CA is
 mounted into each `RUN` that needs it as a BuildKit secret under `/run/secrets`. This is

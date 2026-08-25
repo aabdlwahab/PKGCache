@@ -44,9 +44,8 @@ func dockerCommand(ctx context.Context, argv []string, compose bool) error {
 	fs.BoolVar(&options.Print, "print", false,
 		"write the rewritten Dockerfile or Compose file and build nothing")
 	fs.BoolVar(&options.HostAddress, "host-address", false,
-		"reach the cache through "+clientbuild.DefaultHostGateway+" instead of loopback, "+
-			"for a daemon that cannot see this terminal's network: Docker Desktop, a "+
-			"remote daemon, CI")
+		"reach the cache through "+clientbuild.DefaultHostGateway+" instead of loopback "+
+			"(default: whichever this Docker daemon can actually reach)")
 	// pkgreg-client spells this -cache-address. Both work, because every existing
 	// instruction, Makefile and CI job says the old one, and a merge that silently
 	// broke them would be a migration rather than a merge.
@@ -89,6 +88,11 @@ flags:
 			"pkgcache: -cache-address is now -host-address; the old name still works")
 		options.HostAddress = true
 	}
+	// Derived unless somebody said otherwise; see the same decision in pull.go.
+	autoGateway := !options.HostAddress && !flagGiven(fs, "host-address")
+	if autoGateway {
+		options.HostAddress = clientbuild.GatewayDefault(ctx, "")
+	}
 
 	// The cache has to be running before its address can be put into a build.
 	snap, err := config.LoadLocal(config.LocalFlags{})
@@ -108,6 +112,11 @@ flags:
 		options.Project = local.CurrentProject(snap.DataDir)
 	}
 	options.AptProxy = state.BaseURL()
+	if autoGateway && options.HostAddress {
+		_, port, _ := strings.Cut(state.Addr, ":")
+		fmt.Fprintln(os.Stderr,
+			clientbuild.GatewayNote(clientbuild.DefaultHostGateway+":"+port))
+	}
 	// A base image that already exists here is not rewritten: it may be one this build
 	// or a previous one produced, with no upstream to be fetched from.
 	options.LocalImage = clientbuild.DefaultLocalImage("")
