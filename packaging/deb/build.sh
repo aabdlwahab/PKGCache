@@ -165,8 +165,12 @@ License: Apache-2.0
  under the License.
  .
  On Debian systems the complete text of the Apache License version 2.0 can
- be found in /usr/share/common-licenses/Apache-2.0. The third-party notices
- for the binaries in this package are in the NOTICE file beside this one.
+ be found in /usr/share/common-licenses/Apache-2.0.
+ .
+ The third-party notices for the binaries in this package are in the NOTICE
+ file beside this one. Minimal images configure dpkg to exclude
+ /usr/share/doc, which keeps this file and drops that one; the same notices
+ ship with every release and are in the source repository as NOTICE.
 COPY
 }
 write_copyright "$ROOT/usr/share/doc/pkgcache/copyright"
