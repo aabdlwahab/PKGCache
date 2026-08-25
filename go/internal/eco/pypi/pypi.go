@@ -713,8 +713,21 @@ func addMetadataSuffix(rawURL string) string {
 	if err != nil {
 		return rawURL + ".metadata"
 	}
+	// The original encoding is kept, not rebuilt.
+	//
+	// Clearing RawPath told url.String to re-encode from Path, and Path is decoded — so a
+	// filename containing %2B came back out with a literal '+'. Every PyTorch CUDA wheel
+	// is named that way, because the local version is part of the filename:
+	// torchcodec-0.16.0%2Bcu130-cp312-...whl. download.pytorch.org does not treat the two
+	// spellings as the same file, so the metadata request 404'd upstream and this cache
+	// answered 502 — while the wheel beside it, whose URL was never rebuilt, served fine.
+	//
+	// RawPath is only honoured when it is a valid encoding of Path, so both get the
+	// suffix or the whole thing is ignored and we are back where we started.
 	u.Path += ".metadata"
-	u.RawPath = ""
+	if u.RawPath != "" {
+		u.RawPath += ".metadata"
+	}
 	return u.String()
 }
 

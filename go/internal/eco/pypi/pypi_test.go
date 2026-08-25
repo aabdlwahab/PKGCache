@@ -442,3 +442,30 @@ func TestSchemeRelativeHrefResolvesAgainstThePage(t *testing.T) {
 		t.Fatalf("URL = %q", files[0].URL)
 	}
 }
+
+// A wheel whose filename carries a '+' — which is every PyTorch CUDA wheel, since the
+// local version is part of the name. Rebuilding the URL from the decoded path emitted a
+// literal '+', download.pytorch.org did not recognise it, and the cache answered 502
+// while the wheel beside it served fine.
+func TestMetadataSuffixKeepsTheOriginalEncoding(t *testing.T) {
+	const wheel = "https://download.pytorch.org/whl/cu130/" +
+		"torchcodec-0.16.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl"
+	got := addMetadataSuffix(wheel)
+	if !strings.Contains(got, "%2B") {
+		t.Errorf("the escape was lost, so upstream sees a different filename:\n%s", got)
+	}
+	if !strings.HasSuffix(got, ".whl.metadata") {
+		t.Errorf("suffix not appended: %s", got)
+	}
+	if strings.Contains(got, "+cu130") {
+		t.Errorf("a literal '+' reached the URL: %s", got)
+	}
+}
+
+func TestMetadataSuffixLeavesAPlainURLAlone(t *testing.T) {
+	// Nothing to preserve, and the result must not gain an encoding it never had.
+	got := addMetadataSuffix("https://files.pythonhosted.org/x/idna-3.10-py3-none-any.whl")
+	if got != "https://files.pythonhosted.org/x/idna-3.10-py3-none-any.whl.metadata" {
+		t.Errorf("addMetadataSuffix = %s", got)
+	}
+}
