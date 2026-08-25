@@ -194,9 +194,16 @@ func Warm(
 	return warmItems(ctx, handler, items, workers, yield)
 }
 
-// WarmNPM requests every tarball a package-lock.json pins, the same way and through the
-// same cache. npm needs no index in the path: it has one upstream, so a tarball is
-// addressed by name alone below the project's npm base.
+// WarmNPM requests every tarball a JavaScript lock pins, and each package's packument
+// with them, through the same cache. npm needs no index in the path: it has one
+// upstream, so both are addressed by name below the project's npm base.
+//
+// The packuments are warmed because two of the four formats need them. Yarn berry and
+// pnpm write no tarball URL, so pointing their registry at this cache is what makes a
+// warmed copy get used — and a registry that cannot answer for metadata is not one they
+// can install from, whatever tarballs it holds. pnpm asks for metadata even with a
+// frozen lockfile. They are small next to the tarballs, and warming them means every
+// tool and subcommand works against the cache rather than only the frozen installs.
 func WarmNPM(
 	ctx context.Context,
 	handler http.Handler,
@@ -208,10 +215,20 @@ func WarmNPM(
 	if handler == nil {
 		return errors.New("lockwarm: data-plane handler is unavailable")
 	}
-	items := make([]warmItem, 0, len(packages))
+	base := "/" + project + "/npm/"
+	items := make([]warmItem, 0, 2*len(packages))
+	metadata := make(map[string]bool, len(packages))
 	for _, pkg := range packages {
+		// One packument per name, however many of its versions the lock pins.
+		if !metadata[pkg.Name] {
+			metadata[pkg.Name] = true
+			items = append(items, warmItem{
+				path:  base + npmPackagePath(pkg.Name),
+				label: pkg.Name + " (metadata)",
+			})
+		}
 		items = append(items, warmItem{
-			path:  "/" + project + "/npm/" + NPMTarballPath(pkg.Name, pkg.Filename),
+			path:  base + NPMTarballPath(pkg.Name, pkg.Filename),
 			label: pkg.Filename,
 		})
 	}

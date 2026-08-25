@@ -16,18 +16,33 @@ import (
 	"strings"
 )
 
-// NPMPackage is one registry tarball pinned by a lock file.
+// NPMPackage is one npm-registry tarball pinned by a lock file.
+//
+// Named for the registry, not for one tool: npm, yarn and pnpm all install npm-registry
+// packages, so all four supported JavaScript lock formats parse into this.
+//
+// The formats differ in how much they say. npm and yarn classic name the tarball's URL
+// outright, which is what makes them rewritable. Yarn berry and pnpm name only the
+// package and version and leave the URL to configuration, so for those URL and Registry
+// are empty and Version carries what is known.
 type NPMPackage struct {
 	// Name is the package as npm addresses it, scope included: "@babel/core".
 	Name string
-	// Filename is the tarball's own name. It is not derivable from Name and version:
-	// a scoped package drops its scope from the filename.
+	// Version is what the lock pinned. Set only by the formats that name no URL,
+	// where the tarball has to be derived from it.
+	Version string
+	// Filename is the tarball's own name. It is not derivable from Name and version
+	// by string concatenation alone: a scoped package drops its scope from it.
 	Filename string
-	// URL is the resolved URL exactly as the lock spells it, which is the token
-	// RewriteNPM matches on.
+	// URL is the resolved URL exactly as the lock spells it, minus any fragment, and
+	// is the token a rewrite matches on. Empty when the lock names no URL.
 	URL string
+	// Fragment is what followed the URL, kept so a rewrite can put it back. Yarn
+	// classic appends "#<sha1>" and checks it, so dropping it breaks the install.
+	Fragment string
 	// Registry is the root the tarball came from, so a caller can refuse a lock
-	// pinned to a registry this cache does not stand in front of.
+	// pinned to a registry this cache does not stand in front of. Empty when the
+	// lock names no registry.
 	Registry string
 }
 
@@ -137,11 +152,17 @@ func splitTarballURL(resolved string) (NPMPackage, bool) {
 // would have followed had it gone through the cache to resolve. Building the same string
 // two ways is a drift risk, so this is the one both the warm and the rewrite use.
 func NPMTarballPath(name, filename string) string {
+	return npmPackagePath(name) + "/-/" + url.PathEscape(filename)
+}
+
+// npmPackagePath is a package name as a path, which is also where its packument lives.
+// A scope stays its own segment, because that is how the npm routes are shaped.
+func npmPackagePath(name string) string {
 	segments := strings.Split(name, "/")
 	for i := range segments {
 		segments[i] = url.PathEscape(segments[i])
 	}
-	return strings.Join(segments, "/") + "/-/" + url.PathEscape(filename)
+	return strings.Join(segments, "/")
 }
 
 // RewriteNPM points every pinned tarball at the cache, changing nothing else.
@@ -169,14 +190,19 @@ func RewriteNPM(text string, packages []NPMPackage, base string) string {
 
 // NPMRegistries lists the distinct registry roots a lock pins, in first-seen order.
 // A caller checks these against what the cache serves before warming anything.
+//
+// A lock that names no registry — yarn berry, pnpm — contributes nothing here, which is
+// correct rather than merely convenient: there is no registry in the file to disagree
+// with, and which one gets used is decided by the tool's configuration at install time.
 func NPMRegistries(packages []NPMPackage) []string {
 	seen := make(map[string]bool, len(packages))
 	var roots []string
 	for _, pkg := range packages {
-		if !seen[pkg.Registry] {
-			seen[pkg.Registry] = true
-			roots = append(roots, pkg.Registry)
+		if pkg.Registry == "" || seen[pkg.Registry] {
+			continue
 		}
+		seen[pkg.Registry] = true
+		roots = append(roots, pkg.Registry)
 	}
 	return roots
 }

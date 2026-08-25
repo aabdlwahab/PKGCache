@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 
@@ -22,18 +23,24 @@ import (
 
 // `pkgcache warmlock` — pull a lock file's contents into the cache, and point the lock at it.
 //
-// Two formats: uv.lock, and npm's package-lock.json (npm-shrinkwrap.json with it). Which
-// one it is is read from the bytes, not the filename.
+// Five formats: uv.lock, package-lock.json (npm-shrinkwrap.json with it), yarn.lock in
+// both the v1 and berry shapes, and pnpm-lock.yaml. Which one it is is read from the
+// bytes, not the filename.
 //
 // A lock file is the one place that says exactly which bytes a project needs, which makes
 // it the best possible thing to warm a cache from: no resolver to run, no guessing, and
 // the same answer on every machine that shares the lock.
 //
 // Two halves, and the second is the one that pays off later. Warming fills the cache.
-// Rewriting points the lock at the cache, so `uv sync` or `npm ci` on a machine with no
-// internet still resolves — the URLs in the file are the cache's own. Both tools verify
-// hashes either way, and the hashes are untouched, so a rewritten lock installs exactly
-// the artefacts the original named or it fails.
+// Rewriting points the lock at the cache, so `uv sync`, `npm ci` or `yarn install` on a
+// machine with no internet still resolves — the URLs in the file are the cache's own. The
+// tools verify hashes either way, and the hashes are untouched, so a rewritten lock
+// installs exactly the artefacts the original named or it fails.
+//
+// Two of the formats cannot be pointed anywhere by editing them: yarn berry and pnpm
+// write no URLs, only a package and a version, and decide the registry at install time
+// from configuration. For those the first half still pays off — the cache is filled, and
+// the one setting that has to change is named.
 //
 // The rewrite is textual and replaces only quoted URL tokens: formatting, ordering,
 // comments and hashes survive byte-for-byte. That is what makes the .old file a diff
@@ -56,13 +63,20 @@ Fetches every artefact the lock pins, so they are in this machine's cache, and t
 rewrites the lock so its URLs name the cache instead of the internet. The original is kept
 beside it as <lock>.old.
 
-Understands uv.lock and npm's package-lock.json (and npm-shrinkwrap.json). The format is
-read from the file's contents, so -lock may point at a copy under any name. With no -lock,
-the first of uv.lock, package-lock.json or npm-shrinkwrap.json that exists here is used.
+Understands uv.lock, package-lock.json (and npm-shrinkwrap.json), yarn.lock in both its
+v1 and berry forms, and pnpm-lock.yaml. The format is read from the file's contents, so
+-lock may point at a copy under any name; with no -lock, the first lock that exists here
+is used.
 
-The rewrite touches only URLs. Hashes, versions, ordering, comments and formatting are
-unchanged, so `+"`diff <lock>.old <lock>`"+` shows exactly what moved — and uv and npm
-both still verify every hash, so a rewritten lock installs the same artefacts or fails.
+uv, npm and yarn v1 write the URL of every artefact into the lock, so those are rewritten.
+Yarn berry and pnpm write no URLs at all — they take the registry from configuration — so
+for those the cache is filled and the setting to change is named, and the lock is left
+exactly as it was.
+
+Where it rewrites, it touches only URLs. Hashes, versions, ordering, comments and
+formatting are unchanged, so `+"`diff <lock>.old <lock>`"+` shows exactly what moved — and
+every one of these tools still verifies its own hashes, so a rewritten lock installs the
+same artefacts or fails.
 
 -warm-only fills the cache and writes nothing, which is what a CI job wants when the lock
 in the repository has to stay as it is.
@@ -98,8 +112,9 @@ flags:
 	}
 	// Which lock this is, decided by the bytes rather than the filename, so `-lock`
 	// pointed at a copy under any name still does the right thing.
-	if isNPMLock(original) {
-		return warmNPMLock(ctx, snap, string(original), *lockPath, *workers, *warmOnly, *suffix)
+	if kind := detectJSLock(original); kind != nil {
+		return warmJSLock(ctx, snap, kind, string(original), *lockPath,
+			*workers, *warmOnly, *suffix)
 	}
 	return warmUVLock(ctx, snap, string(original), *lockPath, *workers, *warmOnly, *suffix)
 }
@@ -264,25 +279,74 @@ func dedupe(values []string) []string {
 	return out
 }
 
-// isNPMLock reports whether these bytes are a package-lock.json rather than a uv.lock.
-//
-// Decided by shape, not by filename: the two formats could not look less alike, and a
-// lock copied to another name is still the format it is. npm-shrinkwrap.json is the same
-// document under a different name and lands here too.
-func isNPMLock(content []byte) bool {
-	return bytes.HasPrefix(bytes.TrimLeft(content, " \t\r\n\ufeff"), []byte("{"))
+// jsLock is one JavaScript lock format: how to read it, and whether it can be pointed
+// at the cache by editing it.
+type jsLock struct {
+	// name is what to call it in messages.
+	name string
+	// parse reads the registry packages the lock pins.
+	parse func(string) ([]lockwarm.NPMPackage, error)
+	// rewrite points those at the cache. Nil when the format writes no URLs, which is
+	// not a gap in this command: there is nothing in such a file to change.
+	rewrite func(string, []lockwarm.NPMPackage, string) string
+	// pointAt names the setting that decides where the tool actually fetches from, for
+	// the formats where that is the answer instead of a rewrite.
+	pointAt string
 }
 
-// warmNPMLock warms and rewrites a package-lock.json.
+// detectJSLock identifies a JavaScript lock from its contents, or returns nil if these
+// bytes are not one — in which case the caller treats them as a uv.lock.
 //
-// The same two halves as the uv path, and the same refusal to rewrite a lock the cache
-// cannot fully answer for. What differs is the address: npm has a single upstream, so a
-// tarball is addressed by name below the project's npm base with no index in the path.
-func warmNPMLock(
-	ctx context.Context, snap *config.Snapshot,
+// Decided by shape, not by filename: a lock copied to another name is still the format
+// it is, and yarn's two eras share the name yarn.lock while sharing nothing else.
+func detectJSLock(content []byte) *jsLock {
+	text := string(content)
+	switch {
+	case bytes.HasPrefix(bytes.TrimLeft(content, " \t\r\n\ufeff"), []byte("{")):
+		// npm-shrinkwrap.json is the same document under another name and lands here.
+		return &jsLock{
+			name:    "package-lock.json",
+			parse:   lockwarm.ParseNPM,
+			rewrite: lockwarm.RewriteNPM,
+		}
+	case strings.Contains(text, "yarn lockfile v1"):
+		return &jsLock{
+			name:    "yarn.lock (v1)",
+			parse:   lockwarm.ParseYarnClassic,
+			rewrite: lockwarm.RewriteYarnClassic,
+		}
+	case strings.Contains(text, "__metadata:"):
+		return &jsLock{
+			name:    "yarn.lock (berry)",
+			parse:   lockwarm.ParseYarnBerry,
+			pointAt: "npmRegistryServer in .yarnrc.yml",
+		}
+	case regexp.MustCompile(`(?m)^lockfileVersion:`).MatchString(text):
+		return &jsLock{
+			name:    "pnpm-lock.yaml",
+			parse:   lockwarm.ParsePNPM,
+			pointAt: "the registry pnpm is configured with",
+		}
+	}
+	return nil
+}
+
+// npmRegistryAliases are hostnames that serve the public npm registry under another
+// name, and so are answerable by a cache standing in front of it.
+//
+// registry.yarnpkg.com is yarn's own alias for registry.npmjs.org — the same registry,
+// which is why a yarn lock's URLs point there by default. Refusing it would make yarn
+// support useless out of the box. The bet is safe because it is checked: every one of
+// these locks carries integrity hashes that the installing tool verifies, so if the two
+// ever served different bytes the install would fail rather than quietly succeed.
+var npmRegistryAliases = []string{"https://registry.yarnpkg.com"}
+
+// warmJSLock warms a JavaScript lock, and rewrites it when the format has URLs to move.
+func warmJSLock(
+	ctx context.Context, snap *config.Snapshot, kind *jsLock,
 	original, lockPath string, workers int, warmOnly bool, suffix string,
 ) error {
-	packages, err := lockwarm.ParseNPM(original)
+	packages, err := kind.parse(original)
 	if err != nil {
 		return fmt.Errorf("warmlock: %s: %w", lockPath, err)
 	}
@@ -312,6 +376,9 @@ func warmNPMLock(
 	for _, upstream := range npm.New().Descriptor().DefaultUpstreams {
 		served[strings.TrimRight(upstream, "/")] = true
 	}
+	for _, alias := range npmRegistryAliases {
+		served[alias] = true
+	}
 	var unknown []string
 	for _, registry := range lockwarm.NPMRegistries(packages) {
 		if !served[registry] {
@@ -325,7 +392,15 @@ func warmNPMLock(
 			strings.Join(dedupe(unknown), ", "))
 	}
 
-	fmt.Printf("warming %d tarball(s) into %s\n", len(packages), project)
+	// Both counts, because they differ and the second is the one the tally below uses:
+	// a lock often pins two versions of a package, and one packument covers both.
+	names := make(map[string]bool, len(packages))
+	for _, pkg := range packages {
+		names[pkg.Name] = true
+	}
+	requests := len(names) + len(packages)
+	fmt.Printf("%s: warming %d package(s) into %s — %d requests, metadata and tarballs\n",
+		kind.name, len(packages), project, requests)
 
 	var done, failed atomic.Int64
 	err = lockwarm.WarmNPM(ctx, daemonHandler(root), project, packages, workers,
@@ -344,21 +419,40 @@ func warmNPMLock(
 	if err != nil {
 		return fmt.Errorf("warmlock: %w", err)
 	}
-	fmt.Printf("warmed %d, failed %d\n", done.Load(), failed.Load())
+	fmt.Printf("warmed %d of %d, failed %d\n", done.Load(), requests, failed.Load())
 	if failed.Load() > 0 {
 		return fmt.Errorf(
-			"warmlock: %d tarball(s) did not warm, so %s was left alone",
+			"warmlock: %d request(s) did not warm, so %s was left alone",
 			failed.Load(), lockPath)
+	}
+
+	// Two of the four formats write no tarball URL: yarn berry resolves a descriptor and
+	// pnpm stores only an integrity hash, and both take the registry from configuration.
+	// There is nothing in those files to point anywhere, so the cache is filled and the
+	// setting that decides where the tool fetches from is named instead. Verified against
+	// both tools installing from this cache with it offline.
+	if kind.rewrite == nil {
+		fmt.Printf("%s names no tarball URLs, so it is unchanged.\n", kind.name)
+		fmt.Printf("  Set %s to %s to install what was just warmed.\n", kind.pointAt, base)
+		return nil
 	}
 	if warmOnly {
 		return nil
 	}
 
-	rewritten := lockwarm.RewriteNPM(original, packages, base)
+	rewritten := kind.rewrite(original, packages, base)
 	if rewritten == original {
 		fmt.Printf("%s already points at this cache\n", lockPath)
 		return nil
 	}
+	return writeRewrittenLock(lockPath, original, rewritten, suffix, base)
+}
+
+// writeRewrittenLock replaces the lock, keeping the original beside it.
+//
+// The copy is written first and never over something that is already there: it is the
+// way back, and silently landing on an older one would take that away.
+func writeRewrittenLock(lockPath, original, rewritten, suffix, base string) error {
 	backup := lockPath + suffix
 	if _, err := os.Stat(backup); err == nil {
 		return fmt.Errorf(
@@ -386,7 +480,9 @@ func warmNPMLock(
 // familiar "no such file" naming uv.lock, rather than naming whichever candidate happened
 // to be checked last.
 func lockFileHere(fallback string) string {
-	for _, candidate := range []string{"uv.lock", "package-lock.json", "npm-shrinkwrap.json"} {
+	for _, candidate := range []string{
+		"uv.lock", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+	} {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
