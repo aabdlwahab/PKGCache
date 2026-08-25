@@ -29,7 +29,7 @@ var commands = map[string]struct {
 	"env":                {"print the settings that point tools at the cache", runEnv},
 	"build":              {"run docker build through the cache", runBuild},
 	"pull":               {"docker pull through the cache, keeping the image's own name", runPull},
-	"warmlock":           {"warm the cache from a uv.lock, and point the lock at it", runWarmlock},
+	"warmlock":           {"warm the cache from a lock file, and point the lock at it", runWarmlock},
 	"compose":            {"run docker compose through the cache", runCompose},
 	"crate":              {"run crate with its builds served from the cache", runCrate},
 	"persist":            {"settings that outlive the session", runPersist},

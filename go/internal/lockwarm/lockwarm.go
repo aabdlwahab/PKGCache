@@ -1,5 +1,10 @@
-// Package lockwarm parses uv.lock v1 files, warms every pinned registry file
-// through the local PyPI adapter, and rewrites only registry and file URLs.
+// Package lockwarm reads a lock file, warms every registry artefact it pins through
+// the local cache, and rewrites only the URLs so the lock points at that cache.
+//
+// Two formats, one flow: uv.lock v1 (see Parse) and npm's package-lock.json (see
+// ParseNPM). Both rewrites are textual and touch nothing but URL tokens, so hashes,
+// ordering, comments and formatting survive byte-for-byte and the installing tool still
+// verifies every artefact it fetches.
 package lockwarm
 
 import (
@@ -172,19 +177,65 @@ func Warm(
 	if handler == nil {
 		return errors.New("lockwarm: data-plane handler is unavailable")
 	}
-	type item struct {
-		index, packageName, filename string
-	}
-	var items []item
+	items := make([]warmItem, 0, len(packages))
 	for _, pkg := range packages {
 		index, ok := indexes.Index(pkg.Registry)
 		if !ok {
 			return fmt.Errorf("lockwarm: no configured PyPI index for %s", pkg.Registry)
 		}
 		for _, file := range pkg.Files {
-			items = append(items, item{index, pkg.Project(), file.Filename})
+			items = append(items, warmItem{
+				path: "/" + project + "/pypi/" + index + "/+f/" +
+					url.PathEscape(pkg.Project()) + "/" + url.PathEscape(file.Filename),
+				label: file.Filename,
+			})
 		}
 	}
+	return warmItems(ctx, handler, items, workers, yield)
+}
+
+// WarmNPM requests every tarball a package-lock.json pins, the same way and through the
+// same cache. npm needs no index in the path: it has one upstream, so a tarball is
+// addressed by name alone below the project's npm base.
+func WarmNPM(
+	ctx context.Context,
+	handler http.Handler,
+	project string,
+	packages []NPMPackage,
+	workers int,
+	yield func(Result),
+) error {
+	if handler == nil {
+		return errors.New("lockwarm: data-plane handler is unavailable")
+	}
+	items := make([]warmItem, 0, len(packages))
+	for _, pkg := range packages {
+		items = append(items, warmItem{
+			path:  "/" + project + "/npm/" + NPMTarballPath(pkg.Name, pkg.Filename),
+			label: pkg.Filename,
+		})
+	}
+	return warmItems(ctx, handler, items, workers, yield)
+}
+
+// warmItem is one request to make: where to ask, and what to call it in the report.
+type warmItem struct {
+	path  string
+	label string
+}
+
+// warmItems fetches each item with bounded concurrency and discards the bodies. What
+// matters is that the cache commits each blob, not that this process keeps it.
+//
+// Both lock formats share this: only the paths differ, and having one pool means a fix
+// to cancellation or accounting cannot land for uv and be missed for npm.
+func warmItems(
+	ctx context.Context,
+	handler http.Handler,
+	items []warmItem,
+	workers int,
+	yield func(Result),
+) error {
 	if workers <= 0 {
 		workers = 8
 	}
@@ -194,7 +245,7 @@ func Warm(
 	if workers == 0 {
 		return nil
 	}
-	queue := make(chan item)
+	queue := make(chan warmItem)
 	results := make(chan Result)
 	var group sync.WaitGroup
 	for range workers {
@@ -202,11 +253,10 @@ func Warm(
 		go func() {
 			defer group.Done()
 			for current := range queue {
-				requestPath := "/" + project + "/pypi/" + current.index + "/+f/" +
-					url.PathEscape(current.packageName) + "/" + url.PathEscape(current.filename)
-				request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://pkgreg.internal"+requestPath, http.NoBody)
+				request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+					"http://pkgreg.internal"+current.path, http.NoBody)
 				if err != nil {
-					results <- Result{Filename: current.filename, Err: err}
+					results <- Result{Filename: current.label, Err: err}
 					continue
 				}
 				response := &discardResponse{header: make(http.Header)}
@@ -215,7 +265,7 @@ func Warm(
 				if status == 0 {
 					status = http.StatusOK
 				}
-				results <- Result{Filename: current.filename, Status: status}
+				results <- Result{Filename: current.label, Status: status}
 			}
 		}()
 	}

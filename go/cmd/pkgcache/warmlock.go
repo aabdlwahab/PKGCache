@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -13,22 +14,26 @@ import (
 	"sync/atomic"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/eco/npm"
 	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
 	"github.com/aabdlwahab/PKGCache/internal/local"
 	"github.com/aabdlwahab/PKGCache/internal/lockwarm"
 )
 
-// `pkgcache warmlock` — pull a uv.lock's contents into the cache, and point the lock at it.
+// `pkgcache warmlock` — pull a lock file's contents into the cache, and point the lock at it.
+//
+// Two formats: uv.lock, and npm's package-lock.json (npm-shrinkwrap.json with it). Which
+// one it is is read from the bytes, not the filename.
 //
 // A lock file is the one place that says exactly which bytes a project needs, which makes
 // it the best possible thing to warm a cache from: no resolver to run, no guessing, and
 // the same answer on every machine that shares the lock.
 //
 // Two halves, and the second is the one that pays off later. Warming fills the cache.
-// Rewriting points the lock at the cache, so `uv sync` on a machine with no internet still
-// resolves — the URLs in the file are the cache's own. uv verifies hashes either way, and
-// the hashes are untouched, so a rewritten lock installs exactly the artefacts the
-// original named or it fails.
+// Rewriting points the lock at the cache, so `uv sync` or `npm ci` on a machine with no
+// internet still resolves — the URLs in the file are the cache's own. Both tools verify
+// hashes either way, and the hashes are untouched, so a rewritten lock installs exactly
+// the artefacts the original named or it fails.
 //
 // The rewrite is textual and replaces only quoted URL tokens: formatting, ordering,
 // comments and hashes survive byte-for-byte. That is what makes the .old file a diff
@@ -43,17 +48,21 @@ func runWarmlock(ctx context.Context, args []string) error {
 	warmOnly := fs.Bool("warm-only", false, "fill the cache and leave the lock file alone")
 	suffix := fs.String("backup-suffix", ".old", "what to call the copy of the original")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a uv.lock, and point the lock at it
+		fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a lock file, and point the lock at it
 
 usage: pkgcache warmlock [flags]
 
-Fetches every file the lock pins, so they are in this machine's cache, and then rewrites
-the lock so its URLs name the cache instead of the internet. The original is kept beside
-it as uv.lock.old.
+Fetches every artefact the lock pins, so they are in this machine's cache, and then
+rewrites the lock so its URLs name the cache instead of the internet. The original is kept
+beside it as <lock>.old.
+
+Understands uv.lock and npm's package-lock.json (and npm-shrinkwrap.json). The format is
+read from the file's contents, so -lock may point at a copy under any name. With no -lock,
+the first of uv.lock, package-lock.json or npm-shrinkwrap.json that exists here is used.
 
 The rewrite touches only URLs. Hashes, versions, ordering, comments and formatting are
-unchanged, so `+"`diff uv.lock.old uv.lock`"+` shows exactly what moved — and uv still
-verifies every hash, so a rewritten lock installs the same artefacts or fails.
+unchanged, so `+"`diff <lock>.old <lock>`"+` shows exactly what moved — and uv and npm
+both still verify every hash, so a rewritten lock installs the same artefacts or fails.
 
 -warm-only fills the cache and writes nothing, which is what a CI job wants when the lock
 in the repository has to stay as it is.
@@ -65,6 +74,18 @@ flags:
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// With no -lock, use whichever lock this directory actually has. Defaulting to
+	// uv.lock and reporting it missing would be unhelpful in a project that has a
+	// package-lock.json sitting right there.
+	chosen := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lock" {
+			chosen = true
+		}
+	})
+	if !chosen {
+		*lockPath = lockFileHere(*lockPath)
+	}
 	snap, err := config.LoadLocal(collect())
 	if err != nil {
 		return err
@@ -75,14 +96,27 @@ flags:
 	if err != nil {
 		return fmt.Errorf("warmlock: %w", err)
 	}
-	packages, err := lockwarm.Parse(string(original))
+	// Which lock this is, decided by the bytes rather than the filename, so `-lock`
+	// pointed at a copy under any name still does the right thing.
+	if isNPMLock(original) {
+		return warmNPMLock(ctx, snap, string(original), *lockPath, *workers, *warmOnly, *suffix)
+	}
+	return warmUVLock(ctx, snap, string(original), *lockPath, *workers, *warmOnly, *suffix)
+}
+
+// warmUVLock warms and rewrites a uv.lock.
+func warmUVLock(
+	ctx context.Context, snap *config.Snapshot,
+	original, lockPath string, workers int, warmOnly bool, suffix string,
+) error {
+	packages, err := lockwarm.Parse(original)
 	if err != nil {
-		return fmt.Errorf("warmlock: %s: %w", *lockPath, err)
+		return fmt.Errorf("warmlock: %s: %w", lockPath, err)
 	}
 	if len(packages) == 0 {
 		// Not an error. A lock with only path or git sources has nothing a registry
 		// cache can hold, and saying so beats writing an identical file back.
-		fmt.Printf("%s pins no registry files; nothing to warm\n", *lockPath)
+		fmt.Printf("%s pins no registry files; nothing to warm\n", lockPath)
 		return nil
 	}
 
@@ -134,7 +168,7 @@ flags:
 		files, len(packages), project)
 
 	var done, failed atomic.Int64
-	err = lockwarm.Warm(ctx, daemonHandler(root), project, packages, indexes, *workers,
+	err = lockwarm.Warm(ctx, daemonHandler(root), project, packages, indexes, workers,
 		func(result lockwarm.Result) {
 			switch {
 			case result.Err != nil:
@@ -157,37 +191,37 @@ flags:
 		// internet, because the failure arrives later and further from here.
 		return fmt.Errorf(
 			"warmlock: %d file(s) did not warm, so %s was left alone",
-			failed.Load(), *lockPath)
+			failed.Load(), lockPath)
 	}
-	if *warmOnly {
+	if warmOnly {
 		return nil
 	}
 
-	rewritten := lockwarm.Rewrite(string(original), packages, indexes, base)
+	rewritten := lockwarm.Rewrite(original, packages, indexes, base)
 	if rewritten == string(original) {
-		fmt.Printf("%s already points at this cache\n", *lockPath)
+		fmt.Printf("%s already points at this cache\n", lockPath)
 		return nil
 	}
-	backup := *lockPath + *suffix
+	backup := lockPath + suffix
 	// Written before the lock is replaced, and refused if it would overwrite something.
 	// The copy is the way back, and silently landing on an older one would take that away.
 	if _, err := os.Stat(backup); err == nil {
 		return fmt.Errorf(
 			"warmlock: %s already exists, so %s was left alone.\n"+
 				"  Move it aside, or pass -backup-suffix to choose another name",
-			backup, *lockPath)
+			backup, lockPath)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.WriteFile(backup, original, 0o600); err != nil {
+	if err := os.WriteFile(backup, []byte(original), 0o600); err != nil {
 		return fmt.Errorf("warmlock: write %s: %w", backup, err)
 	}
-	if err := os.WriteFile(*lockPath, []byte(rewritten), 0o600); err != nil {
-		return fmt.Errorf("warmlock: write %s: %w", *lockPath, err)
+	if err := os.WriteFile(lockPath, []byte(rewritten), 0o600); err != nil {
+		return fmt.Errorf("warmlock: write %s: %w", lockPath, err)
 	}
-	fmt.Printf("%s now points at %s\n", *lockPath, base)
+	fmt.Printf("%s now points at %s\n", lockPath, base)
 	fmt.Printf("the original is %s — `diff %s %s` shows only URLs\n",
-		backup, backup, filepath.Base(*lockPath))
+		backup, backup, filepath.Base(lockPath))
 	return nil
 }
 
@@ -228,4 +262,134 @@ func dedupe(values []string) []string {
 		}
 	}
 	return out
+}
+
+// isNPMLock reports whether these bytes are a package-lock.json rather than a uv.lock.
+//
+// Decided by shape, not by filename: the two formats could not look less alike, and a
+// lock copied to another name is still the format it is. npm-shrinkwrap.json is the same
+// document under a different name and lands here too.
+func isNPMLock(content []byte) bool {
+	return bytes.HasPrefix(bytes.TrimLeft(content, " \t\r\n\ufeff"), []byte("{"))
+}
+
+// warmNPMLock warms and rewrites a package-lock.json.
+//
+// The same two halves as the uv path, and the same refusal to rewrite a lock the cache
+// cannot fully answer for. What differs is the address: npm has a single upstream, so a
+// tarball is addressed by name below the project's npm base with no index in the path.
+func warmNPMLock(
+	ctx context.Context, snap *config.Snapshot,
+	original, lockPath string, workers int, warmOnly bool, suffix string,
+) error {
+	packages, err := lockwarm.ParseNPM(original)
+	if err != nil {
+		return fmt.Errorf("warmlock: %s: %w", lockPath, err)
+	}
+	if len(packages) == 0 {
+		// A lock with only workspace links, git or file: dependencies pins nothing a
+		// registry cache can hold. Saying so beats writing an identical file back.
+		fmt.Printf("%s pins no registry tarballs; nothing to warm\n", lockPath)
+		return nil
+	}
+
+	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	if err != nil {
+		return err
+	}
+	project := local.CurrentProject(snap.DataDir)
+	root := state.BaseURL()
+	base := root + "/" + project + "/npm"
+
+	// Every registry the lock names has to be one this cache stands in front of, checked
+	// before a single byte is fetched. Warming half a lock and then failing would leave
+	// the file rewritten against a cache that cannot answer for all of it.
+	//
+	// The cache's own base counts as known, which is what makes a lock that has already
+	// been rewritten warmable again — the case that matters on a second machine, where
+	// the lock arrives from the repository already pointing here and the cache is empty.
+	served := map[string]bool{base: true}
+	for _, upstream := range npm.New().Descriptor().DefaultUpstreams {
+		served[strings.TrimRight(upstream, "/")] = true
+	}
+	var unknown []string
+	for _, registry := range lockwarm.NPMRegistries(packages) {
+		if !served[registry] {
+			unknown = append(unknown, registry)
+		}
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf(
+			"warmlock: this cache serves no npm registry for %s\n"+
+				"  Point the npm upstream at it, or use -warm-only and leave the lock alone",
+			strings.Join(dedupe(unknown), ", "))
+	}
+
+	fmt.Printf("warming %d tarball(s) into %s\n", len(packages), project)
+
+	var done, failed atomic.Int64
+	err = lockwarm.WarmNPM(ctx, daemonHandler(root), project, packages, workers,
+		func(result lockwarm.Result) {
+			switch {
+			case result.Err != nil:
+				failed.Add(1)
+				fmt.Fprintf(os.Stderr, "  %s: %v\n", result.Filename, result.Err)
+			case result.Status >= 400:
+				failed.Add(1)
+				fmt.Fprintf(os.Stderr, "  %s: HTTP %d\n", result.Filename, result.Status)
+			default:
+				done.Add(1)
+			}
+		})
+	if err != nil {
+		return fmt.Errorf("warmlock: %w", err)
+	}
+	fmt.Printf("warmed %d, failed %d\n", done.Load(), failed.Load())
+	if failed.Load() > 0 {
+		return fmt.Errorf(
+			"warmlock: %d tarball(s) did not warm, so %s was left alone",
+			failed.Load(), lockPath)
+	}
+	if warmOnly {
+		return nil
+	}
+
+	rewritten := lockwarm.RewriteNPM(original, packages, base)
+	if rewritten == original {
+		fmt.Printf("%s already points at this cache\n", lockPath)
+		return nil
+	}
+	backup := lockPath + suffix
+	if _, err := os.Stat(backup); err == nil {
+		return fmt.Errorf(
+			"warmlock: %s already exists, so %s was left alone.\n"+
+				"  Move it aside, or pass -backup-suffix to choose another name",
+			backup, lockPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.WriteFile(backup, []byte(original), 0o600); err != nil {
+		return fmt.Errorf("warmlock: write %s: %w", backup, err)
+	}
+	if err := os.WriteFile(lockPath, []byte(rewritten), 0o600); err != nil {
+		return fmt.Errorf("warmlock: write %s: %w", lockPath, err)
+	}
+	fmt.Printf("%s now points at %s\n", lockPath, base)
+	fmt.Printf("the original is %s — `diff %s %s` shows only URLs\n",
+		backup, backup, filepath.Base(lockPath))
+	return nil
+}
+
+// lockFileHere picks the lock to use when the caller named none.
+//
+// Falls back to the given default so a directory with no lock at all still produces the
+// familiar "no such file" naming uv.lock, rather than naming whichever candidate happened
+// to be checked last.
+func lockFileHere(fallback string) string {
+	for _, candidate := range []string{"uv.lock", "package-lock.json", "npm-shrinkwrap.json"} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return fallback
 }
