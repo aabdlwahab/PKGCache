@@ -85,7 +85,7 @@ adapter's descriptor automatically.
 |---|---|---|---|
 | **pypi** | `pip`, `uv` | path-prefixed | PEP 503 HTML **and** PEP 691 JSON, parsed and re-rendered; PEP 658 `.metadata` sidecars; multiple named indexes |
 | **npm** | `npm`, `yarn`, `pnpm` | path-prefixed | packument fetch with `dist.tarball` rewritten; unknown fields preserved byte for byte |
-| **oci** | `docker`, `podman` | protocol-rooted `/v2/` | multi-arch images, manifests by tag or digest, `tags/list`, anonymous token dance for ghcr/quay/dockerhub |
+| **oci** | `docker`, `podman` | protocol-rooted `/v2/` | multi-arch images, manifests by tag or digest, `tags/list`, anonymous token dance, registry discovered from the first path segment |
 | **apt** | `apt-get`, `apk` | forward proxy | relays any host, optional allowlist; `InRelease` revalidates, `.deb` never does |
 | **git** | `git`, `git lfs` | path-prefixed | full, shallow and partial clones; protocol v2; LFS; push refused |
 | **files** | `curl`, `wget`, CI | path-prefixed | the one writable role: `PUT`/`DELETE` behind a token, browsable index |

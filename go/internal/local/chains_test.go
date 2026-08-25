@@ -50,7 +50,7 @@ func TestConfigureChainsIsIdempotent(t *testing.T) {
 	// Derived rather than written out: the count is a consequence of how many indexes
 	// can be chained, and a test that hardcodes it fails the day one is added for a
 	// reason that has nothing to do with idempotency.
-	want := 2 * len(chainedEcosystems)
+	want := len(chainedEcosystems) + publicOrigins()
 	if got := len(managedUpstreams(t, snap)); got != want {
 		t.Fatalf("two runs left %d managed rows, want the chain's %d", got, want)
 	}

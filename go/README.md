@@ -232,6 +232,21 @@ server:
     - "*.alpinelinux.org"
 ```
 
+The registry side needs no equivalent step and has one available. An OCI pull names its
+registry in the path — `/v2/nvcr.io/nvidia/pytorch/…` reaches nvcr.io with nothing
+configured — and by default that reaches public registries only: a dotted DNS name, no
+port, so a path segment can never point the cache at an address only this host can route
+to. Set `server.registry_allowlist` to narrow discovery to the registries you permit, or
+to admit a private one:
+
+```yaml
+server:
+  registry_allowlist:
+    - nvcr.io
+    - "*.internal"
+    - registry.internal:5000
+```
+
 **6. Verify.** `doctor` is read-only and exits non-zero on an unsafe posture, so it is
 usable as the gate in a provisioning script.
 

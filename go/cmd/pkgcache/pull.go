@@ -51,8 +51,10 @@ not a 127.0.0.1:41780/dockerhub/library/alpine:3.20.
 Unlike `+"`docker-setup -mirror`"+` this reroutes nothing: it changes where these images
 come from, once, and leaves the Docker daemon's configuration alone.
 
-Images from Docker Hub, ghcr.io and quay.io are served from the cache. Anything else is
-passed to docker untouched and pulled directly, which is said rather than done silently.
+Images from any registry the reference names — Docker Hub, ghcr.io, nvcr.io, gcr.io and
+the rest — are served from the cache. What is passed to docker untouched is a registry
+only this machine can reach, such as localhost:5000 or an address on the build network,
+which is said rather than done silently.
 
 flags:
 `)

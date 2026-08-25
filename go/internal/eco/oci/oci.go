@@ -1,8 +1,11 @@
 // Package oci implements an OCI Distribution pull-through cache.
 //
 // Tags are mutable refs, while manifests, configs and layers are immutable
-// sha256-addressed content. The first image-name segment selects the upstream
-// registry (dockerhub, ghcr, quay); project routing is handled above this adapter.
+// sha256-addressed content. The first image-name segment selects the registry, and
+// selects it by naming it: "nvcr.io/nvidia/pytorch" reaches nvcr.io whether or not
+// anybody configured this cache for nvcr.io, which is what keeps a new registry from
+// being an operator task. See resolveName for the order that is tried, and the ociname
+// package for the rule. Project routing is handled above this adapter.
 package oci
 
 import (
@@ -21,6 +24,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
@@ -434,15 +438,22 @@ type imageRoute struct {
 
 // resolveName maps an OCI repository path onto an upstream and a repository.
 //
-// The first segment normally selects the upstream, because one cache fronts several
-// registries. A daemon configured with registry-mirrors knows nothing of that
-// namespace — it asks for /v2/library/alpine — so when the first segment is not a
-// known upstream, and only when the operator has named a default, the whole path is
-// treated as a repository on that default. That fallback is what turns
-// "cache:8443/dockerhub/library/alpine:3.20" in a Dockerfile back into "alpine:3.20".
+// Three ways a first segment can name a registry, tried in this order:
 //
-// The order matters: a real alias always wins, so enabling the mirror can never
-// change the meaning of a path that already worked.
+//  1. A configured upstream. "dockerhub", "ghcr", "quay" and anything an operator has
+//     added or overridden — including a credentialled origin, or a chain through a team
+//     cache. Configuration always wins, so nothing below can change the meaning of a
+//     path that already worked.
+//  2. A registry host. "nvcr.io/nvidia/pytorch" reaches nvcr.io, with no configuration
+//     anywhere, because the segment says where to go. This is what stops every new
+//     registry from being an operator task; see the ociname package for the rule, and
+//     Ctx.RegistryAllowed for the bound on it. Docker Hub's several spellings fold onto
+//     the dockerhub segment, so pulling docker.io/library/alpine and
+//     dockerhub/library/alpine is one cache namespace and not two.
+//  3. The registry mirror. A daemon configured with registry-mirrors knows nothing of
+//     either namespace — it asks for /v2/library/alpine — so when the first segment is
+//     neither of the above, and only when the operator has named a default, the whole
+//     path is treated as a repository on that default.
 func resolveName(c *eco.Ctx, raw string) (imageRoute, bool) {
 	raw = strings.Trim(raw, "/")
 	parts := strings.Split(raw, "/")
@@ -455,12 +466,31 @@ func resolveName(c *eco.Ctx, raw string) (imageRoute, bool) {
 		}
 	}
 	alias := strings.ToLower(parts[0])
+	if alias == ociname.AnyRegistry {
+		// The name a chain files its discovery rule under is not a registry a client
+		// may ask for by name.
+		return imageRoute{}, false
+	}
+	reg, isRegistry := ociname.Lookup(alias)
+	if isRegistry {
+		alias = reg.Segment
+	}
 	base, ok := c.Upstream(alias)
+	if !ok && isRegistry {
+		base, ok = discoveredOrigin(c, reg)
+	}
 	if ok && len(parts) < 2 {
-		// "/v2/dockerhub/manifests/..." names an upstream and no repository.
+		// "/v2/dockerhub/manifests/..." names a registry and no repository.
 		return imageRoute{}, false
 	}
 	if !ok {
+		if isRegistry {
+			// A segment that names a registry is a registry even when this cache will
+			// not reach it. Falling through to the mirror would turn a refused
+			// registry into a repository on Docker Hub, and answer a question nobody
+			// asked with a 404 about the wrong thing.
+			return imageRoute{}, false
+		}
 		mirror := strings.ToLower(strings.TrimSpace(c.RegistryMirror()))
 		if mirror == "" {
 			return imageRoute{}, false
@@ -469,17 +499,37 @@ func resolveName(c *eco.Ctx, raw string) (imageRoute, bool) {
 			return imageRoute{}, false
 		}
 		alias = mirror
+		reg, _ = ociname.Lookup(mirror)
 		parts = append([]string{mirror}, parts...)
 	}
 	requestedRepo := strings.Join(parts[1:], "/")
 	upstreamRepo := requestedRepo
-	if alias == "dockerhub" && !strings.Contains(requestedRepo, "/") {
+	if reg.Library && !strings.Contains(requestedRepo, "/") {
 		upstreamRepo = "library/" + requestedRepo
 	}
 	return imageRoute{
 		base: strings.TrimRight(base, "/"), alias: alias,
 		repo: upstreamRepo, display: alias + "/" + requestedRepo,
 	}, true
+}
+
+// discoveredOrigin is where a registry that is not a configured upstream is fetched
+// from, or false when this cache may not reach it at all.
+//
+// A cache that sits behind another one — a laptop pointed at a team cache — must not
+// answer discovery by going around it. A chain files one wildcard entry for exactly
+// this: its URL is the /v2 root of the cache in front, and a discovered registry is one
+// more segment on it, which is the same path the client asked us for. There is
+// deliberately no fallback to the registry itself from there — the machine was pointed
+// at a cache, and `pkgcache setup -no-direct` means it.
+func discoveredOrigin(c *eco.Ctx, reg ociname.Registry) (string, bool) {
+	if !c.RegistryAllowed(reg) {
+		return "", false
+	}
+	if chain := c.UpstreamChain(ociname.AnyRegistry); len(chain) > 0 {
+		return strings.TrimRight(chain[0].URL, "/") + "/" + reg.Segment, true
+	}
+	return reg.Origin(), true
 }
 
 type childManifest struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/control"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
@@ -364,11 +365,19 @@ func (d *DataPlane) unknownOCIProject(path string, known router.KnownProject) st
 	if !ok {
 		return ""
 	}
-	aliases := ociRepo.Descriptor().DefaultUpstreams
-	if _, firstIsAlias := aliases[first]; firstIsAlias {
+	// A registry may be named by a configured alias or by its host, and either one in
+	// the first segment means the caller named no project at all.
+	registry := func(segment string) bool {
+		if _, isAlias := ociRepo.Descriptor().DefaultUpstreams[segment]; isAlias {
+			return true
+		}
+		_, isHost := ociname.Lookup(segment)
+		return isHost
+	}
+	if registry(first) {
 		return ""
 	}
-	if _, secondIsAlias := aliases[second]; secondIsAlias {
+	if registry(second) {
 		return first
 	}
 	return ""

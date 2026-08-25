@@ -36,10 +36,13 @@ They are `ARG`, never `ENV`. An `ENV` is written into the shipped image, and an 
 whose `PIP_INDEX_URL` points at somebody's laptop is a broken image the moment it leaves
 that laptop.
 
-`FROM` lines are repointed only for registries this cache fronts — Docker Hub, ghcr and
-quay. A registry it does not front is not its to redirect, and is left alone. Every
-substitution is printed, because a tool that silently alters what gets built is a tool
-people stop trusting.
+`FROM` lines are repointed for any registry the reference names — Docker Hub, ghcr,
+quay, `nvcr.io`, `gcr.io`, `public.ecr.aws` and the rest — because the cache discovers a
+registry from the path rather than from a list somebody maintains. What is left alone is
+a registry only this machine can reach: `localhost:5000`, an address, a `host:port` on
+the build network. Those mean something different on the machine the cache runs on, so
+they are not the cache's to redirect. Every substitution is printed, because a tool that
+silently alters what gets built is a tool people stop trusting.
 
 ## Three ways to reach the cache, and how to pick
 
@@ -107,10 +110,22 @@ Images are pulled from the cache by name:
 ```sh
 docker pull 127.0.0.1:41780/dockerhub/library/alpine:3.20
 docker pull 127.0.0.1:41780/ghcr/some-org/some-image:v1
+docker pull 127.0.0.1:41780/nvcr.io/nvidia/pytorch:24.01
 ```
 
-The first path segment selects the registry — `dockerhub`, `ghcr` or `quay`. Official
-Docker Hub images live under `library/`.
+The first path segment selects the registry, and any registry host works there without
+being configured first: write `nvcr.io`, `gcr.io`, `mcr.microsoft.com` and the cache
+fetches from it. `dockerhub`, `ghcr` and `quay` are aliases that predate that and keep
+working, and `docker.io` is the same namespace as `dockerhub` rather than a second copy
+of it. Official Docker Hub images live under `library/`.
+
+A discovered registry is reached over HTTPS on the host the segment names. That is
+bounded on purpose: with no configuration the cache reaches public registries only — a
+dotted DNS name, no port — so a path segment cannot make it fetch from an address only
+the server can route to. `server.registry_allowlist` narrows that to a list you name, and
+is also how a private registry (`registry.internal:5000`) is admitted; `["*"]` means
+anywhere. A registry needing credentials is still configured as an upstream, which also
+takes precedence over discovery.
 
 With `pkgcache docker-setup -mirror`, an unmodified `docker pull python:3.12` is served
 from the cache with no rewrite at all. That is off by default: it reroutes every pull on

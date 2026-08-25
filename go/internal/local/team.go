@@ -15,6 +15,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/app"
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/control"
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
@@ -299,6 +300,23 @@ var chainedEcosystems = []struct {
 		teamURL: ociTeamURL("quay"),
 		public:  "https://quay.io/v2",
 	},
+	// Every other registry, in one row. The three above are named because they are
+	// spelled with an alias rather than a host; anything else — nvcr.io, gcr.io,
+	// public.ecr.aws — is discovered from the image name, and the only thing this
+	// machine needs to know is that discovery resolves on the team's cache rather
+	// than on the internet. There is no public row: the fallback origin would have to
+	// be the registry the pull names, which is not knowable when the chain is written.
+	// A machine pointed at a team cache resolving a discovered registry through it,
+	// and only through it, is also what makes -no-direct mean what it says.
+	{
+		eco: "oci", index: ociname.AnyRegistry,
+		teamURL: func(server, project string) string {
+			if project == "" || project == config.GlobalProject {
+				return server + "/v2"
+			}
+			return server + "/v2/" + project
+		},
+	},
 }
 
 // ociTeamURL builds the team cache's root for one registry alias.
@@ -339,7 +357,7 @@ func ChainRows(team Team, known func(eco string) bool) []control.Upstream {
 			Eco: entry.eco, Name: entry.index, URL: entry.teamURL(server, project),
 			Kind: "origin", Priority: teamPriority, Enabled: true,
 		})
-		if team.Direct {
+		if team.Direct && entry.public != "" {
 			rows = append(rows, control.Upstream{
 				Eco: entry.eco, Name: entry.index, URL: entry.public,
 				Kind: "origin", Priority: publicPriority, Enabled: true,

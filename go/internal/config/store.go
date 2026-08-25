@@ -115,6 +115,9 @@ func (s *Snapshot) clone() *Snapshot {
 	if s.Server.ProxyAllowlist != nil {
 		next.Server.ProxyAllowlist = append([]string(nil), s.Server.ProxyAllowlist...)
 	}
+	if s.Server.RegistryAllowlist != nil {
+		next.Server.RegistryAllowlist = append([]string(nil), s.Server.RegistryAllowlist...)
+	}
 	next.ProjectUpstreams = cloneUpstreams(s.ProjectUpstreams)
 	next.ProjectPeers = clonePeers(s.ProjectPeers)
 	if s.Auth.CookieSecure != nil {

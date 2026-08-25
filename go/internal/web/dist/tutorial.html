@@ -687,6 +687,7 @@ exit</code>
                   <li><code>dockerhub/library/postgres:16</code>, <code>dockerhub/library/redis:7</code>, <code>dockerhub/library/node:22-alpine</code> — more official images.</li>
                   <li><code>ghcr/astral-sh/uv:python3.12-bookworm-slim</code> — GitHub Container Registry.</li>
                   <li><code>quay/prometheus/busybox:latest</code> — Quay.</li>
+                  <li><code>nvcr.io/nvidia/pytorch:24.01</code> — any other registry, named by its host. Nothing has to be configured first: write the registry’s hostname where <code>dockerhub</code> would go and the cache fetches from it.</li>
                 </ul>
                 <p>
                   <b>Pin by digest for reproducibility.</b> A tag can move; a digest cannot.

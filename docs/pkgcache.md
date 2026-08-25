@@ -171,6 +171,14 @@ registry. The project also rides a different segment here: the server reads it f
 after `/v2` and treats a literal `global` there as a registry name, so the global project
 addresses `/v2/<registry>` and every other project `/v2/<project>/<registry>`.
 
+Registries the image name spells out — `nvcr.io`, `gcr.io`, anything not aliased — are
+chained through one wildcard row rather than one row each, because the registry is a
+segment on the team's `/v2` root exactly as it is on ours. That row has no public origin
+beside it: the fallback would have to be whichever registry the pull turns out to name,
+which is not knowable when the chain is written. A discovered registry therefore resolves
+through the team cache and only through it, which is also what makes `-no-direct` hold
+for a registry nobody configured.
+
 ## Replacing pkgreg-client
 
 `pkgcache setup -no-cache -server … -ca-sha256 …` is `pkgreg-client` exactly: a

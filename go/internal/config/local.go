@@ -83,6 +83,10 @@ func LocalDefaults() Snapshot {
 	// so explicitly is what distinguishes a considered choice from an empty allowlist
 	// nobody thought about. See ProxyRelaysAnywhere.
 	s.Server.ProxyAllowlist = []string{ProxyRelaysAnywhere}
+	// Registry discovery, likewise, reaches wherever this developer's own docker is
+	// already pointed — including the registry running on their laptop. The segment
+	// that selects it comes from their own `docker pull`, not from a network.
+	s.Server.RegistryAllowlist = []string{ProxyRelaysAnywhere}
 
 	// It is going to a terminal, not a log pipeline, and one line per request is noise
 	// when the requests are one developer's.

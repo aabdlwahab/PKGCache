@@ -165,13 +165,27 @@ func TestBridgedIsOnlyEverTheGlobalProject(t *testing.T) {
 	}
 }
 
+// publicOrigins counts the indexes that have a public origin to fall back to. Every
+// index has a team row; the wildcard that carries discovered registries has no second
+// row, because the origin behind it is whatever the image name turns out to say.
+func publicOrigins() int {
+	count := 0
+	for _, entry := range chainedEcosystems {
+		if entry.public != "" {
+			count++
+		}
+	}
+	return count
+}
+
 // The chain is the policy: -no-direct is the absence of the public row rather than a
 // flag anybody has to remember, and that is what makes a machine that must never reach
 // the internet provably unable to.
 func TestChainRowsAreTheWholePolicy(t *testing.T) {
 	direct := ChainRows(Team{Server: "https://team/", Project: "work", Direct: true}, nil)
-	if len(direct) != 2*len(chainedEcosystems) {
-		t.Fatalf("a direct chain has %d rows, want two per index", len(direct))
+	if len(direct) != len(chainedEcosystems)+publicOrigins() {
+		t.Fatalf("a direct chain has %d rows, want one per index plus one per public origin",
+			len(direct))
 	}
 	for _, row := range direct {
 		if row.Priority != teamPriority && row.Priority != publicPriority {

@@ -345,6 +345,9 @@ func applyEnv(s *Snapshot) error {
 	if v, ok := os.LookupEnv(envPrefix + "PROXY_ALLOWLIST"); ok {
 		s.Server.ProxyAllowlist = splitList(v)
 	}
+	if v, ok := os.LookupEnv(envPrefix + "REGISTRY_ALLOWLIST"); ok {
+		s.Server.RegistryAllowlist = splitList(v)
+	}
 	return nil
 }
 

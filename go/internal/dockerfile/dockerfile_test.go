@@ -42,10 +42,16 @@ func TestOfficialImageIsNamespacedUnderLibrary(t *testing.T) {
 func TestReferencesThatMustBeLeftAlone(t *testing.T) {
 	for name, source := range map[string]string{
 		// A FROM naming an earlier stage is not an image.
-		"a stage name":        "FROM alpine:3.20 AS base\nFROM base AS build\n",
-		"scratch":             "FROM scratch\n",
-		"an unknown registry": "FROM registry.internal.example/team/app:1\n",
-		"a build arg":         "ARG BASE\nFROM ${BASE}\n",
+		"a stage name": "FROM alpine:3.20 AS base\nFROM base AS build\n",
+		"scratch":      "FROM scratch\n",
+		// A registry only this builder can route to. The same string means something
+		// else on the machine the cache runs on, so it is not ours to redirect —
+		// unlike a registry host, which is now rewritten whether or not the cache was
+		// ever configured for it.
+		"a registry on the build network": "FROM registry.internal:5000/team/app:1\n",
+		"a registry on the loopback":      "FROM localhost:5000/team/app:1\n",
+		"a registry by address":           "FROM 10.4.0.9/team/app:1\n",
+		"a build arg":                     "ARG BASE\nFROM ${BASE}\n",
 	} {
 		out, _ := rewrite(t, source, bridge())
 		for _, line := range strings.Split(out, "\n") {
@@ -289,9 +295,14 @@ func TestMapImageForPull(t *testing.T) {
 		{"ghcr.io/astral-sh/uv:latest", registry + "/ghcr/astral-sh/uv:latest"},
 		{"quay.io/oauth2-proxy/oauth2-proxy:v7", registry + "/quay/oauth2-proxy/oauth2-proxy:v7"},
 		{"docker.io/library/redis:7", registry + "/dockerhub/library/redis:7"},
-		// Left alone, each for its own reason: a registry this cache does not serve,
-		// the empty base, and a name the author is choosing themselves.
-		{"example.com/private/thing:1", ""},
+		// A registry nobody configured, which is most of them. The host is the path
+		// segment, and the cache discovers the registry from it.
+		{"nvcr.io/nvidia/pytorch:24.01", registry + "/nvcr.io/nvidia/pytorch:24.01"},
+		{"public.ecr.aws/lambda/python:3.12", registry + "/public.ecr.aws/lambda/python:3.12"},
+		// Left alone, each for its own reason: a registry only the builder can route
+		// to, the empty base, and a name the author is choosing themselves.
+		{"registry.internal:5000/private/thing:1", ""},
+		{"localhost:5000/private/thing:1", ""},
 		{"scratch", ""},
 		{"$BASE_IMAGE", ""},
 	} {

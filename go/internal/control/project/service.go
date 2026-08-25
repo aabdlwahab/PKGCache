@@ -16,6 +16,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/control/credential"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	"github.com/aabdlwahab/PKGCache/internal/obs"
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 )
 
 var validName = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
@@ -410,6 +411,14 @@ func (s *Service) validateName(name string) error {
 	}
 	if reserved[name] {
 		return invalid("%q is reserved", name)
+	}
+	// A project name may contain dots, and an OCI pull reads the segment after /v2/ as
+	// a project before it reads it as a registry. A project called "gcr.io" would
+	// therefore swallow every gcr.io pull on the instance. Discovery makes that a live
+	// hazard rather than a theoretical one, so a name that reads as a registry host is
+	// refused the same way an alias is.
+	if _, isRegistry := ociname.Lookup(name); isRegistry {
+		return invalid("%q reads as a registry host, which an image path resolves first", name)
 	}
 	return nil
 }

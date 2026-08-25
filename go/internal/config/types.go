@@ -123,6 +123,22 @@ type Server struct {
 	// Empty by default: an instance that has not opted in must not start answering for
 	// repositories it was never asked about.
 	RegistryMirror string `yaml:"registry_mirror"`
+	// RegistryAllowlist bounds registry discovery: which registries an OCI pull may
+	// reach when the first path segment names a host this cache was never configured
+	// with. Entries match like ProxyAllowlist — case-insensitive hosts, a leading
+	// "*." admits subdomains — and "*" admits anything.
+	//
+	// Empty is the default and means every *public* registry: a dotted DNS name with
+	// no port. That is what makes "docker pull cache:8443/nvcr.io/nvidia/pytorch"
+	// work on an instance nobody configured for nvcr.io, which is the whole point of
+	// discovery. What empty deliberately does not include is an address that means
+	// something different here than it does to the caller — an IP literal, localhost,
+	// a host:port on this machine's network — because the first path segment is
+	// chosen by whoever runs the pull, and 169.254.169.254 is a path segment.
+	//
+	// Listing hosts here narrows discovery to exactly those, and is also how a
+	// private registry — "registry.internal:5000" — is opted back in.
+	RegistryAllowlist []string `yaml:"registry_allowlist"`
 	// ProxyAllowlist restricts the apt forward proxy to these upstream hosts.
 	// Empty means relay anywhere, which is the historical behaviour and is only
 	// appropriate on a trusted network.

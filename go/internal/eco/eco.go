@@ -58,7 +58,8 @@ const (
 	// UpstreamSingle is one origin, e.g. npm's registry.
 	UpstreamSingle UpstreamShape = "single"
 	// UpstreamNamedSet is a map of alias to origin: pypi's indexes, OCI's registry
-	// aliases (dockerhub, ghcr, quay).
+	// aliases. OCI's set is a floor rather than the whole story — a registry the
+	// image name spells out resolves without appearing here at all.
 	UpstreamNamedSet UpstreamShape = "named-set"
 	// UpstreamNone means the ecosystem derives its origin from the request, as the
 	// apt forward proxy and the git mirror do.

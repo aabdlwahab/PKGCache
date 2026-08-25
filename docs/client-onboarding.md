@@ -49,7 +49,8 @@ The naming idea is worth doing on its own merits:
 - The cert stops being tied to an IP, so re-addressing the host does not invalidate
   every client.
 - Published on `443` instead of `8443`, image references lose the port:
-  `docker pull pkgcache.internal/dockerhub/library/python:3.12-slim`.
+  `docker pull pkgcache.internal/dockerhub/library/python:3.12-slim`, or any registry
+  by name: `docker pull pkgcache.internal/nvcr.io/nvidia/pytorch:24.01`.
 
 ## What a machine-local name reaches — and what it does not
 

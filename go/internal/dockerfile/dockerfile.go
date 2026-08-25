@@ -22,6 +22,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 )
 
 // Mode selects how the build reaches the cache.
@@ -117,16 +119,6 @@ type Result struct {
 	// NeedsSecret is true when at least one RUN was given the CA mount, so the caller
 	// knows whether to pass --secret at all.
 	NeedsSecret bool
-}
-
-// upstreamAlias maps a registry host to the cache's upstream name. Anything absent is
-// left alone: a registry this cache does not front is not ours to redirect.
-var upstreamAlias = map[string]string{
-	"docker.io":            "dockerhub",
-	"index.docker.io":      "dockerhub",
-	"registry-1.docker.io": "dockerhub",
-	"ghcr.io":              "ghcr",
-	"quay.io":              "quay",
 }
 
 var (
@@ -594,11 +586,16 @@ func mapImage(ref, registry string) string {
 	// as a port, and the most common base image in the world is silently left
 	// pointing at Docker Hub.
 	if hasSlash && (strings.Contains(head, ".") || strings.Contains(head, ":") || head == "localhost") {
-		alias, known := upstreamAlias[strings.ToLower(head)]
-		if !known {
+		reg, ok := ociname.Lookup(head)
+		if !ok || !reg.Public {
+			// A registry only this builder can route to — localhost, an IP literal, a
+			// host:port on the build network — is not ours to redirect: the same string
+			// means something different on the machine the cache runs on. Everything
+			// else is rewritten whether or not anybody configured it, because the cache
+			// discovers a registry from the path the same way this reads it from a FROM.
 			return ""
 		}
-		return registry + "/" + alias + "/" + rest + tag
+		return registry + "/" + reg.Segment + "/" + rest + tag
 	}
 	if !hasSlash {
 		// Docker Hub's official images live under library/.

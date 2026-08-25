@@ -14,6 +14,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/catalog"
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/engine"
+	"github.com/aabdlwahab/PKGCache/internal/ociname"
 	"github.com/aabdlwahab/PKGCache/internal/router"
 	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
@@ -226,9 +227,9 @@ func (c *Ctx) RegistryMirror() string { return c.cfg.Server.RegistryMirror }
 // Offline reports whether this project must serve from cache only.
 func (c *Ctx) Offline() bool { return c.cfg.OfflineFor(c.Project) }
 
-// ProxyHostAllowed applies the configured apt/apk relay allowlist. Entries are
-// case-insensitive hostnames; a leading "*." admits subdomains but not the parent.
-// Ports in either the request or an allowlist entry are ignored.
+// ProxyHostAllowed applies the configured apt/apk relay allowlist, matched as
+// hostAllowed describes.
+//
 // A bare "*" is the explicit opt-in to relaying anywhere, so that deliberately keeping
 // the historical behaviour is distinguishable from never having configured it. An empty
 // list still relays — changing that would break every existing apt deployment on
@@ -238,6 +239,36 @@ func (c *Ctx) ProxyHostAllowed(host string) bool {
 	if len(allowed) == 0 || c.cfg.Server.AllowsAnyProxyHost() {
 		return true
 	}
+	return hostAllowed(allowed, host)
+}
+
+// RegistryAllowed reports whether an OCI pull may reach a registry this cache was never
+// configured with, named by the first segment of the image path.
+//
+// An empty allowlist admits every public registry and nothing else, which is what makes
+// discovery work with no configuration at all while keeping a path segment from naming
+// an address only this host can route to. A non-empty list is exhaustive — it narrows
+// discovery to what it names, and is also the way a private registry is admitted.
+//
+// A registry that is a configured upstream never reaches here: it was named by the
+// operator, which is the strongest allowlist there is.
+func (c *Ctx) RegistryAllowed(reg ociname.Registry) bool {
+	allowed := c.cfg.Server.RegistryAllowlist
+	if len(allowed) == 0 {
+		return reg.Public
+	}
+	for _, entry := range allowed {
+		if strings.TrimSpace(entry) == config.ProxyRelaysAnywhere {
+			return true
+		}
+	}
+	return hostAllowed(allowed, reg.Host)
+}
+
+// hostAllowed matches a host against an allowlist. Entries are case-insensitive
+// hostnames; a leading "*." admits subdomains but not the parent. Ports in either the
+// host or an entry are ignored.
+func hostAllowed(allowed []string, host string) bool {
 	host = canonicalHost(host)
 	for _, entry := range allowed {
 		entry = strings.TrimSpace(strings.ToLower(entry))
@@ -332,7 +363,6 @@ func (c *Ctx) SingleUpstream() (string, bool) {
 	sort.Strings(names)
 	return origins[names[0]], true
 }
-
 
 // ExternalBase is the absolute scheme://host prefix a client used to reach this
 // ecosystem, including the stripped project/eco prefix.

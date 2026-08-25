@@ -659,8 +659,9 @@ func (a *API) legacyEndpointMap(project string) map[string]any {
 	}
 	return map[string]any{
 		"docker": map[string]any{
-			"url":  fmt.Sprintf("<host>:%d/%sdockerhub/<image>", unified, imageProject),
-			"note": "upstreams: dockerhub | ghcr | quay; Docker Hub official images live under library/",
+			"url": fmt.Sprintf("<host>:%d/%sdockerhub/<image>", unified, imageProject),
+			"note": "first segment names the registry: dockerhub | ghcr | quay | any " +
+				"registry host, e.g. nvcr.io; Docker Hub official images live under library/",
 			"setup": []string{
 				"# trust the cache's CA for this registry (one-time per host):",
 				fmt.Sprintf("sudo mkdir -p /etc/docker/certs.d/<host>:%d", unified),
@@ -668,6 +669,7 @@ func (a *API) legacyEndpointMap(project string) map[string]any {
 				"# then pull through the cache:",
 				fmt.Sprintf("docker pull <host>:%d/%sdockerhub/library/alpine:3.20", unified, imageProject),
 				fmt.Sprintf("docker pull <host>:%d/%sghcr/<org>/<image>:<tag>", unified, imageProject),
+				fmt.Sprintf("docker pull <host>:%d/%snvcr.io/<org>/<image>:<tag>", unified, imageProject),
 			},
 		},
 		"npm": map[string]any{
