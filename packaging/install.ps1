@@ -6,6 +6,12 @@
   Downloads pkgcache, verifies it against a SHA-256 before installing anything, puts it
   on PATH for the current user, and optionally points it at the team cache it came from.
 
+  This installs the pkgcache binary and nothing else: no desktop app, no notification-area
+  icon, no docker shim, no Start Menu entry and no uninstaller. That is the point of it —
+  it is the scriptable path, for CI and for anyone who would rather not run an installer.
+  For the whole product on a Windows machine, run pkgcache-<version>-setup.exe; see
+  packaging/README.md.
+
   The checksum is not optional decoration. A truncated download is still a runnable-looking
   file, and the failure it produces later looks like a bug in the program rather than a bad
   copy. Nothing is installed until the bytes are confirmed.
@@ -23,6 +29,12 @@
 
 .PARAMETER Sha256
   Expected checksum, when -From cannot supply one.
+
+.PARAMETER Limit
+  The disk budget to set, e.g. 25G, or "none" for no cap with only the free-space floor.
+  Applied whether or not -Server is given: pkgcache refuses to start without one, and an
+  install that leaves the machine unable to start the thing it just installed is not a
+  finished install.
 
 .EXAMPLE
   .\install.ps1 -Server https://cache:8443 -CaSha256 AA:BB:CC:...
@@ -182,6 +194,31 @@ Nothing was installed. Run this again.
 		Note ""
 		Note "pointing this machine at $Server"
 		& $dest setup -server $Server -ca-sha256 $CaSha256 -limit $Limit
+	} elseif (-not $NoConfigure) {
+		# A budget, where the machine has none. `pkgcache limit` with no argument exits
+		# non-zero exactly when none is set, which makes it the query as well as the
+		# setter — so a size somebody chose is never overwritten by a reinstall.
+		#
+		# try/catch rather than $LASTEXITCODE alone: this file sets ErrorActionPreference
+		# to Stop, and PowerShell 7.4 made that apply to native commands too, so the
+		# non-zero exit this probe is *looking for* would throw rather than be read.
+		$hasLimit = $true
+		try {
+			& $dest limit *> $null
+			if ($LASTEXITCODE -ne 0) { $hasLimit = $false }
+		} catch { $hasLimit = $false }
+		if (-not $hasLimit) {
+			Note ""
+			Note "setting the cache limit to $Limit"
+			try {
+				& $dest limit $Limit *> $null
+				if ($LASTEXITCODE -ne 0) { throw }
+			} catch {
+				Note "pkgcache is installed but has no disk budget, and will not start"
+				Note "without one. Set one yourself:"
+				Note "  pkgcache limit $Limit"
+			}
+		}
 	}
 } finally {
 	try { [PkgcacheTrust]::Reset() } catch { }

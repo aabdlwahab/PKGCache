@@ -27,6 +27,11 @@
 #   PKGCACHE_GUI_DEPENDS
 #                   what the app links against. Defaults to the GTK4 stack Wails prefers;
 #                   set it to "libgtk-3-0, libwebkit2gtk-4.1-0" for a -tags gtk3 build.
+#   PKGCACHE_LIMIT_DEFAULT
+#                   the disk budget the daemon package sets for the installing user when
+#                   that user has none. Defaults to "none" — no cap, with the free-space
+#                   floor still applying — which is the answer that guesses least about
+#                   somebody else's disk, and the same one the Windows installer uses.
 set -eu
 
 BINARY="${1:?usage: build.sh <daemon-binary> <arch> <version> [outdir]}"
@@ -38,10 +43,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="${PKGCACHE_APP:-}"
 ICON="${PKGCACHE_ICON:-$HERE/../../assets/logo.svg}"
 GUI_DEPENDS="${PKGCACHE_GUI_DEPENDS:-libgtk-4-1, libwebkitgtk-6.0-4}"
+LIMIT_DEFAULT="${PKGCACHE_LIMIT_DEFAULT:-none}"
+LICENSE="$HERE/../../LICENSE"
+NOTICE="$HERE/../../NOTICE"
 
 [ -f "$BINARY" ] || { echo "no such binary: $BINARY" >&2; exit 1; }
 case "$ARCH" in amd64|arm64) ;; *) echo "arch must be amd64 or arm64" >&2; exit 1 ;; esac
 [ -z "$APP" ] || [ -f "$APP" ] || { echo "no such app binary: $APP" >&2; exit 1; }
+[ -f "$LICENSE" ] || { echo "no LICENSE at $LICENSE" >&2; exit 1; }
+[ -f "$NOTICE" ] || { echo "no NOTICE at $NOTICE" >&2; exit 1; }
 
 # A Debian version may not carry a leading 'v' or any '-' beyond the revision, and our
 # build stamps look like "23888d5-dirty". Normalised rather than rejected: the package
@@ -126,10 +136,41 @@ if [ -n "${PKGCACHE_SHIM:-}" ] && [ -f "$PKGCACHE_SHIM" ]; then
 	install -m 0755 "$PKGCACHE_SHIM" "$ROOT/usr/bin/pkgcache-docker"
 fi
 
-cat > "$ROOT/usr/share/doc/pkgcache/copyright" <<'COPY'
+# A real DEP-5 copyright rather than the two-line stub this used to be.
+#
+# Policy 12.5 requires the file to state the licence, and the stub stated nothing — which
+# meant the only thing a customer received on Ubuntu named no licence anywhere. The full
+# Apache text is not repeated here because Debian ships it: /usr/share/common-licenses is
+# guaranteed to exist and referring to it is what policy asks for.
+write_copyright() {
+	cat > "$1" <<'COPY'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: pkgcache
+
+Files: *
+Copyright: pkgreg
+License: Apache-2.0
+
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ use this file except in compliance with the License. You may obtain a copy
+ of the License at
+ .
+     http://www.apache.org/licenses/LICENSE-2.0
+ .
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ License for the specific language governing permissions and limitations
+ under the License.
+ .
+ On Debian systems the complete text of the Apache License version 2.0 can
+ be found in /usr/share/common-licenses/Apache-2.0. The third-party notices
+ for the binaries in this package are in the NOTICE file beside this one.
 COPY
+}
+write_copyright "$ROOT/usr/share/doc/pkgcache/copyright"
+install -m 0644 "$NOTICE" "$ROOT/usr/share/doc/pkgcache/NOTICE"
 
 # Debian expects the changelog to be compressed, and lintian complains either way about
 # a stub. It is here because its absence is a policy violation, not because it is read.
@@ -159,9 +200,63 @@ Description: Package cache for one machine
  package, pkgcache-desktop, so that a machine with no screen carries no graphics stack.
 CONTROL
 
-# Nothing is printed here on purpose. The old version of this package ended by telling
-# somebody to run two more commands, which is the whole feeling this split exists to
-# remove: installing is the install.
+# A disk budget for the person installing, where they have none.
+#
+# pkgcache refuses to start without one and will not guess a size for somebody else's
+# disk. For the CLI that is right — the error names the commands that answer it. For the
+# desktop half it is not: the autostart entry launches the app at the next login and the
+# first thing a new machine shows is that error in a window, telling somebody who ran
+# `apt install` to go and find a terminal. The Windows installer already made this
+# decision; this is the same one.
+#
+# The budget lives under the user's home, so root's copy is worth nothing to them — the
+# same trap the macOS postinstall documents. SUDO_USER and PKEXEC_UID are the two ways a
+# person's identity survives into a postinst, and where neither is set this does nothing
+# at all: a root shell, a container or a CI runner is exactly where a guessed budget is
+# unwanted, and PKGCACHE_LIMIT covers that case anyway.
+cat > "$CTRL/postinst" <<POSTINST
+#!/bin/sh
+set -e
+[ "\$1" = configure ] || exit 0
+
+user="\${SUDO_USER:-}"
+if [ -z "\$user" ] && [ -n "\${PKEXEC_UID:-}" ]; then
+	user="\$(getent passwd "\$PKEXEC_UID" 2>/dev/null | cut -d: -f1)"
+fi
+[ -n "\$user" ] && [ "\$user" != root ] || exit 0
+
+home="\$(getent passwd "\$user" 2>/dev/null | cut -d: -f6)"
+[ -n "\$home" ] || exit 0
+
+# -H in spirit: without HOME set to theirs, pkgcache would write root's budget and the
+# person who installed it would see nothing and be told everything worked.
+as_user() {
+	if command -v runuser >/dev/null 2>&1; then
+		runuser -u "\$user" -- env HOME="\$home" "\$@"
+	else
+		su -s /bin/sh "\$user" -c "HOME='\$home' \$*"
+	fi
+}
+
+# pkgcache limit with no argument exits non-zero exactly when none is set, so it is the
+# query as well as the setter. Asking first is what stops an upgrade from overwriting a
+# size somebody chose deliberately.
+if as_user /usr/bin/pkgcache limit >/dev/null 2>&1; then
+	:
+elif as_user /usr/bin/pkgcache limit $LIMIT_DEFAULT >/dev/null 2>&1; then
+	echo "pkgcache: cache limit set to $LIMIT_DEFAULT for \$user; change it with 'pkgcache limit'"
+else
+	echo "pkgcache: no disk budget is set, and pkgcache will not start without one." >&2
+	echo "  pkgcache limit 25G     cap the cache at 25 GiB" >&2
+	echo "  pkgcache limit none    no cap; a free-space floor still applies" >&2
+fi
+exit 0
+POSTINST
+chmod 0755 "$CTRL/postinst"
+
+# Nothing else is printed here on purpose. The old version of this package ended by
+# telling somebody to run two more commands, which is the whole feeling this split exists
+# to remove: installing is the install.
 assemble pkgcache "$ROOT" "$CTRL"
 
 # ---- pkgcache-desktop: the app ---------------------------------------------------
@@ -218,10 +313,8 @@ AUTOSTART
 # what conffiles is for: dpkg then asks before replacing an edited copy on upgrade.
 echo "/etc/xdg/autostart/pkgcache.desktop" > "$CTRL/conffiles"
 
-cat > "$ROOT/usr/share/doc/pkgcache-desktop/copyright" <<'COPY'
-Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: pkgcache
-COPY
+write_copyright "$ROOT/usr/share/doc/pkgcache-desktop/copyright"
+install -m 0644 "$NOTICE" "$ROOT/usr/share/doc/pkgcache-desktop/NOTICE"
 printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/pkgcache-desktop/changelog.Debian.gz"
 
 cat > "$CTRL/control" <<CONTROL

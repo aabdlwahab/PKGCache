@@ -10,6 +10,7 @@
 ;   pkgcache.exe      the daemon and the CLI
 ;   pkgcache-app.exe  the window and the notification-area icon
 ;   pkgcache-docker.exe  docker, with build and pull served from the cache
+;   LICENSE.txt, NOTICE.txt  what this is licensed under and what it links
 ;   a Start Menu shortcut, so it is launchable without a terminal
 ;   an Add/Remove Programs entry, so it is removable the way everything else is
 ;   PATH, for this user only
@@ -70,6 +71,12 @@ ${UnStrRep}
 !define MUI_FINISHPAGE_RUN "$INSTDIR\pkgcache-app.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open pkgcache"
 
+; Apache-2.0 section 4 asks that whoever receives the work receives the licence with it.
+; This installer named it nowhere, which made the Windows download the one copy of the
+; product that arrived with no licence at all. Shown here and installed beside the
+; binaries, so it is present whether or not anybody reads this page.
+!insertmacro MUI_PAGE_LICENSE "LICENSE.txt"
+
 ; Components before directory: PATH and the login item are genuinely optional, and an
 ; installer that adds a startup entry without asking is one people uninstall. The
 ; descriptions below are written for this page — without it makensis warns that they have
@@ -98,6 +105,39 @@ ${UnStrRep}
   Sleep 500
 !macroend
 
+; The runtime the app's window is drawn by.
+;
+; Wails reaches WebView2 through COM, so nothing is needed to build it and everything is
+; needed to run it. Windows 11 ships the runtime and Edge installs it on 10, which covers
+; most machines and is exactly why its absence is confusing when it happens: pkgcache
+; installs perfectly, the daemon runs, the CLI works, and clicking the icon opens nothing
+; at all with no error anywhere — the app is linked -H windowsgui and has no console.
+;
+; Not fatal, and not a download this installer performs. The cache itself is entirely
+; usable from the terminal without a window, so refusing to install would be the wrong
+; trade; saying so once, with the address that fixes it, is the right one.
+Function checkWebView2
+  ClearErrors
+  ReadRegStr $0 HKLM \
+    "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU \
+      "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${EndIf}
+  ${If} $0 == ""
+    DetailPrint "The WebView2 runtime is not installed; the window will not open."
+    ; /SD IDNO so a silent install does not stop on a dialog nobody is there to answer.
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION \
+      "pkgcache's window needs the Microsoft Edge WebView2 runtime, which this machine does not have.$\r$\n$\r$\nThe cache and the pkgcache command work without it — only the window and the notification-area icon do not.$\r$\n$\r$\nOpen the download page for it now?" \
+      /SD IDNO IDYES openWebView2Page
+    Return
+    openWebView2Page:
+    ExecShell "open" "https://developer.microsoft.com/microsoft-edge/webview2/"
+  ${Else}
+    DetailPrint "WebView2 runtime $0"
+  ${EndIf}
+FunctionEnd
+
 Section "pkgcache" SecMain
   SectionIn RO
   !insertmacro stopRunning
@@ -108,6 +148,8 @@ Section "pkgcache" SecMain
   File "pkgcache-app.exe"
   File "pkgcache-docker.exe"
   File "pkgcache.ico"
+  File "LICENSE.txt"
+  File "NOTICE.txt"
 
   WriteRegStr HKCU "Software\${NAME}" "InstallDir" "$INSTDIR"
 
@@ -139,7 +181,7 @@ Section "pkgcache" SecMain
   nsExec::ExecToLog '"$INSTDIR\pkgcache.exe" version'
   Pop $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP "The installed pkgcache.exe does not run. Nothing was configured."
+    MessageBox MB_ICONSTOP "The installed pkgcache.exe does not run. Nothing was configured." /SD IDOK
     Abort
   ${EndIf}
 
@@ -158,11 +200,14 @@ Section "pkgcache" SecMain
     Pop $0
     ${If} $0 != 0
       MessageBox MB_ICONEXCLAMATION \
-        "pkgcache is installed but has no disk budget, and will not start without one.$\r$\nSet one yourself:$\r$\n$\r$\n  pkgcache limit ${LIMIT}"
+        "pkgcache is installed but has no disk budget, and will not start without one.$\r$\nSet one yourself:$\r$\n$\r$\n  pkgcache limit ${LIMIT}" \
+        /SD IDOK
     ${EndIf}
   ${Else}
     DetailPrint "A cache limit is already set; leaving it alone."
   ${EndIf}
+
+  Call checkWebView2
 SectionEnd
 
 Section "Add to PATH" SecPath
@@ -193,14 +238,19 @@ SectionEnd
 !ifdef SERVER
 Section "Point this machine at ${SERVER}" SecConfigure
   DetailPrint "Configuring for ${SERVER}..."
-  nsExec::ExecToLog '"$INSTDIR\pkgcache.exe" setup -server "${SERVER}" \
-    -ca-sha256 "${CASHA256}" -limit ${LIMIT}'
+  ; One line, deliberately. NSIS's backslash continuation joins lines before the string
+  ; is tokenised, so splitting a quoted argument list across one is at best a source of
+  ; stray whitespace inside the command and at worst a makensis error — and this is the
+  ; branch that only ever compiles when somebody passes -DSERVER, which is the branch
+  ; least likely to have been built before it is needed.
+  nsExec::ExecToLog '"$INSTDIR\pkgcache.exe" setup -server "${SERVER}" -ca-sha256 "${CASHA256}" -limit ${LIMIT}'
   Pop $0
   ${If} $0 != 0
     ; Installed but unconfigured is a recoverable state, and worth saying rather than
     ; failing the whole install over.
     MessageBox MB_ICONEXCLAMATION \
-      "pkgcache is installed but could not be configured.$\r$\nRun this yourself:$\r$\n$\r$\n  pkgcache setup -server ${SERVER} -ca-sha256 ${CASHA256} -limit ${LIMIT}"
+      "pkgcache is installed but could not be configured.$\r$\nRun this yourself:$\r$\n$\r$\n  pkgcache setup -server ${SERVER} -ca-sha256 ${CASHA256} -limit ${LIMIT}" \
+      /SD IDOK
   ${EndIf}
 SectionEnd
 !endif
@@ -238,6 +288,8 @@ Section "Uninstall"
   Delete "$INSTDIR\pkgcache-app.exe"
   Delete "$INSTDIR\pkgcache-docker.exe"
   Delete "$INSTDIR\pkgcache.ico"
+  Delete "$INSTDIR\LICENSE.txt"
+  Delete "$INSTDIR\NOTICE.txt"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
@@ -250,5 +302,6 @@ Section "Uninstall"
   ; The cache itself is the person's data and is left alone. Said rather than assumed:
   ; somebody uninstalling to reclaim disk needs to know where the disk went.
   MessageBox MB_OK \
-    "pkgcache has been removed.$\r$\n$\r$\nYour cached packages were left at:$\r$\n  $LOCALAPPDATA\pkgcache$\r$\n$\r$\nDelete that folder to reclaim the space."
+    "pkgcache has been removed.$\r$\n$\r$\nYour cached packages were left at:$\r$\n  $LOCALAPPDATA\pkgcache$\r$\n$\r$\nDelete that folder to reclaim the space." \
+    /SD IDOK
 SectionEnd

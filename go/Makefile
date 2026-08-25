@@ -17,7 +17,7 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim shim-linux shim-windows pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
+.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim shim-linux shim-windows shim-darwin pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -179,6 +179,18 @@ shim-linux: ## Cross-compile the shim for Linux, both architectures
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-docker-linux-arm64 ./cmd/pkgcache-docker
 
+# The same shim for macOS, which the .pkg ships beside pkgcache itself.
+#
+# Its absence was the one real asymmetry between the three installers: Windows and the
+# .deb both carried the shim and the .pkg did not, so `crate prepare --runtime
+# pkgcache-docker` — the case this program was written for — had no Mac story at all.
+# Pure Go like the other two, so it cross-compiles from here and needs no Mac.
+shim-darwin: ## Cross-compile the shim for macOS, both architectures
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-docker-darwin-amd64 ./cmd/pkgcache-docker
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
+		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-docker-darwin-arm64 ./cmd/pkgcache-docker
+
 pkgcache-linux: ## Cross-compile pkgcache for Linux, both architectures
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-linux-amd64 ./cmd/pkgcache
@@ -222,6 +234,10 @@ installers: pkgcache-release deb ## Build the .deb packages and stage the instal
 # The Windows installer, which cross-builds completely: makensis runs on Linux and both
 # binaries are pure Go for that target. Nothing about the Windows client needs a Windows
 # machine until somebody wants to run it.
+#
+# LICENSE and NOTICE are staged as .txt: they are shown on the installer's licence page
+# and installed beside the binaries, and an extensionless file on Windows is one that
+# nothing opens when it is double-clicked.
 windows-installer: pkgcache-windows app-windows shim-windows ## Build the Windows installer (needs makensis)
 	@command -v makensis >/dev/null || { \
 		echo "makensis is missing: dnf install mingw32-nsis, or apt install nsis" >&2; \
@@ -229,9 +245,12 @@ windows-installer: pkgcache-windows app-windows shim-windows ## Build the Window
 	cp bin/pkgcache-windows-amd64.exe ../packaging/windows/pkgcache.exe
 	cp bin/pkgcache-app-windows-amd64.exe ../packaging/windows/pkgcache-app.exe
 	cp bin/pkgcache-docker-windows-amd64.exe ../packaging/windows/pkgcache-docker.exe
+	cp ../LICENSE ../packaging/windows/LICENSE.txt
+	cp ../NOTICE ../packaging/windows/NOTICE.txt
 	cd ../packaging/windows && makensis -DVERSION=$(VERSION) pkgcache.nsi
 	rm -f ../packaging/windows/pkgcache.exe ../packaging/windows/pkgcache-app.exe \
-		../packaging/windows/pkgcache-docker.exe
+		../packaging/windows/pkgcache-docker.exe \
+		../packaging/windows/LICENSE.txt ../packaging/windows/NOTICE.txt
 	mv ../packaging/windows/pkgcache-*-setup.exe bin/
 	@echo "built bin/pkgcache-$(VERSION)-setup.exe"
 

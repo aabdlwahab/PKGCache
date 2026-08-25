@@ -14,6 +14,17 @@
 #     serving its own certificate cannot be verified by a machine that has not been told
 #     what to expect, and "trust whatever answers this address" is not an installer.
 #
+# What it installs, which is not the same on both systems and is worth saying plainly:
+#
+#   Linux, from a cache that publishes an apt repository — the whole product, by
+#     installing pkgcache-desktop: the daemon, the CLI, the docker shim and the app.
+#   Linux otherwise, and macOS always — the pkgcache binary alone. No desktop app, no
+#     docker shim, no menu bar item.
+#
+# On a Mac that wants the app, the .pkg is the install: see packaging/README.md. This
+# script is the scriptable path, for CI and for anyone who would rather not run an
+# installer.
+#
 # usage:
 #   install.sh --server https://cache:8443 --ca-sha256 AA:BB:...   # from a team cache
 #   install.sh --from ./pkgcache-darwin-arm64                      # from a local file
@@ -22,7 +33,8 @@
 # options:
 #   --prefix DIR    where to install (default: /usr/local/bin, or ~/.local/bin
 #                   when that is not writable and sudo is unavailable)
-#   --limit SIZE    disk budget to configure, e.g. 25G (default: 25G)
+#   --limit SIZE    disk budget to configure, e.g. 25G (default: 25G). Set whether or
+#                   not --server is given: pkgcache will not start without one.
 #   --sha256 HEX    expected checksum when --from cannot supply one
 #   --no-app        install the daemon and CLI only, with no desktop app. What a
 #                   server, a CI runner or a container wants: the app needs GTK and a
@@ -46,7 +58,7 @@ while [ $# -gt 0 ]; do
 	--sha256) WANT_SUM="${2:-}"; shift 2 ;;
 	--no-app) WANT_APP=0; shift ;;
 	--no-configure) CONFIGURE=0; shift ;;
-	-h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+	-h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 	*) die "unknown option $1" ;;
 	esac
 done
@@ -275,6 +287,26 @@ if [ -n "$SERVER" ] && [ "$CONFIGURE" -eq 1 ]; then
 	note ""
 	note "pointing this machine at $SERVER"
 	"$DEST" setup -server "$SERVER" -ca-sha256 "$PIN" -limit "$LIMIT"
+elif [ "$CONFIGURE" -eq 1 ]; then
+	# A budget, where the machine has none.
+	#
+	# pkgcache refuses to start without one, so an install that set it only while
+	# configuring a server left `--from` producing a binary that cannot run — and the
+	# error naming the fix arrives one command later than it needed to.
+	#
+	# `pkgcache limit` with no argument exits non-zero exactly when none is set, which
+	# makes it the query as well as the setter, so an existing choice is left alone.
+	if "$DEST" limit >/dev/null 2>&1; then
+		:
+	else
+		note ""
+		note "setting the cache limit to $LIMIT"
+		"$DEST" limit "$LIMIT" >/dev/null || {
+			note "pkgcache is installed but has no disk budget, and will not start"
+			note "without one. Set one yourself:"
+			note "  pkgcache limit $LIMIT"
+		}
+	fi
 fi
 
 case ":$PATH:" in

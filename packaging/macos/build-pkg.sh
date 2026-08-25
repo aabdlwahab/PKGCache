@@ -11,13 +11,19 @@
 # What the package installs:
 #
 #   /Applications/pkgcache.app                      the app, with pkgcache inside it
-#   /usr/local/bin/pkgcache      -> into the bundle
-#   /usr/local/bin/pkgcache-app  -> into the bundle
+#   /usr/local/bin/pkgcache          -> into the bundle
+#   /usr/local/bin/pkgcache-app      -> into the bundle
+#   /usr/local/bin/pkgcache-docker   -> into the bundle
+#   /usr/local/bin/pkgcache-uninstall -> the remover, inside the bundle's Resources
 #
-# Both binaries live inside the bundle and both symlinks point into it. That is not
-# tidiness: an update replaces the bundle, so the daemon and the app move together. They
-# talk over a local API, and this branch has already proved that a mismatched pair is a
-# failure nobody can diagnose from the outside.
+# The shim and the uninstaller are here because Windows and the .deb both had them and
+# this did not. A Mac had no `crate prepare --runtime pkgcache-docker`, and no way to
+# remove the product except deleting files by hand.
+#
+# Every binary lives inside the bundle and every symlink points into it. That is not
+# tidiness: an update replaces the bundle, so the daemon, the app and the shim move
+# together. They talk over a local API, and this branch has already proved that a
+# mismatched pair is a failure nobody can diagnose from the outside.
 #
 # The bundle itself is built by bundle.sh, which is also what somebody uses to install
 # from a build tree. This wraps it in a .pkg for the people who want to double-click.
@@ -31,10 +37,15 @@
 #   --binary-amd64 PATH   pkgcache for Intel          (default ../../go/bin/pkgcache-darwin-amd64)
 #   --app-arm64 PATH      pkgcache-app for Apple Silicon (default ../../go/bin/pkgcache-app-darwin-arm64)
 #   --app-amd64 PATH      pkgcache-app for Intel         (default ../../go/bin/pkgcache-app-darwin-amd64)
+#   --shim-arm64 PATH     pkgcache-docker for Apple Silicon (default ../../go/bin/pkgcache-docker-darwin-arm64)
+#   --shim-amd64 PATH     pkgcache-docker for Intel         (default ../../go/bin/pkgcache-docker-darwin-amd64)
 #   --version V           package version             (default: git describe, else 0.0.0)
 #   --server URL          bake in a cache to configure on install
 #   --ca-sha256 PIN       its CA fingerprint; required with --server
 #   --limit SIZE          disk budget to configure    (default 25G)
+#                         Applied whether or not --server is given: pkgcache refuses to
+#                         start without one, so a package that set it only while
+#                         configuring a server shipped a Mac whose first launch failed.
 #   --sign-app IDENTITY   Developer ID Application identity for the helper and app
 #   --sign-pkg IDENTITY   Developer ID Installer identity for the .pkg
 #   --out DIR             where to write the package  (default .)
@@ -45,6 +56,8 @@ ARM64="$HERE/../../go/bin/pkgcache-darwin-arm64"
 AMD64="$HERE/../../go/bin/pkgcache-darwin-amd64"
 APP_ARM64="$HERE/../../go/bin/pkgcache-app-darwin-arm64"
 APP_AMD64="$HERE/../../go/bin/pkgcache-app-darwin-amd64"
+SHIM_ARM64="$HERE/../../go/bin/pkgcache-docker-darwin-arm64"
+SHIM_AMD64="$HERE/../../go/bin/pkgcache-docker-darwin-amd64"
 VERSION=""; SERVER=""; PIN=""; LIMIT="25G"
 SIGN_APP=""; SIGN_PKG=""; OUT="."
 IDENTIFIER="org.pkgreg.pkgcache"
@@ -57,6 +70,8 @@ while [ $# -gt 0 ]; do
 	--binary-amd64) AMD64="$2"; shift 2 ;;
 	--app-arm64) APP_ARM64="$2"; shift 2 ;;
 	--app-amd64) APP_AMD64="$2"; shift 2 ;;
+	--shim-arm64) SHIM_ARM64="$2"; shift 2 ;;
+	--shim-amd64) SHIM_AMD64="$2"; shift 2 ;;
 	--version) VERSION="$2"; shift 2 ;;
 	--server) SERVER="$2"; shift 2 ;;
 	--ca-sha256) PIN="$2"; shift 2 ;;
@@ -64,7 +79,7 @@ while [ $# -gt 0 ]; do
 	--sign-app) SIGN_APP="$2"; shift 2 ;;
 	--sign-pkg) SIGN_PKG="$2"; shift 2 ;;
 	--out) OUT="$2"; shift 2 ;;
-	-h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+	-h|--help) sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 	*) die "unknown option $1" ;;
 	esac
 done
@@ -138,6 +153,27 @@ cp "$ROOT/usr/local/bin/pkgcache" "$APP/Contents/MacOS/pkgcache"
 chmod 755 "$APP/Contents/MacOS/pkgcache"
 rm -f "$ROOT/usr/local/bin/pkgcache"
 
+# ---- the docker shim ---------------------------------------------------------------
+#
+# Optional the way the .deb treats it, and for the same reason: a build tree that did not
+# produce one still yields a complete package. Unlike the app it is pure Go and
+# cross-compiles from anywhere, so `make shim-darwin` on any host is enough.
+echo "==> the docker shim"
+SHIM="$APP/Contents/MacOS/pkgcache-docker"
+if [ -f "$SHIM_ARM64" ] && [ -f "$SHIM_AMD64" ]; then
+	lipo -create "$SHIM_ARM64" "$SHIM_AMD64" -output "$SHIM"
+	echo "    universal: $(lipo -archs "$SHIM")"
+elif [ -f "$SHIM_ARM64" ]; then
+	cp "$SHIM_ARM64" "$SHIM"; echo "    arm64 only"
+elif [ -f "$SHIM_AMD64" ]; then
+	cp "$SHIM_AMD64" "$SHIM"; echo "    amd64 only"
+else
+	SHIM=""
+	echo "    none found, so this package has no pkgcache-docker"
+	echo "    build one with: cd ../../go && make shim-darwin"
+fi
+[ -z "$SHIM" ] || chmod 755 "$SHIM"
+
 # ---- the icon ---------------------------------------------------------------------
 #
 # Generated from the same SVG as every other icon in this project. sips and iconutil are
@@ -178,11 +214,79 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Both resolve into the bundle. See the note at the top: one update, both halves.
+# All of them resolve into the bundle. See the note at the top: one update, every half.
 ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache \
 	"$ROOT/usr/local/bin/pkgcache"
 ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache-app \
 	"$ROOT/usr/local/bin/pkgcache-app"
+if [ -n "$SHIM" ]; then
+	ln -s /Applications/pkgcache.app/Contents/MacOS/pkgcache-docker \
+		"$ROOT/usr/local/bin/pkgcache-docker"
+fi
+ln -s /Applications/pkgcache.app/Contents/Resources/uninstall.sh \
+	"$ROOT/usr/local/bin/pkgcache-uninstall"
+
+# ---- the licence, which the package has to carry -----------------------------------
+#
+# Apache-2.0 section 4 asks that a recipient of the work receive the licence and the
+# NOTICE. Shipping neither was a real omission: the .pkg is the whole of what a Mac
+# customer receives, and it named no licence anywhere. They go inside the bundle so they
+# travel with it and are removed with it.
+LICENSE_SRC="$HERE/../../LICENSE"
+NOTICE_SRC="$HERE/../../NOTICE"
+[ -f "$LICENSE_SRC" ] || die "no LICENSE at $LICENSE_SRC"
+[ -f "$NOTICE_SRC" ] || die "no NOTICE at $NOTICE_SRC"
+install -m 0644 "$LICENSE_SRC" "$APP/Contents/Resources/LICENSE"
+install -m 0644 "$NOTICE_SRC" "$APP/Contents/Resources/NOTICE"
+
+# ---- the uninstaller ---------------------------------------------------------------
+#
+# Windows has Add/Remove Programs and Ubuntu has `apt remove`; a Mac had bundle.sh in the
+# source tree, which is not something a customer who was handed a .pkg has. This is the
+# same list of things bundle.sh --uninstall removes, shipped where it can be run.
+cat > "$APP/Contents/Resources/uninstall.sh" <<'UNINSTALL'
+#!/bin/bash
+# Remove pkgcache from this Mac.
+#
+# Everything the package installed, taken out again — including the login item and the
+# installer receipt, which are the two that leave a machine haunted. The cache directory
+# is the person's own data and is named rather than deleted.
+set -u
+IDENTIFIER="org.pkgreg.pkgcache"
+CACHE="$HOME/Library/Application Support/pkgcache"
+
+if [ "${1:-}" != "-y" ]; then
+	printf 'Remove pkgcache from this Mac? Your cached packages are kept. [y/N] '
+	read -r reply
+	case "$reply" in y|Y|yes|YES) ;; *) echo "Nothing was removed."; exit 0 ;; esac
+fi
+
+echo "==> stopping"
+pkill -x pkgcache-app 2>/dev/null || true
+[ -x /usr/local/bin/pkgcache ] && /usr/local/bin/pkgcache stop >/dev/null 2>&1 || true
+
+echo "==> removing the login item"
+[ -x /usr/local/bin/pkgcache-app ] &&
+	/usr/local/bin/pkgcache-app -off-login >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/$IDENTIFIER-app.plist"
+
+echo "==> removing files"
+# sudo, because /Applications and /usr/local/bin are not the user's to write. Asked for
+# once, here, rather than by an installer the person is no longer running.
+sudo rm -rf /Applications/pkgcache.app
+sudo rm -f /usr/local/bin/pkgcache /usr/local/bin/pkgcache-app \
+	/usr/local/bin/pkgcache-docker /usr/local/bin/pkgcache-uninstall
+
+# Without this the installer still believes a newer version is present and refuses to
+# install an older one over it, which is a confusing way to fail a reinstall.
+sudo /usr/sbin/pkgutil --forget "$IDENTIFIER" >/dev/null 2>&1 || true
+
+echo
+echo "Removed. Your cached packages were left at:"
+echo "  $CACHE"
+echo "Delete that directory to reclaim the space."
+UNINSTALL
+chmod 755 "$APP/Contents/Resources/uninstall.sh"
 
 # ---- what happens after the files land --------------------------------------------
 cat > "$SCRIPTS/postinstall" <<POSTINSTALL
@@ -224,6 +328,32 @@ run_as_user /usr/local/bin/pkgcache setup \\
 	echo "  pkgcache setup -server $SERVER -ca-sha256 $PIN -limit $LIMIT" >&2
 }
 POSTINSTALL
+else
+	cat >> "$SCRIPTS/postinstall" <<POSTINSTALL
+
+# A disk budget, but only where there is not one already.
+#
+# pkgcache refuses to start without one, deliberately, and will not guess a size for
+# somebody else's disk. That is right for the CLI, where the error names the command that
+# answers it — and wrong here, because the last thing this script does is open the app,
+# so without this the first thing a new Mac shows is that error in a window telling a
+# person who just double-clicked an installer to go and find a terminal.
+#
+# pkgcache limit with no argument exits non-zero exactly when none is set, which makes
+# it the query as well as the setter. Asking first is what stops an upgrade from
+# overwriting a size somebody chose: this runs on every install, and silently resetting a
+# 200G cap would be a poor way to repay one.
+if run_as_user /usr/local/bin/pkgcache limit >/dev/null 2>&1; then
+	echo "a cache limit is already set; leaving it alone"
+else
+	echo "setting the cache limit to $LIMIT"
+	run_as_user /usr/local/bin/pkgcache limit "$LIMIT" >/dev/null || {
+		echo "pkgcache is installed but has no disk budget, and will not start" >&2
+		echo "without one. Set one yourself:" >&2
+		echo "  pkgcache limit $LIMIT" >&2
+	}
+fi
+POSTINSTALL
 fi
 
 cat >> "$SCRIPTS/postinstall" <<'POSTINSTALL'
@@ -244,7 +374,8 @@ fi
 
 echo ""
 echo "pkgcache is in your menu bar, and will be there when you log in."
-echo "To stop that:  pkgcache-app -off-login"
+echo "To stop that:     pkgcache-app -off-login"
+echo "To remove it all: pkgcache-uninstall"
 exit 0
 POSTINSTALL
 chmod 755 "$SCRIPTS/postinstall"
@@ -258,6 +389,12 @@ if [ -n "$SIGN_APP" ]; then
 		"$APP/Contents/MacOS/pkgcache"
 	codesign --force --options runtime --timestamp -s "$SIGN_APP" \
 		"$APP/Contents/MacOS/pkgcache-app"
+	# The shim too, and before the bundle: an unsigned Mach-O inside a signed container
+	# makes the container's signature invalid, which Gatekeeper reports as a damaged app.
+	if [ -n "$SHIM" ]; then
+		codesign --force --options runtime --timestamp -s "$SIGN_APP" \
+			"$APP/Contents/MacOS/pkgcache-docker"
+	fi
 	codesign --force --options runtime --timestamp -s "$SIGN_APP" "$APP"
 	codesign --verify --deep --strict --verbose=2 "$APP"
 fi
@@ -303,6 +440,14 @@ pkgbuild \
 	--component-plist "$WORK/component.plist" \
 	"$COMPONENT"
 
+# The licence Installer shows before it installs anything, which is the one place a
+# person is actually asked to agree to it. Apache-2.0 section 4 wants the licence and the
+# NOTICE to reach whoever receives the work; the copies inside the bundle satisfy that on
+# disk, and this is the same text where it is read.
+RESOURCES="$WORK/resources"
+mkdir -p "$RESOURCES"
+cp "$LICENSE_SRC" "$RESOURCES/LICENSE.txt"
+
 cat > "$WORK/distribution.xml" <<DIST
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -312,6 +457,7 @@ cat > "$WORK/distribution.xml" <<DIST
 	<volume-check>
 		<allowed-os-versions><os-version min="11.0"/></allowed-os-versions>
 	</volume-check>
+	<license file="LICENSE.txt"/>
 	<choices-outline><line choice="default"/></choices-outline>
 	<choice id="default" title="pkgcache">
 		<pkg-ref id="$IDENTIFIER"/>
@@ -322,9 +468,10 @@ DIST
 
 if [ -n "$SIGN_PKG" ]; then
 	productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" \
-		--sign "$SIGN_PKG" "$PKG"
+		--resources "$RESOURCES" --sign "$SIGN_PKG" "$PKG"
 else
-	productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" "$PKG"
+	productbuild --distribution "$WORK/distribution.xml" --package-path "$WORK" \
+		--resources "$RESOURCES" "$PKG"
 fi
 
 echo ""
