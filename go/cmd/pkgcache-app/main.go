@@ -361,6 +361,36 @@ func openWindow(ctx context.Context, core *appcore.Core) {
 	}()
 }
 
+// openConsole shows the full console, which is a browser's job rather than this window's.
+//
+// The two menu items used to do the same thing — both landed here, and this resolved the
+// widget's address either way — so "Open the console" opened the panel. They are not the
+// same page. The widget is 420 points wide and answers "what is my cache doing right now";
+// the console is the operator UI a pkgreg server serves, with inventory, sources,
+// transfers, statistics and the jobs behind them. That belongs in a window with tabs and
+// an address bar, which is the same call `pkgcache console` makes for the same reason.
+//
+// On its own goroutine, like openWindow and for the same two reasons: the caller is the UI
+// thread, and resolving the address may start a cold daemon.
+func openConsole(ctx context.Context, core *appcore.Core) {
+	go func() {
+		url, err := core.WindowURL(ctx, tray.ActionConsole)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pkgcache-app: %v\n", err)
+			return
+		}
+		// Never an app-mode window: the tabs and the address bar are the point of asking
+		// for the console rather than for the widget.
+		launcher, err := local.ResolveLauncher(url, false, local.GOOS(), nil, nil)
+		if err == nil {
+			err = local.OpenBrowser(ctx, launcher)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pkgcache-app: no browser here — open this yourself:\n%s\n", url)
+		}
+	}()
+}
+
 // buildMenu renders the tray menu from the same table the CLI's tray uses.
 //
 // The labels and the enabled rules come from internal/tray, so the status bar item and
@@ -380,8 +410,10 @@ func buildMenu(
 		item := menu.Add(choice.Label(tray.State{}))
 		item.OnClick(func(*application.Context) {
 			switch choice {
-			case tray.ActionWidget, tray.ActionConsole:
+			case tray.ActionWidget:
 				openWindow(ctx, core)
+			case tray.ActionConsole:
+				openConsole(ctx, core)
 			case tray.ActionQuit:
 				// Quits the icon, not the cache. The daemon has its own idle exit and
 				// stopping it here would surprise whatever is mid-install.

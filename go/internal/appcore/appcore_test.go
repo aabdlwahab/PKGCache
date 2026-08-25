@@ -100,3 +100,22 @@ func TestTitleCarriesTheProject(t *testing.T) {
 		t.Errorf("with no project, Title = %q, want %q", got, "pkgcache")
 	}
 }
+
+// The two window items are two pages. They were one for a while — the app sent both menu
+// clicks down the same path and resolved the widget's address either way — and the symptom
+// was a console item that opened the panel. A caller asking for the console gets the
+// console.
+func TestTheConsoleAndTheWidgetAreDifferentPages(t *testing.T) {
+	widget := WindowPath(tray.ActionWidget)
+	console := WindowPath(tray.ActionConsole)
+	if widget != "/widget" || console != "/console" {
+		t.Fatalf("widget = %q, console = %q", widget, console)
+	}
+	// Every other action is a cache operation rather than a page, and the window they
+	// would open if one somehow asked is the panel, not the operator console.
+	for _, action := range []tray.Action{tray.ActionOffline, tray.ActionPrune, tray.ActionStop} {
+		if got := WindowPath(action); got != "/widget" {
+			t.Errorf("WindowPath(%v) = %q", action, got)
+		}
+	}
+}

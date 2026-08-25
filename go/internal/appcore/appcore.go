@@ -135,16 +135,26 @@ func (c *Core) Do(ctx context.Context, action tray.Action) error {
 	return nil
 }
 
+// WindowPath is the page an action asks for.
+//
+// Two pages, and they are not interchangeable: the widget is a panel that answers "what is
+// my cache doing right now", and the console is the whole operator UI — inventory,
+// sources, transfers, statistics, jobs. A caller that shows one where the other was asked
+// for leaves two menu items that look identical, which is what this once was.
+func WindowPath(action tray.Action) string {
+	if action == tray.ActionConsole {
+		return "/console"
+	}
+	return "/widget"
+}
+
 // WindowURL is the address the window should show, starting the cache if it is not
 // running.
 //
 // The one thing here allowed to start a daemon, because it is somebody asking to look at
 // the cache. Every other path in this package passes NoStart.
 func (c *Core) WindowURL(ctx context.Context, action tray.Action) (string, error) {
-	path := "/widget"
-	if action == tray.ActionConsole {
-		path = "/console"
-	}
+	path := WindowPath(action)
 	daemon, err := c.ensure(ctx, true)
 	if err != nil {
 		return "", err
