@@ -133,7 +133,8 @@ var (
 	// A FROM line, with its optional flags (--platform=…) kept intact.
 	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--[^\s]+\s+)*)(\S+)(.*)$`)
 	// AS <name> at the end of a FROM.
-	asRE = regexp.MustCompile(`(?i)\sAS\s+(\S+)\s*$`)
+	userRE = regexp.MustCompile(`(?i)^\s*USER\s+(\S+)`)
+	asRE   = regexp.MustCompile(`(?i)\sAS\s+(\S+)\s*$`)
 	// A RUN line, with any flags it already carries.
 	runRE = regexp.MustCompile(`(?i)^(\s*RUN\s+)(.*)$`)
 	// A heredoc opener, e.g. RUN <<EOF or COPY <<-'EOF'. Everything up to the
@@ -217,19 +218,47 @@ func Rewrite(source []byte, options Options) (Result, error) {
 	// apk is only worth touching when there is a proxy for it to reach.
 	proxied := options.AptProxy != ""
 	inStage := false
+	// Where in the current stage to put the repositories back: the line of the first
+	// USER that drops privileges, or -1 for "nowhere yet, so the end of the stage".
+	restoreAt := -1
+
+	// insertLine puts a line at an earlier position without disturbing what follows.
+	insertLine := func(at int, line string) {
+		rewritten = append(rewritten, "")
+		copy(rewritten[at+1:], rewritten[at:])
+		rewritten[at] = line
+	}
+	// closeStage hands the repositories back at the last point the build can still
+	// write them.
+	closeStage := func() {
+		if !proxied || !inStage {
+			return
+		}
+		if restoreAt >= 0 {
+			insertLine(restoreAt, apkRestore())
+		} else {
+			rewritten = append(rewritten, apkRestore())
+		}
+		restoreAt = -1
+	}
 
 	for _, item := range parse(string(source)) {
 		if !item.code {
 			rewritten = append(rewritten, item.text)
 			continue
 		}
+		// The restore has to run while the stage can still write /etc/apk. A stage that
+		// ends with `USER node` cannot, so the spot is remembered here and the line is
+		// inserted there when the stage closes.
+		if proxied && inStage && restoreAt < 0 && dropsPrivileges(item.text) {
+			restoreAt = len(rewritten)
+		}
+
 		switch {
 		case isFrom(item.text):
 			// The stage that is ending gets its repositories back before the next one
 			// starts, or the change would ship in whichever stage happened to be last.
-			if proxied && inStage {
-				rewritten = append(rewritten, apkRestore())
-			}
+			closeStage()
 			replaced, change := rewriteFrom(item.text, stages, options)
 			rewritten = append(rewritten, replaced)
 			if change != nil {
@@ -262,9 +291,7 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		}
 	}
 
-	if proxied && inStage {
-		rewritten = append(rewritten, apkRestore())
-	}
+	closeStage()
 
 	body := strings.Join(rewritten, "\n")
 	if !strings.HasSuffix(body, "\n") {
@@ -296,9 +323,31 @@ func Rewrite(source []byte, options Options) (Result, error) {
 // anything else without apk.
 const apkBackup = "/etc/apk/repositories.pkgcache"
 
+// dropsPrivileges reports whether this instruction hands the stage to a user that
+// cannot write /etc/apk.
+//
+// An unresolved build argument could name anybody, so it counts as dropping them:
+// restoring a few lines early costs a stage nothing, and restoring too late fails the
+// build outright — which is how this was found.
+func dropsPrivileges(text string) bool {
+	match := userRE.FindStringSubmatch(text)
+	if match == nil {
+		return false
+	}
+	name := match[1]
+	if colon := strings.Index(name, ":"); colon >= 0 {
+		name = name[:colon]
+	}
+	return name != "root" && name != "0"
+}
+
 func apkToPlainHTTP() string {
-	return "RUN if [ -f /etc/apk/repositories ]; then cp /etc/apk/repositories " +
-		apkBackup + " && sed -i 's|^https://|http://|' /etc/apk/repositories; fi"
+	// The copy is what decides whether any of this happens: where it cannot be written
+	// — an image whose default user is not root — the stage is left exactly as it was
+	// and no backup exists, so the restore is a no-op too. Not caching apk is a cost;
+	// failing somebody's build to bend a file this cache only borrowed is not.
+	return "RUN if [ -f /etc/apk/repositories ] && cp /etc/apk/repositories " +
+		apkBackup + " 2>/dev/null; then sed -i 's|^https://|http://|' /etc/apk/repositories; fi"
 }
 
 func apkRestore() string {

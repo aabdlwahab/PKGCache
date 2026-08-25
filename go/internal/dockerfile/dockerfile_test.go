@@ -596,3 +596,97 @@ func TestClientTimeoutsAllowForAColdCache(t *testing.T) {
 		t.Error("the timeout was disabled rather than raised")
 	}
 }
+
+// TestApkRestoreRunsBeforePrivilegesAreDropped is the bug a user hit building a Node
+// service: the restore was appended at the end of the stage, which is after `USER node`,
+// so `mv` ran unprivileged and the build died with
+//
+//	mv: can't rename '/etc/apk/repositories.pkgcache': Permission denied
+//
+// on a Dockerfile that had nothing to do with apk. The cache borrowed a file and has to
+// hand it back while it still can.
+func TestApkRestoreRunsBeforePrivilegesAreDropped(t *testing.T) {
+	const source = `FROM node:22-alpine AS runtime
+WORKDIR /app
+RUN npm ci --omit=dev && npm cache clean --force
+RUN mkdir -p /app/data && chown node:node /app/data
+USER node
+EXPOSE 7000
+CMD ["node", "dist/server.js"]
+`
+	body, _ := rewrite(t, source, bridge())
+
+	restore := strings.Index(body, "mv "+apkBackup)
+	user := strings.Index(body, "USER node")
+	if restore < 0 {
+		t.Fatalf("the repositories file is never put back:\n%s", body)
+	}
+	if user < 0 {
+		t.Fatalf("the USER line went missing:\n%s", body)
+	}
+	if restore > user {
+		t.Errorf("the restore runs after privileges are dropped, so it cannot write:\n%s", body)
+	}
+	// It must still come after the work that needed the rewritten repositories.
+	if setup := strings.Index(body, "sed -i 's|^https://|http://|'"); setup > restore {
+		t.Errorf("the restore runs before the rewrite it undoes:\n%s", body)
+	}
+}
+
+func TestApkRestoreStaysAtTheEndWhenRootIsKept(t *testing.T) {
+	// USER root is not a privilege drop, and a stage that never switches keeps the
+	// restore last so everything before it still sees the rewritten repositories.
+	const source = `FROM alpine:3.20
+USER root
+RUN apk add --no-cache curl
+`
+	body, _ := rewrite(t, source, bridge())
+	if strings.Index(body, "apk add") > strings.Index(body, "mv "+apkBackup) {
+		t.Errorf("the restore ran before apk could use the rewrite:\n%s", body)
+	}
+}
+
+func TestApkRestorePlacedPerStage(t *testing.T) {
+	// A builder that drops privileges and a runtime that does not: each stage has to be
+	// closed on its own terms, since a stage's file is its own.
+	const source = `FROM node:22-alpine AS builder
+RUN npm ci
+USER node
+RUN npm run build
+
+FROM node:22-alpine AS runtime
+RUN apk add --no-cache nginx
+CMD ["nginx"]
+`
+	body, _ := rewrite(t, source, bridge())
+	if got := strings.Count(body, "mv "+apkBackup); got != 2 {
+		t.Fatalf("want one restore per stage, got %d:\n%s", got, body)
+	}
+	lines := strings.Split(body, "\n")
+	var restores, userNode, apkAdd int
+	for i, line := range lines {
+		switch {
+		case strings.Contains(line, "mv "+apkBackup) && restores == 0:
+			restores = i
+		case strings.Contains(line, "USER node"):
+			userNode = i
+		case strings.Contains(line, "apk add"):
+			apkAdd = i
+		}
+	}
+	if restores > userNode {
+		t.Errorf("the builder's restore is after its USER switch:\n%s", body)
+	}
+	if apkAdd < restores {
+		t.Errorf("the runtime's apk add landed in the wrong stage:\n%s", body)
+	}
+}
+
+func TestApkSetupCannotFailABuildItCannotHelp(t *testing.T) {
+	// Where /etc/apk is not writable the copy fails, and the whole thing has to become a
+	// no-op rather than an error: not caching apk is a cost, breaking the build is not.
+	body, _ := rewrite(t, "FROM node:22-alpine\nRUN npm ci\n", bridge())
+	if !strings.Contains(body, "cp /etc/apk/repositories "+apkBackup+" 2>/dev/null; then") {
+		t.Errorf("the setup is not guarded on the copy succeeding:\n%s", body)
+	}
+}
