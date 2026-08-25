@@ -1,0 +1,372 @@
+name: Signed pkgcache installers
+
+# The three artefacts a customer actually installs.
+#
+# client-release.yml builds pkgreg-client — the forwarding shim — and signs, notarizes
+# and attests it. It does not build pkgcache, the app, the docker shim, or any of the
+# three installers, which meant every artefact a customer receives was hand-built on
+# somebody's laptop: unsigned on Windows, unsigned and un-notarized on macOS, and with
+# no published checksum anywhere. This is that pipeline.
+#
+# Each platform's installer is built where its signing tool lives, because that is the
+# only real constraint: pkgbuild and notarytool need a Mac, signtool needs Windows, and
+# the .deb needs neither and is built on Linux with the app compiled natively beside it.
+
+on:
+  push:
+    tags:
+      - "pkgcache-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp when running without a tag"
+        required: false
+        default: "0.0.0-dev"
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: "-trimpath"
+
+jobs:
+  # The version every job stamps, resolved once. A tag pushes pkgcache-v1.2.3 and the
+  # installers want 1.2.3: three jobs deriving that separately is three chances to
+  # disagree, and a .pkg and a .deb that disagree about their own version is the kind of
+  # thing nobody notices until an upgrade refuses.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            version="${GITHUB_REF_NAME#pkgcache-v}"
+          else
+            version="${{ github.event.inputs.version || '0.0.0-dev' }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "building $version"
+
+  # ---- Ubuntu / Debian --------------------------------------------------------------
+  #
+  # Two architectures, and the app is what forces two runners: it needs cgo and a GTK
+  # toolchain, so it is compiled natively on each rather than cross-compiled. The daemon
+  # and the shim are CGO_ENABLED=0 and would cross-build from either.
+  linux-app:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Install the GTK and WebKit headers the app links against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: Build the app
+        working-directory: go
+        run: make app VERSION=${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-${{ matrix.arch }}
+          path: go/bin/pkgcache-app-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
+  debs:
+    needs: [version, linux-app]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      # Both app binaries land in go/bin under the names `make deb` looks for. A missing
+      # one is not fatal there — build.sh produces a complete daemon package and says the
+      # desktop half was skipped — which is deliberate, so the log is worth reading.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: app-linux-*
+          path: go/bin
+          merge-multiple: true
+      - name: Build both packages for both architectures
+        working-directory: go
+        run: |
+          chmod +x bin/pkgcache-app-linux-* 2>/dev/null || true
+          make deb VERSION=${{ needs.version.outputs.version }}
+      - name: Require all four packages
+        working-directory: go/bin
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in pkgcache pkgcache-desktop; do
+            for arch in amd64 arm64; do
+              ls "${name}"_*_"${arch}".deb >/dev/null 2>&1 || {
+                echo "::error::no ${name} package for ${arch}"; missing=1; }
+            done
+          done
+          [ "$missing" -eq 0 ]
+      - uses: actions/attest@v4
+        with:
+          subject-path: "go/bin/*.deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-linux
+          path: go/bin/*.deb
+          if-no-files-found: error
+
+  # ---- macOS ------------------------------------------------------------------------
+  #
+  # The Intel half of the app, built on an Intel runner. Cross-compiling cgo to x86_64
+  # from an arm64 Mac is possible and is not worth the arguments about SDK paths when a
+  # runner that is simply Intel exists.
+  macos-app-amd64:
+    needs: version
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build the app
+        working-directory: go
+        run: make app VERSION=${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-darwin-amd64
+          path: go/bin/pkgcache-app-darwin-amd64
+          if-no-files-found: error
+
+  pkg:
+    needs: [version, macos-app-amd64]
+    runs-on: macos-14
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      # Two identities, not one. Developer ID Application signs the app and the binaries
+      # inside it; Developer ID Installer signs the .pkg. Signing a package with the
+      # application identity produces a package that installs and cannot be verified,
+      # which is the least useful of the three possible outcomes.
+      - name: Require Apple signing and notarization credentials
+        shell: bash
+        run: |
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY APPLE_INSTALLER_IDENTITY APPLE_ID APPLE_TEAM_ID \
+            APPLE_APP_PASSWORD; do
+            test -n "${!name:-}" || { echo "::error::$name is required"; exit 1; }
+          done
+      - name: Import the Developer ID certificates
+        shell: bash
+        run: |
+          CERTIFICATE="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN="$RUNNER_TEMP/pkgcache-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$CERTIFICATE"
+          security create-keychain -p "$RUNNER_TEMP" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$RUNNER_TEMP" "$KEYCHAIN"
+          security import "$CERTIFICATE" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$RUNNER_TEMP" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-darwin-amd64
+          path: go/bin
+      - name: Build the daemon, the shim, and the arm64 app
+        working-directory: go
+        run: |
+          set -euo pipefail
+          V=${{ needs.version.outputs.version }}
+          chmod +x bin/pkgcache-app-darwin-amd64
+          # pkgcache and the shim are CGO_ENABLED=0 and cross-compile to both
+          # architectures from here; only the app needs a Mac of its own, which is why
+          # the Intel half of it arrived as an artefact above.
+          make pkgcache-release VERSION="$V"
+          make shim-darwin VERSION="$V"
+          make app VERSION="$V"
+      - name: Build and sign the package
+        working-directory: packaging/macos
+        run: |
+          ./build-pkg.sh --version ${{ needs.version.outputs.version }} \
+            --sign-app "$APPLE_SIGNING_IDENTITY" \
+            --sign-pkg "$APPLE_INSTALLER_IDENTITY" \
+            --out "$GITHUB_WORKSPACE/dist"
+      # Stapled, unlike the bare client binary: a .pkg can carry its own notarization
+      # ticket, so an installer that reaches a Mac with no network still opens.
+      - name: Notarize and staple
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="$(ls "$GITHUB_WORKSPACE"/dist/pkgcache-*.pkg)"
+          xcrun notarytool submit "$PKG" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD"
+          xcrun stapler staple "$PKG"
+          # The check Gatekeeper itself performs, run on the exact bytes that ship.
+          spctl --assess --type install --verbose=2 "$PKG"
+      - uses: actions/attest@v4
+        with:
+          subject-path: "dist/pkgcache-*.pkg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-macos
+          path: dist/pkgcache-*.pkg
+          if-no-files-found: error
+
+  # ---- Windows ----------------------------------------------------------------------
+  #
+  # All of it on one Windows runner, because the order matters: every binary has to be
+  # signed before makensis packs it, and the installer signed after it is built. Doing
+  # the build on Linux — which it can, everything for this target is pure Go — would mean
+  # shuttling artefacts to a Windows runner and back to get that order right.
+  setup-exe:
+    needs: version
+    runs-on: windows-2025
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Require Windows signing credentials
+        shell: pwsh
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE_BASE64) { throw "WINDOWS_CERTIFICATE_BASE64 is required" }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) { throw "WINDOWS_CERTIFICATE_PASSWORD is required" }
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --no-progress -y
+      - name: Build the three binaries
+        shell: pwsh
+        working-directory: go
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $info = "github.com/aabdlwahab/PKGCache/internal/buildinfo"
+          $stamp = "-X $info.version=$v -X $info.commit=$env:GITHUB_SHA -X $info.date=$date"
+          $env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"
+          go build "-ldflags=-s -w $stamp" -o ../packaging/windows/pkgcache.exe ./cmd/pkgcache
+          go build "-ldflags=-s -w $stamp" -o ../packaging/windows/pkgcache-docker.exe ./cmd/pkgcache-docker
+          # -H windowsgui, or the app flashes a console window at every login.
+          Push-Location cmd/pkgcache-app
+          go build "-ldflags=-s -w -H windowsgui $stamp" -o ../../../packaging/windows/pkgcache-app.exe .
+          Pop-Location
+      # Signed before they are packed. An installer that is itself signed but carries
+      # unsigned executables trips SmartScreen on first run instead of first download,
+      # which is a worse place to meet it.
+      - name: Sign the binaries, build the installer, sign the installer
+        shell: pwsh
+        working-directory: packaging/windows
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "pkgcache-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $sign = @("sign", "/fd", "SHA256", "/td", "SHA256",
+                    "/tr", "http://timestamp.digicert.com",
+                    "/f", $certificate, "/p", $env:WINDOWS_CERTIFICATE_PASSWORD)
+          Copy-Item ../../LICENSE LICENSE.txt
+          Copy-Item ../../NOTICE NOTICE.txt
+          foreach ($exe in "pkgcache.exe", "pkgcache-app.exe", "pkgcache-docker.exe") {
+            & signtool @sign $exe
+            if ($LASTEXITCODE -ne 0) { throw "signing $exe failed" }
+          }
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis "/DVERSION=${{ needs.version.outputs.version }}" pkgcache.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          $setup = Get-ChildItem pkgcache-*-setup.exe | Select-Object -First 1
+          & signtool @sign $setup.FullName
+          if ($LASTEXITCODE -ne 0) { throw "signing the installer failed" }
+          & signtool verify /pa /v $setup.FullName
+          if ($LASTEXITCODE -ne 0) { throw "the installer signature does not verify" }
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\dist" | Out-Null
+          Move-Item $setup.FullName "$env:GITHUB_WORKSPACE\dist\"
+      - uses: actions/attest@v4
+        with:
+          subject-path: "dist/pkgcache-*-setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-windows
+          path: dist/pkgcache-*-setup.exe
+          if-no-files-found: error
+
+  # ---- one release ------------------------------------------------------------------
+  release:
+    needs: [version, debs, pkg, setup-exe]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: dist
+          merge-multiple: true
+      # The thing none of these artefacts had. A checksum a customer can check against
+      # something we published is the difference between "verify what you downloaded" as
+      # advice and as an instruction they can follow.
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum ./*.deb ./*.pkg ./*-setup.exe > pkgcache-installers-SHA256SUMS
+          cat pkgcache-installers-SHA256SUMS
+      - name: Require every installer
+        working-directory: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pattern in "*.pkg" "*-setup.exe" "pkgcache_*_amd64.deb" "pkgcache_*_arm64.deb" \
+            "pkgcache-desktop_*_amd64.deb" "pkgcache-desktop_*_arm64.deb"; do
+            ls $pattern >/dev/null 2>&1 || { echo "::error::no artefact matching $pattern"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgcache-installer-checksums
+          path: dist/pkgcache-installers-SHA256SUMS
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
