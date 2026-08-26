@@ -151,14 +151,67 @@ func TestCacheAddressModeLeavesTheBuildNetworkAlone(t *testing.T) {
 	}
 }
 
-func TestSetComposeDockerfilePointsTheBuildAtTheGeneratedFile(t *testing.T) {
-	out, err := SetComposeDockerfile([]byte(rendered), "app", "/tmp/pkgreg-x.Dockerfile")
+// Nothing is written out for Compose to point at: a Docker client that cannot read
+// this process's filesystem — the snap, with its own /tmp — would send an empty
+// dockerfile and fail the build on a path only this process can see.
+func TestRewrittenDockerfileTravelsInsideTheDocument(t *testing.T) {
+	result, err := RewriteCompose([]byte(rendered), bridge(),
+		readStub(t, "FROM python:3.12-alpine\nRUN pip install six\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	build, _ := service(t, decode(t, out), "app")["build"].(map[string]any)
-	if build["dockerfile"] != "/tmp/pkgreg-x.Dockerfile" {
-		t.Fatalf("dockerfile = %v", build["dockerfile"])
+	build, _ := service(t, decode(t, result.Content), "app")["build"].(map[string]any)
+	inline, _ := build["dockerfile_inline"].(string)
+	if !strings.Contains(inline, "ARG PIP_INDEX_URL=") {
+		t.Fatalf("build carries no rewritten Dockerfile: %v", build)
+	}
+	// The two are mutually exclusive, and the path names the original.
+	if _, ok := build["dockerfile"]; ok {
+		t.Fatalf("dockerfile path left beside the inline rewrite: %v", build)
+	}
+}
+
+// A Dockerfile that leans on tabs, blank lines and trailing backslashes has to survive
+// the trip through YAML — HEALTHCHECK continuations are written exactly that way.
+func TestAwkwardDockerfileSurvivesBeingInlined(t *testing.T) {
+	source := "FROM alpine\n\nHEALTHCHECK --interval=30s \\\n\tCMD wget -q -O- http://127.0.0.1/ || exit 1\n"
+	result, err := RewriteCompose([]byte(rendered), bridge(), readStub(t, source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, _ := service(t, decode(t, result.Content), "app")["build"].(map[string]any)
+	inline, _ := build["dockerfile_inline"].(string)
+	if want := "\tCMD wget"; !strings.Contains(inline, want) {
+		t.Fatalf("inlined Dockerfile lost %q:\n%q", want, inline)
+	}
+	if !strings.Contains(inline, string(result.Dockerfiles["app"].Content)) {
+		t.Fatalf("inlined Dockerfile is not what was generated:\n%q", inline)
+	}
+}
+
+// `compose config` renders dockerfile_inline back out as itself, so a build that was
+// already inline has no file to read. Reading the one that is not there would fail a
+// build that works fine without pkgcache.
+func TestServiceThatWasAlreadyInlineIsRewrittenInPlace(t *testing.T) {
+	document := `
+services:
+  app:
+    build:
+      context: /work/app
+      dockerfile_inline: |
+        FROM python:3.12-alpine
+        RUN pip install six
+`
+	result, err := RewriteCompose([]byte(document), bridge(), func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("read %s: there is no file to read", path)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, _ := service(t, decode(t, result.Content), "app")["build"].(map[string]any)
+	inline, _ := build["dockerfile_inline"].(string)
+	if !strings.Contains(inline, "ARG PIP_INDEX_URL=") {
+		t.Fatalf("an already-inline build was not rewritten: %v", build)
 	}
 }
 

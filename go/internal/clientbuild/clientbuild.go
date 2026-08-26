@@ -7,12 +7,14 @@
 // would have written with no cache at all, and still works on a machine that has never
 // heard of one.
 //
-// Nothing is written into the project. The generated Dockerfile goes to a temporary
-// directory, deliberately outside the build context: a `COPY . .` would otherwise
-// sweep it into the image.
+// Nothing is written into the project, or anywhere else. The rewritten Dockerfile
+// reaches Docker on standard input, so there is no generated file for a `COPY . .` to
+// sweep into the image — and none for a Docker client that cannot see this process's
+// filesystem to fail to open. See Build.
 package clientbuild
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,7 +62,9 @@ type Options struct {
 
 	Stdout, Stderr io.Writer
 	// Runner executes the docker command. Injected so the tests never need Docker.
-	Runner func(ctx context.Context, name string, args []string) error
+	// stdin is what docker reads on its standard input: the rewritten Dockerfile for a
+	// build, the rendered configuration for compose, or nil for this terminal's own.
+	Runner func(ctx context.Context, name string, args []string, stdin io.Reader) error
 
 	// Indexes maps an upstream package index origin to the cache's name for it, so a
 	// Dockerfile naming one directly is served from here. DiscoverIndexes asks the cache.
@@ -282,14 +286,14 @@ func Build(ctx context.Context, o Options, args []string) error {
 		return err
 	}
 
-	generated, cleanup, err := writeTemp(result.Content)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
 	report(o.Stderr, result.Changes)
-	command := []string{"build", "-f", generated}
+	// `-f -` rather than a generated file, because not every Docker client can read
+	// this process's filesystem: the snap has a private /tmp, and a rootless daemon
+	// has its own mount namespace. Such a client sends an empty dockerfile and the
+	// build dies on "failed to read dockerfile ... no such file or directory".
+	// Standard input is the one channel every client shares with whoever invoked it,
+	// and it keeps the generated file out of the build context for free.
+	command := []string{"build", "-f", "-"}
 	switch rewrite.Mode {
 	case dockerfile.Bridge:
 		// The RUN steps talk to a loopback address, which only exists in the build
@@ -306,7 +310,7 @@ func Build(ctx context.Context, o Options, args []string) error {
 		command = append(command,
 			"--secret", "id="+dockerfile.SecretID+",src="+o.CAFile)
 	}
-	return o.Runner(ctx, "docker", append(command, rest...))
+	return o.Runner(ctx, "docker", append(command, rest...), bytes.NewReader(result.Content))
 }
 
 // Compose rewrites a rendered Compose configuration and feeds it back on stdin.
@@ -330,22 +334,8 @@ func Compose(ctx context.Context, o Options, args []string) error {
 	}
 
 	document := result.Content
-	var cleanups []func()
-	defer func() {
-		for _, done := range cleanups {
-			done()
-		}
-	}()
 	needsSecret := false
-	for service, build := range result.Dockerfiles {
-		generated, cleanup, err := writeTemp(build.Content)
-		if err != nil {
-			return err
-		}
-		cleanups = append(cleanups, cleanup)
-		if document, err = dockerfile.SetComposeDockerfile(document, service, generated); err != nil {
-			return err
-		}
+	for _, build := range result.Dockerfiles {
 		needsSecret = needsSecret || build.NeedsSecret
 	}
 	if o.Print {
@@ -361,8 +351,10 @@ func Compose(ctx context.Context, o Options, args []string) error {
 	}
 	// On stdin rather than a temporary file on purpose: a rendered configuration
 	// carries interpolated environment values, which can include credentials, and
-	// none of this needs to touch the disk.
-	return o.runStdin(ctx, document, append([]string{"compose", "-f", "-"}, args...))
+	// none of this needs to touch the disk. The rewritten Dockerfiles ride along
+	// inside it as `dockerfile_inline`, for that reason and for Build's.
+	return o.Runner(ctx, "docker",
+		append([]string{"compose", "-f", "-"}, args...), bytes.NewReader(document))
 }
 
 func (o Options) render(ctx context.Context, selection []string) ([]byte, error) {
@@ -376,13 +368,6 @@ func (o Options) render(ctx context.Context, selection []string) ([]byte, error)
 	return out, nil
 }
 
-func (o Options) runStdin(ctx context.Context, input []byte, args []string) error {
-	command := exec.CommandContext(ctx, "docker", args...)
-	command.Stdin = strings.NewReader(string(input))
-	command.Stdout, command.Stderr = o.Stdout, o.Stderr
-	return command.Run()
-}
-
 func withDefaults(o Options) Options {
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
@@ -391,9 +376,14 @@ func withDefaults(o Options) Options {
 		o.Stderr = os.Stderr
 	}
 	if o.Runner == nil {
-		o.Runner = func(ctx context.Context, name string, args []string) error {
+		o.Runner = func(
+			ctx context.Context, name string, args []string, stdin io.Reader,
+		) error {
 			command := exec.CommandContext(ctx, name, args...)
-			command.Stdin, command.Stdout, command.Stderr = os.Stdin, o.Stdout, o.Stderr
+			if stdin == nil {
+				stdin = os.Stdin
+			}
+			command.Stdin, command.Stdout, command.Stderr = stdin, o.Stdout, o.Stderr
 			return command.Run()
 		}
 	}
@@ -406,25 +396,6 @@ func report(w io.Writer, changes []dockerfile.Change) {
 	for _, change := range changes {
 		fmt.Fprintf(w, "pkgreg: %s -> %s\n", change.From, change.To)
 	}
-}
-
-// writeTemp puts the generated Dockerfile outside the build context, where a
-// `COPY . .` cannot pick it up.
-func writeTemp(content []byte) (string, func(), error) {
-	file, err := os.CreateTemp("", "pkgreg-*.Dockerfile")
-	if err != nil {
-		return "", nil, fmt.Errorf("create generated Dockerfile: %w", err)
-	}
-	if _, err := file.Write(content); err != nil {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-		return "", nil, err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(file.Name())
-		return "", nil, err
-	}
-	return file.Name(), func() { _ = os.Remove(file.Name()) }, nil
 }
 
 // extractDockerfileFlag removes -f/--file from args and returns its value, because

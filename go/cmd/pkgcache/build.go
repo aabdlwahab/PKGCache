@@ -62,8 +62,9 @@ usage:
   pkgcache %s [flags] [docker %s arguments]
 
 Starts the cache if it is not running, then runs docker against a Dockerfile rewritten
-in memory. Your Dockerfile and Compose file are never modified, and the generated file
-is written outside the build context so a COPY cannot pick it up.
+in memory. Your Dockerfile and Compose file are never modified, and the rewrite is fed
+to docker on stdin rather than written out — so a COPY cannot pick it up, and it works
+with a Docker client that cannot read this process's files, such as the snap.
 
 Everything this does not recognise is passed to docker untouched.
 

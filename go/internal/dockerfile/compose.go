@@ -20,14 +20,16 @@ import (
 // The rewritten document then goes back to Compose on stdin rather than through a
 // temporary file, because the rendered configuration contains interpolated
 // environment values, which can include credentials. Nothing about this needs to
-// touch the disk, so nothing does.
+// touch the disk, so nothing does — and that includes each service's rewritten
+// Dockerfile, which travels inside the document as `dockerfile_inline`.
 
 // ComposeResult is a rewritten configuration and what was done to it.
 type ComposeResult struct {
 	Content []byte
 	Changes []Change
 	// Dockerfiles maps a service name to the rewritten Dockerfile its build needs.
-	// The caller owns writing these out and cleaning them up.
+	// Content is already inlined into the document; this is what the caller reports
+	// on, and how it learns whether any service needs the CA as a build secret.
 	Dockerfiles map[string]ComposeBuild
 }
 
@@ -78,8 +80,7 @@ func RewriteCompose(
 			build["network"] = "host"
 		}
 
-		path := dockerfilePath(build)
-		source, err := read(path)
+		path, source, err := buildDockerfile(build, read)
 		if err != nil {
 			return ComposeResult{}, fmt.Errorf("compose: service %s: %w", name, err)
 		}
@@ -91,9 +92,13 @@ func RewriteCompose(
 		result.Dockerfiles[name] = ComposeBuild{
 			Content: rewritten.Content, NeedsSecret: rewritten.NeedsSecret, Source: path,
 		}
-		// An inline Dockerfile and a dockerfile path are mutually exclusive; the
-		// rewritten file replaces whichever was there.
-		delete(build, "dockerfile_inline")
+		// The rewrite rides inside the document rather than being written out and
+		// named by path: nothing to clean up, and nothing for a Docker client that
+		// cannot read this process's filesystem — a snap, with its private /tmp — to
+		// fail to open. An inline Dockerfile and a dockerfile path are mutually
+		// exclusive, so the rewrite replaces whichever was there.
+		build["dockerfile_inline"] = string(rewritten.Content)
+		delete(build, "dockerfile")
 	}
 
 	out, err := yaml.Marshal(document)
@@ -104,26 +109,20 @@ func RewriteCompose(
 	return result, nil
 }
 
-// SetComposeDockerfile points a service's build at a rewritten Dockerfile.
+// buildDockerfile returns where a service's Dockerfile came from and what is in it.
 //
-// Separate from RewriteCompose because the path only exists once the caller has
-// written the file, and RewriteCompose deliberately does no I/O.
-func SetComposeDockerfile(rendered []byte, service, path string) ([]byte, error) {
-	var document map[string]any
-	if err := yaml.Unmarshal(rendered, &document); err != nil {
-		return nil, fmt.Errorf("compose: parse: %w", err)
+// A build that already used `dockerfile_inline` has no file to read: `compose config`
+// renders it back out as itself, and reading the Dockerfile that is not there would
+// fail a build that works without pkgcache.
+func buildDockerfile(
+	build map[string]any, read func(path string) ([]byte, error),
+) (string, []byte, error) {
+	if inline, ok := build["dockerfile_inline"].(string); ok && inline != "" {
+		return "", []byte(inline), nil
 	}
-	services, _ := document["services"].(map[string]any)
-	entry, ok := services[service].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("compose: no service %q", service)
-	}
-	build, ok := entry["build"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("compose: service %q has no build", service)
-	}
-	build["dockerfile"] = path
-	return yaml.Marshal(document)
+	path := dockerfilePath(build)
+	source, err := read(path)
+	return path, source, err
 }
 
 // dockerfilePath resolves a build's Dockerfile, honouring Compose's defaults.

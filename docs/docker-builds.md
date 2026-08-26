@@ -12,8 +12,12 @@ pkgcache build -t myapp .
 pkgcache compose up --build
 ```
 
-Your Dockerfile is not modified. It is rewritten in memory, and the generated file is
-written outside the build context so a `COPY .` cannot pick it up.
+Your Dockerfile is not modified. It is rewritten in memory and handed to Docker on
+standard input — `docker build -f -`, and `dockerfile_inline` for each service under
+`pkgcache compose`. Nothing is generated on disk, so a `COPY .` cannot pick it up and a
+Docker client that cannot see this process's files still builds: the snap has a private
+`/tmp`, and a rootless daemon has its own mount namespace. (`dockerfile_inline` wants
+Compose v2.17 or newer.)
 
 ## What the rewrite does
 

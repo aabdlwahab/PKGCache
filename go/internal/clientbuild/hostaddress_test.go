@@ -2,6 +2,7 @@ package clientbuild
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -49,7 +50,7 @@ func TestHostAddressBuildAddsTheHostGateway(t *testing.T) {
 		Project:     "global",
 		Stdout:      discard{},
 		Stderr:      discard{},
-		Runner: func(_ context.Context, _ string, args []string) error {
+		Runner: func(_ context.Context, _ string, args []string, _ io.Reader) error {
 			got = args
 			return nil
 		},
@@ -79,7 +80,7 @@ func TestBridgeBuildStillUsesTheHostNetwork(t *testing.T) {
 		Project: "global",
 		Stdout:  discard{},
 		Stderr:  discard{},
-		Runner: func(_ context.Context, _ string, args []string) error {
+		Runner: func(_ context.Context, _ string, args []string, _ io.Reader) error {
 			got = args
 			return nil
 		},

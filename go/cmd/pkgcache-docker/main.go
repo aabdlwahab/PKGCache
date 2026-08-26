@@ -36,6 +36,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -162,10 +163,16 @@ func runBuild(
 	// command is how this program can sit in front of podman or nerdctl, which is the
 	// same substitution it is itself performing one level up.
 	if docker != "docker" {
-		options.Runner = func(ctx context.Context, _ string, args []string) error {
+		options.Runner = func(
+			ctx context.Context, _ string, args []string, stdin io.Reader,
+		) error {
 			// #nosec G204 -- the command is the operator's PKGCACHE_DOCKER choice.
 			command := exec.CommandContext(ctx, docker, args...)
-			command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+			// The rewritten Dockerfile arrives here on stdin; see clientbuild.Build.
+			if stdin == nil {
+				stdin = os.Stdin
+			}
+			command.Stdin, command.Stdout, command.Stderr = stdin, os.Stdout, os.Stderr
 			command.Cancel = func() error { return nil }
 			return command.Run()
 		}
