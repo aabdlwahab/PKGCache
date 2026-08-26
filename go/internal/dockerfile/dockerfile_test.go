@@ -111,14 +111,67 @@ func TestHeredocBodyIsNotTreatedAsInstructions(t *testing.T) {
 	}
 }
 
-func TestCommentsAndSyntaxDirectiveAreUntouched(t *testing.T) {
-	source := "# syntax=docker/dockerfile:1\n# FROM alpine is only a comment\nFROM alpine\n"
+func TestACommentIsNotAnInstruction(t *testing.T) {
+	source := "# FROM alpine is only a comment\nFROM alpine\n"
 	out, result := rewrite(t, source, bridge())
-	if !strings.HasPrefix(out, "# syntax=docker/dockerfile:1\n") {
-		t.Fatalf("syntax directive moved off line 1:\n%s", out)
+	if !strings.HasPrefix(out, "# FROM alpine is only a comment\n") {
+		t.Fatalf("a comment was rewritten:\n%s", out)
 	}
 	if result.Stages != 1 {
 		t.Fatalf("a comment was parsed as an instruction: stages = %d", result.Stages)
+	}
+}
+
+// The frontend image is fetched before the first instruction is read, so a build whose
+// every FROM came from the cache still went to Docker Hub for this one — and on a
+// machine with no route there, died on line 1 of a file whose dependencies all resolved.
+func TestSyntaxDirectiveIsServedFromTheCache(t *testing.T) {
+	source := "# syntax=docker/dockerfile:1\nFROM alpine\n"
+	out, result := rewrite(t, source, bridge())
+	want := "# syntax=127.0.0.1:41999/dockerhub/docker/dockerfile:1\n"
+	if !strings.HasPrefix(out, want) {
+		t.Fatalf("the frontend still comes from Docker Hub, or moved off line 1:\n%s", out)
+	}
+	// Reported like any other substitution: a tool that silently changes what gets
+	// built is one people stop trusting.
+	var reported bool
+	for _, change := range result.Changes {
+		if change.From == "docker/dockerfile:1" {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("the frontend swap was not reported: %+v", result.Changes)
+	}
+}
+
+func TestSyntaxDirectiveIsLeftAloneWhereAFromWouldBe(t *testing.T) {
+	options := bridge()
+	options.SkipFrom = true
+	out, _ := rewrite(t, "# syntax=docker/dockerfile:1\nFROM alpine\n", options)
+	if !strings.HasPrefix(out, "# syntax=docker/dockerfile:1\n") {
+		t.Errorf("-keep-images rewrote the frontend anyway:\n%s", out)
+	}
+
+	options = bridge()
+	options.LocalImage = func(ref string) bool { return ref == "docker/dockerfile:1" }
+	out, _ = rewrite(t, "# syntax=docker/dockerfile:1\nFROM alpine\n", options)
+	if !strings.HasPrefix(out, "# syntax=docker/dockerfile:1\n") {
+		t.Errorf("a frontend this machine already has was rewritten:\n%s", out)
+	}
+}
+
+// Below the first instruction the same line is a comment and nothing else. BuildKit
+// stops reading directives there, and rewriting it would change a file's text for no
+// effect on the build.
+func TestSyntaxLineBelowAnInstructionIsJustAComment(t *testing.T) {
+	source := "FROM alpine\nRUN true\n# syntax=docker/dockerfile:1\n"
+	out, _ := rewrite(t, source, bridge())
+	if !strings.Contains(out, "# syntax=docker/dockerfile:1") {
+		t.Fatalf("the comment went missing:\n%s", out)
+	}
+	if strings.Contains(out, "dockerhub/docker/dockerfile") {
+		t.Errorf("a comment below the first instruction was rewritten:\n%s", out)
 	}
 }
 

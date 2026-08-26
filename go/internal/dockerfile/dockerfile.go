@@ -126,6 +126,9 @@ var (
 	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--[^\s]+\s+)*)(\S+)(.*)$`)
 	// AS <name> at the end of a FROM.
 	userRE = regexp.MustCompile(`(?i)^\s*USER\s+(\S+)`)
+	// The frontend a build parses itself with. An image reference like any other,
+	// written where nothing looks for one.
+	syntaxRE = regexp.MustCompile(`(?i)^(\s*#\s*syntax\s*=\s*)(\S+)(.*)$`)
 	// apk as a command, not as the path component in /etc/apk/repositories: the
 	// character after it decides which one it is.
 	apkRE = regexp.MustCompile(`\bapk([^\w/.]|$)`)
@@ -240,6 +243,16 @@ func Rewrite(source []byte, options Options) (Result, error) {
 	items := parse(string(source))
 	for index, item := range items {
 		if !item.code {
+			// Only ahead of the first instruction: that is where BuildKit reads a
+			// parser directive, and further down the same line is a comment.
+			if result.Stages == 0 {
+				replaced, change := rewriteSyntax(item.text, options)
+				if change != nil {
+					result.Changes = append(result.Changes, *change)
+				}
+				rewritten = append(rewritten, replaced)
+				continue
+			}
 			rewritten = append(rewritten, item.text)
 			continue
 		}
@@ -582,6 +595,34 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 		return line, nil
 	}
 	return prefix + flags + mapped + tail, &Change{From: ref, To: mapped}
+}
+
+// rewriteSyntax points a `# syntax=` parser directive at the cache.
+//
+// The directive names the frontend image BuildKit parses the Dockerfile with, and it is
+// fetched before a single instruction is read — so a build whose every FROM was pointed
+// at the cache still went to Docker Hub for this one, first, and on a machine with no
+// route there died on a line nobody thinks of as a dependency:
+//
+//	ERROR: failed to solve: failed to fetch anonymous token: ...
+//	> resolve image config for docker-image://docker.io/docker/dockerfile:1
+//
+// It is skipped on the same terms as a FROM: -keep-images leaves it, and so does an
+// image this machine already has, since nothing would be fetched either way.
+func rewriteSyntax(line string, o Options) (string, *Change) {
+	match := syntaxRE.FindStringSubmatch(line)
+	if match == nil || o.SkipFrom {
+		return line, nil
+	}
+	prefix, ref, tail := match[1], match[2], match[3]
+	if o.LocalImage != nil && o.LocalImage(ref) {
+		return line, nil
+	}
+	mapped := mapImage(ref, o.Registry)
+	if mapped == "" {
+		return line, nil
+	}
+	return prefix + mapped + tail, &Change{From: ref, To: mapped}
 }
 
 // mapImage returns the cache path for a Docker image reference, or "" to leave it.

@@ -54,6 +54,12 @@ the build network. Those mean something different on the machine the cache runs 
 they are not the cache's to redirect. Every substitution is printed, because a tool that
 silently alters what gets built is a tool people stop trusting.
 
+A `# syntax=` parser directive is repointed on the same terms, because it names an image
+too: the frontend BuildKit parses the file with, fetched before the first instruction is
+read. A build whose every `FROM` came from the cache would otherwise still go to Docker
+Hub for that one, first — and on a machine with no route there, fail on line 1 of a file
+whose dependencies all resolved.
+
 ## Three ways to reach the cache
 
 Which one applies depends entirely on whether the Docker daemon can see your loopback
