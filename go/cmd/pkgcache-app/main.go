@@ -159,6 +159,18 @@ func run(background, onLogin, offLogin bool) error {
 				openWindow(ctx, core)
 			},
 		},
+		// The name the desktop matches this window to a launcher entry by.
+		//
+		// Without it GLib takes the program name from argv[0] — "pkgcache-app" — while
+		// the launcher entry installed beside it is pkgcache.desktop with
+		// StartupWMClass=pkgcache. Nothing matches, and GNOME draws the icon it draws
+		// for an application it cannot identify: a gear. The embedded Icon above cannot
+		// help, because GTK4 removed gtk_window_set_icon and Wails' setIcon is a no-op
+		// there — on Linux the icon comes from the .desktop file or from nowhere.
+		//
+		// g_set_prgname is what this reaches, which is both the X11 WM_CLASS and the
+		// Wayland app_id, so one line covers both display servers and both toolkits.
+		Linux: application.LinuxOptions{ProgramName: "pkgcache"},
 		Mac: application.MacOptions{
 			// A real app with a Dock icon and a window, not a menu bar accessory. That is
 			// a change from the Swift helper this replaces, which was LSUIElement — and it
