@@ -129,6 +129,9 @@ var (
 	// The frontend a build parses itself with. An image reference like any other,
 	// written where nothing looks for one.
 	syntaxRE = regexp.MustCompile(`(?i)^(\s*#\s*syntax\s*=\s*)(\S+)(.*)$`)
+	// `COPY --from=` and a bind mount's `from=`, which name a stage most of the time
+	// and an image the rest of it.
+	fromFlagRE = regexp.MustCompile(`(?i)(--from=|,from=)([^\s,]+)`)
 	// apk as a command, not as the path component in /etc/apk/repositories: the
 	// character after it decides which one it is.
 	apkRE = regexp.MustCompile(`\bapk([^\w/.]|$)`)
@@ -290,15 +293,19 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		case options.Mode == CacheAddress && isRun(item.text):
 			replaced, mounted := mountCA(item.text)
 			replaced, indexed := rewriteIndexURLs(replaced, options)
+			replaced, borrowed := rewriteBorrowedImages(replaced, stages, options)
 			rewritten = append(rewritten, replaced)
 			result.NeedsSecret = result.NeedsSecret || mounted
 			result.Changes = append(result.Changes, indexed...)
+			result.Changes = append(result.Changes, borrowed...)
 		default:
 			// An index URL is worth replacing wherever it appears: an ARG default, an
 			// --extra-index-url written inline, a pip.conf written by a RUN.
 			replaced, indexed := rewriteIndexURLs(item.text, options)
+			replaced, borrowed := rewriteBorrowedImages(replaced, stages, options)
 			rewritten = append(rewritten, replaced)
 			result.Changes = append(result.Changes, indexed...)
+			result.Changes = append(result.Changes, borrowed...)
 		}
 	}
 
@@ -625,6 +632,54 @@ func rewriteSyntax(line string, o Options) (string, *Change) {
 	return prefix + mapped + tail, &Change{From: ref, To: mapped}
 }
 
+// rewriteBorrowedImages points a `COPY --from=` or a mount's `from=` at the cache.
+//
+// Both usually name an earlier stage, which is why an image reference hiding in one is
+// easy to miss — `COPY --from=builder` and `COPY --from=ghcr.io/astral-sh/uv:0.10.8`
+// are the same instruction, and only the second one fetches anything. A build that
+// borrows a single binary from a published image this way went to that registry
+// directly, past a cache that had been pointed at every FROM in the file.
+//
+// A stage name is left alone, and so is a stage index — `COPY --from=0` is the first
+// stage, not an image called 0 on Docker Hub. Beyond that the terms are a FROM's:
+// -keep-images leaves it, and so does an image this machine already has.
+func rewriteBorrowedImages(line string, stages map[string]bool, o Options) (string, []Change) {
+	if o.SkipFrom || !(isCopy(line) || isRun(line)) {
+		return line, nil
+	}
+	var changes []Change
+	replaced := fromFlagRE.ReplaceAllStringFunc(line, func(match string) string {
+		parts := fromFlagRE.FindStringSubmatch(match)
+		prefix, ref := parts[1], parts[2]
+		if stages[strings.ToLower(ref)] || isStageIndex(ref) {
+			return match
+		}
+		if o.LocalImage != nil && o.LocalImage(ref) {
+			return match
+		}
+		mapped := mapImage(ref, o.Registry)
+		if mapped == "" {
+			return match
+		}
+		changes = append(changes, Change{From: ref, To: mapped})
+		return prefix + mapped
+	})
+	return replaced, changes
+}
+
+// isStageIndex reports whether a --from names a stage by position rather than by name.
+func isStageIndex(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	for _, digit := range ref {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // mapImage returns the cache path for a Docker image reference, or "" to leave it.
 // MapImage rewrites one image reference to fetch through a cache at registry, or returns
 // "" for a reference that should be left alone.
@@ -733,6 +788,10 @@ func isFrom(line string) bool {
 
 func isRun(line string) bool {
 	return hasInstruction(line, "RUN")
+}
+
+func isCopy(line string) bool {
+	return hasInstruction(line, "COPY")
 }
 
 func hasInstruction(line, name string) bool {

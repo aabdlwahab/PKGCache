@@ -56,7 +56,10 @@ silently alters what gets built is a tool people stop trusting.
 
 A `# syntax=` parser directive is repointed on the same terms, because it names an image
 too: the frontend BuildKit parses the file with, fetched before the first instruction is
-read. A build whose every `FROM` came from the cache would otherwise still go to Docker
+read. So is a `COPY --from=` or a bind mount's `from=` that names an image rather than an
+earlier stage — `COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv` fetches a
+published image to borrow one binary out of it. A stage name or a stage index is left
+alone: it has no registry to be fetched from. A build whose every `FROM` came from the cache would otherwise still go to Docker
 Hub for that one, first — and on a machine with no route there, fail on line 1 of a file
 whose dependencies all resolved.
 

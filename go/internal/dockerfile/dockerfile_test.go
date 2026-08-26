@@ -802,3 +802,77 @@ func TestApkSetupCannotFailABuildItCannotHelp(t *testing.T) {
 		t.Errorf("the setup is not guarded on the copy succeeding:\n%s", body)
 	}
 }
+
+// `COPY --from=` usually names an earlier stage, which is why an image reference in one
+// is easy to miss. This is the build it was found on: a sandbox image that borrows the
+// uv binary from a published image, on a machine with no route to ghcr.io.
+func TestCopyFromAnImageIsServedFromTheCache(t *testing.T) {
+	const source = `FROM ubuntu:noble AS devtools
+COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv
+`
+	out, result := rewrite(t, source, bridge())
+	// ghcr.io is one of the registries the cache knows by a short name of its own.
+	const want = "COPY --from=127.0.0.1:41999/ghcr/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv"
+	if !strings.Contains(out, want) {
+		t.Fatalf("the borrowed image still comes from ghcr.io:\n%s", out)
+	}
+	var reported bool
+	for _, change := range result.Changes {
+		if change.From == "ghcr.io/astral-sh/uv:0.10.8" {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("the swap was not reported: %+v", result.Changes)
+	}
+}
+
+// The common case, and the one that must not move: a stage of this build has no
+// registry to be fetched from, and rewriting it names something that never existed.
+func TestCopyFromAStageIsLeftAlone(t *testing.T) {
+	const source = `FROM node:22-alpine AS builder
+RUN npm run build
+
+FROM node:22-alpine AS runtime
+COPY --from=builder /app/dist ./dist
+COPY --from=0 /app/extra ./extra
+`
+	out, _ := rewrite(t, source, bridge())
+	for _, want := range []string{"COPY --from=builder /app/dist", "COPY --from=0 /app/extra"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a stage reference was rewritten as an image (%q):\n%s", want, out)
+		}
+	}
+}
+
+// A bind mount borrows from an image on the same terms, and reads it in a flag the
+// same way.
+func TestMountFromAnImageIsServedFromTheCache(t *testing.T) {
+	const source = `FROM alpine AS build
+RUN --mount=type=bind,from=alpine:3.20,source=/etc,target=/host true
+RUN --mount=type=cache,from=build,target=/cache true
+`
+	out, _ := rewrite(t, source, bridge())
+	if !strings.Contains(out, "from=127.0.0.1:41999/dockerhub/library/alpine:3.20,source=/etc") {
+		t.Errorf("a bind mount's image was not served from the cache:\n%s", out)
+	}
+	if !strings.Contains(out, "from=build,target=/cache") {
+		t.Errorf("a mount naming a stage was rewritten as an image:\n%s", out)
+	}
+}
+
+func TestBorrowedImagesAreLeftAloneWhereAFromWouldBe(t *testing.T) {
+	const source = "FROM alpine\nCOPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /uv\n"
+
+	options := bridge()
+	options.SkipFrom = true
+	if out, _ := rewrite(t, source, options); !strings.Contains(out, "--from=ghcr.io/astral-sh/uv:0.10.8") {
+		t.Errorf("-keep-images rewrote a borrowed image anyway:\n%s", out)
+	}
+
+	options = bridge()
+	options.LocalImage = func(ref string) bool { return ref == "ghcr.io/astral-sh/uv:0.10.8" }
+	if out, _ := rewrite(t, source, options); !strings.Contains(out, "--from=ghcr.io/astral-sh/uv:0.10.8") {
+		t.Errorf("an image this machine already has was rewritten:\n%s", out)
+	}
+}
