@@ -296,28 +296,53 @@ mount --bind /data/pkgreg /var/lib/pkgreg
 ## Layout
 
 ```
-cmd/pkgreg/          serve/init/doctor/audit/publish-client plus air-gap commands
+cmd/
+  pkgreg/            the server: serve/init/doctor/audit/publish-client plus air-gap
+  pkgcache/          the single-machine cache and everything a person types at it
+  pkgcache-app/      its window and status bar item; its own module, because Wails
+                     needs cgo and a GUI toolchain and nothing else here does
+  pkgcache-docker/   docker with build and pull served from the cache, for tools that
+                     take a --runtime
+  pkgreg-client/     fingerprint-verified package shell, and machine setup with --persist
+  pkgreg-bridge/     the standalone form of the same loopback transport
 internal/
   app/               composition root — the only place construction happens
+  appcore/           the desktop app's decisions, with no toolkit in them
   blob/              content-addressed store; one copy of every distinct byte-string
   buildinfo/         link-time build identity
   catalog/           metadata: blobs, entries, refs, artifacts, snapshots, stats
+  clientbridge/      the verified loopback transport a session runs over
+  clientbuild/       docker build/compose and image pulls driven through the cache
+  clientinstaller/   trust verification, temporary sessions, and persistent setup
   clientrelease/     what a published client release looks like on disk
   config/            every tunable; immutable snapshots swapped atomically
   control/           database, auth, sealed credentials, projects, jobs, API/SSE
+  diskusage/         free and total space for the filesystem holding a path
+  dockerfile/        the in-memory Dockerfile rewrite, and the image-name mapping
   engine/            the cache pipeline: single-flight, progressive delivery,
                      freshness, refs, documents
   eco/               adapter contract plus files, npm, PyPI, OCI, apt/apk and Git
+  feed/              a published release rendered into each platform's update feed
   listener/          single-port TLS/plain split and atomic certificate reload
+  local/             pkgcache's daemon lifecycle, projects, team chains, docker setup
   lockwarm/          uv.lock parse, bounded warm and URL-preserving rewrite
+  maintenance/       online reclamation and its scheduler
+  migrate/           importing a live Python cache into the Go store
   obs/               slog, event bus, Prometheus metrics
+  ociname/           which registry an image-name segment refers to; the one place
+                     the adapter and the Dockerfile rewriter both ask
   onboarding/        generated Linux/macOS and Windows client setup scripts
   ops/               checkpoint, rollback, export/import and managed-tree apply
   pki/               CA and leaf certificate minting
   race/              build-tag constant so perf tests skip loudly under -race
+  router/            path matching that never unescapes behind the caller's back
+  session/           the environment that points package tools at a cache
   snapshot/          streamed manifests, diffs and verified transfer packs
   testutil/upstream/ synthetic origin with failure injection
+  tray/              what the status bar shows, and nothing about how
+  trust/             establishing that a cache is the one you were told about
   upstream/          outbound HTTP, credentials, OCI bearer tokens
+  web/               the browser console, landing page and tutorial
 ```
 
 Each package's doc comment explains *why* it is shaped the way it is; start there.

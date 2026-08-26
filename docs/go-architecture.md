@@ -4,9 +4,13 @@ Status: **implemented, with recorded final-state differences**. Written 2026-07-
 Supersedes the original port plan, which described the conservative
 1:1 port and is kept for comparison.
 
-> This document preserves the design reasoning. The final frontend deliberately
-> differs from the proposal in §11.5: it is checked-in HTML/CSS/ES modules embedded
-> in every build, with no React, Node, bundler, or `embedconsole` build tag. See
+> This document preserves the design reasoning. Two things in the shipped system
+> deliberately differ from the proposal, and both are recorded rather than edited away.
+> The frontend is not §11.5: it is checked-in HTML/CSS/ES modules embedded in every
+> build, with no React, Node, bundler, or `embedconsole` build tag. And OCI's upstream
+> schema is no longer only the named set §3 describes — a registry named by the image
+> path resolves without being configured at all, so the named set is a floor for
+> credentials and overrides rather than the whole list of reachable registries. See
 > the [system overview](system-overview.md).
 
 **Goal:** one static Go binary, deployable on bare metal with no containers, that

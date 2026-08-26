@@ -3,27 +3,42 @@
 Dependencies are kept deliberately small. Each direct dependency exists because the
 standard library does not provide the required primitive.
 
+## The main module — `pkgreg`, `pkgcache`, `pkgcache-docker`
+
+Everything here builds with `CGO_ENABLED=0`, which is what makes one Linux host produce a
+static binary for every supported target.
+
 | Module | Reason |
 |---|---|
 | `github.com/prometheus/client_golang` | Prometheus collectors and exposition format |
 | `golang.org/x/sync` | Shared concurrency primitives used by the cache engine |
+| `golang.org/x/sys` | Platform calls with no standard-library form: process control, file locking, and the Windows-specific halves of the client |
 | `gopkg.in/yaml.v3` | Strict YAML configuration decoding |
 | `modernc.org/sqlite` | Pure-Go SQLite driver, preserving static `CGO_ENABLED=0` builds |
-| `github.com/jchv/go-webview2` | The Windows application window. WebView2 is Edge's engine and reachable only through COM; this binding does it in pure Go — verified with `grep 'import \"C\"'` and by cross-compiling for Windows under `CGO_ENABLED=0` — so a native window on Windows costs nothing in the release model. The alternative, `webview/webview_go`, needs cgo on every platform and pins `webkit2gtk-4.0`, which Ubuntu 24.04 no longer ships |
-| `github.com/godbus/dbus/v5` | The Linux status bar item. StatusNotifierItem is a D-Bus protocol, and reaching it needs SASL EXTERNAL authentication over a Unix socket plus the full binary marshalling layer — alignment rules, signatures, variants. The standard library has no D-Bus; hand-rolling it is several hundred lines of the kind of code that fails in ways nobody can debug. This keeps the alternative — cgo, and with it a build host per platform — off the table |
+| `github.com/ProtonMail/go-crypto` | OpenPGP clear-signing for the apt repository the client feed is published as. `apt` will not accept an unsigned `InRelease`, and the standard library has no OpenPGP |
+
+## The app module — `pkgcache-app`
+
+The desktop app is [its own module](../go/cmd/pkgcache-app), and that separation is the
+whole point: it needs cgo and a GUI toolchain, and keeping it out of the main module means
+`go build ./...` and `go test ./...` still work on any machine — including the CI runners
+with no GTK headers — and every other binary in the product stays `CGO_ENABLED=0`.
+
+| Module | Reason |
+|---|---|
+| `github.com/wailsapp/wails/v3` | One window and one status bar item for three platforms: WebKitGTK on Linux, WebView2 on Windows, WKWebView and `NSStatusItem` on macOS |
 
 ## What is deliberately not a dependency
 
-A status bar icon or an application window is the obvious place to reach for a
-cross-platform toolkit, and every one of them — Fyne, Wails, `webview`,
-`getlantern/systray` — needs cgo. This project builds five
-targets with `CGO_ENABLED=0` from one Linux host, so the icon is hand-written per platform
-instead: `Shell_NotifyIcon` through `golang.org/x/sys/windows`, StatusNotifierItem through
-the module above, and on macOS a separate signed Swift helper, because `NSStatusItem` is
-Cocoa and has no pure-Go path at all. The window is the same shape: WebView2 through the pure-Go binding above on Windows,
-WebKitGTK through the only cgo in the product on Linux — behind a `webkitgtk` build tag so
-`go build ./...` never needs GTK headers — and WKWebView inside the Swift helper on macOS.
-All three are separate helper binaries, which is what keeps `pkgcache` itself one static
-`CGO_ENABLED=0` executable for five targets from one host. See
-[`go/internal/tray`](../go/internal/tray), [`go/cmd/pkgcache-window`](../go/cmd/pkgcache-window)
-and [`go/tools/menubar`](../go/tools/menubar).
+There is no frontend framework and no bundler. The console is checked-in HTML, CSS and ES
+modules, embedded in every build, and the app's window loads that same console from the
+loopback port rather than carrying a second copy of it.
+
+The app is also the only place a toolkit is allowed. It was three programs before — a cgo
+WebKitGTK window, a WebView2 window, and a signed Swift menu bar helper — one per platform,
+with three status bar implementations behind them, all to avoid a cgo dependency in the
+build. What that bought in build simplicity it spent three times over in code nobody could
+test on the machine they were sitting at. One toolkit in one module, with the decisions it
+makes kept in [`internal/appcore`](../go/internal/appcore) where they can be tested with no
+display at all, was the better trade. See
+[the desktop app plan](client-app-plan.md) for how that was reasoned about at the time.

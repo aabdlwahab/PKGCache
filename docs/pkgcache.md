@@ -52,7 +52,9 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache shell` | the same, as a child shell; type `exit` to leave |
 | `pkgcache env` | print the exports, for a shell that has to keep them |
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
-pkgcache pull alpine:3.20      # a pull through the cache, still named alpine:3.20
+| `pkgcache pull <image>` | pull an image through the cache, and keep the name you asked for |
+| `pkgcache crate` | run the crate orchestrator with its builds served from the cache |
+| `pkgcache warmlock` | fill the cache from a lock file, and point the lock at it |
 | `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
 | `pkgcache project` | the projects this cache serves: `ls`, `create`, `rm`, `use` |
 | `pkgcache limit 25G \| none` | change the budget later |
@@ -221,9 +223,22 @@ pkgcache build -t app .
 `-host-address` forces the gateway and `-host-address=false` forces loopback, for a setup
 neither rule describes.
 
-`docker-setup -mirror` additionally makes `docker pull python:3.12` — unmodified, no
-wrapper — come from the cache. It is opt-in because it reroutes every pull on the
-machine.
+`docker pull` through the cache does not need any of that:
+
+```sh
+pkgcache pull nvcr.io/nvidia/pytorch:24.01   # named nvcr.io/nvidia/pytorch:24.01 after
+```
+
+It rewrites the reference, fetches through the cache, and tags the image back to the name
+you typed — so a compose file or a manifest naming that image still finds it. The registry
+comes from the name, so a registry nobody configured works the first time it is asked for.
+
+`docker-setup -mirror` is the other approach: it registers the cache as a Docker Hub
+mirror, so an unmodified `docker pull python:3.12` is served from it with no wrapper at
+all. It is opt-in because it reroutes every pull on the machine — and note that it also
+needs a cache that answers unprefixed `/v2/` paths, which is `server.registry_mirror` on a
+pkgreg server. A `pkgcache` on a laptop does not set that today, so the daemon asks, gets a
+404 and falls back to Docker Hub: use `pkgcache pull` there.
 
 ## Settings that outlive the session
 
@@ -250,18 +265,22 @@ pkgcache console             # the full console instead
 ```
 
 It opens in a real application window where this machine has one — its own icon in the
-Dock, the taskbar or alt-tab, no address bar, and **no browser needed at all**. That is a
-small helper beside `pkgcache`, one per platform, because keeping it out of the client is
-what keeps the client a single static `CGO_ENABLED=0` binary:
+Dock, the taskbar or alt-tab, no address bar, and **no browser needed at all**. That is
+`pkgcache-app`, one program for all three platforms, installed by each platform's
+installer and built with `make app` on a machine of that platform:
 
-| | Engine | Build |
-|---|---|---|
-| Linux | WebKitGTK | `make window` on Ubuntu 24.04, after `sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev`. The only cgo in the product, behind a build tag so nothing else ever needs the headers |
-| Windows | WebView2 (Edge's engine) | `make window-windows` — pure Go, cross-compiles from any host. The runtime ships with Windows 11 and with Edge on 10 |
-| macOS | WKWebView | `make menubar` — it lives in the same helper as the menu bar item, since that is already a native process |
+| | Engine |
+|---|---|
+| Linux | WebKitGTK, through GTK4. Needs `libgtk-4-dev` and `libwebkitgtk-6.0-dev` to build; `-tags gtk3` builds against GTK3 and WebKit2GTK 4.1 where 6.0 is not packaged |
+| Windows | WebView2, Edge's engine. The runtime ships with Windows 11 and with Edge on 10 |
+| macOS | WKWebView |
 
-Without the helper it falls back to a Chromium-family browser in app mode, then to an
-ordinary browser window, then to printing the address — and it says which one you got.
+It is the only cgo in the product and its own Go module for that reason: `go build ./...`
+in the main module never needs a GUI toolchain, and every other binary stays a static
+`CGO_ENABLED=0` executable cross-built from one host.
+
+Without the app installed it falls back to a Chromium-family browser in app mode, then to
+an ordinary browser window, then to printing the address — and it says which one you got.
 `pkgcache widget -tab` asks for a browser tab on purpose.
 
 The widget opens on four questions in one column, in this order: is the cache working,
@@ -302,18 +321,27 @@ attention when it has filled up and stopped storing, and fades when the cache ha
 idle. Clicking it opens the window; its menu offers the console, offline, reclaiming space
 and stopping the cache.
 
+The two window items are two different things. **Open pkgcache** is the 420-pixel panel
+above. **Open the console** is the full operator console — inventory, sources, transfers,
+statistics and the jobs behind them — and it opens in your browser, with tabs and an
+address bar, because that is where somebody reading statistics wants it.
+
 **It never keeps the cache running.** Everything in the menu that needs a live daemon is
 greyed while it sleeps — the icon reads the files the daemon published on its way out and
 says "asleep" rather than starting one behind your back. Opening the window is the one
 exception, because that is you asking.
 
-Three platforms, three mechanisms, and one of them is not like the others:
+One program, three platform mechanisms, and one of them has a caveat:
 
 | | |
 |---|---|
 | Linux | `StatusNotifierItem` over D-Bus. Native on KDE, Plasma, most tiling setups, and anything with libappindicator. **GNOME needs a shell extension** (AppIndicator support) or nothing appears — `pkgcache widget` is the same window without it |
-| Windows | `Shell_NotifyIcon`, pure Go |
-| macOS | a separate signed helper, `pkgcache-menubar`, shipped beside the binary. `NSStatusItem` is Cocoa and pkgcache is built without cgo, so the menu bar item is the one piece of this product that needs a Mac to build |
+| Windows | the notification area |
+| macOS | `NSStatusItem` in the menu bar, as a regular app rather than an accessory: it has a Dock icon and you can alt-tab to it |
+
+`pkgcache tray` starts that app; the icon and the menu are the same on all three, because
+what the menu says and when each item is greyed out live in `internal/tray` and
+`internal/appcore`, with no toolkit in either.
 
 
 ## Carrying a cache somewhere with no network

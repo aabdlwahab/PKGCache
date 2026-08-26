@@ -457,9 +457,14 @@ migrate     import a live Python cache into the Go store
 version     print build identity
 ```
 
-Plus two separate programs: `pkgreg-client`, which opens a fingerprint-verified
-temporary package shell by default and performs machine setup only with `--persist`,
-and `pkgreg-bridge`, the standalone form of the same loopback transport.
+Plus four separate programs. `pkgcache` is the single-machine cache — the same engine
+and the same storage, with no accounts, and able to sit in front of a team's `pkgreg`;
+`pkgcache-app` is its window and status bar item. `pkgcache-docker` is docker with
+`build` and `pull` served from the cache, for orchestrators that shell out to a container
+command and let you choose which one — `crate prepare --runtime pkgcache-docker` is what
+it was written for. `pkgreg-client` opens a fingerprint-verified temporary package shell
+by default and performs machine setup only with `--persist`, and `pkgreg-bridge` is the
+standalone form of the same loopback transport.
 
 ---
 

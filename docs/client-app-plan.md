@@ -15,8 +15,11 @@ The daemon does not change.
 
 ## Status
 
-**Phase 0's gate is cleared: the app compiles on macOS and on Ubuntu 24.04 with GTK4.**
-Wails v3 beta.12 held on both platforms, which was the one genuine risk in this plan.
+**Implemented.** The app ships as `pkgcache-app` on all three platforms, the three helper
+binaries this plan replaces are gone, and the `.pkg`, the two `.deb`s and the `setup.exe`
+all install it. Wails v3 beta.12 held on every platform, which was the one genuine risk
+here. What follows is preserved as the reasoning, not as a to-do list; the table below is
+how it stood when the last phase closed.
 
 | | state |
 |---|---|
@@ -337,8 +340,8 @@ containing it must declare them as `Depends` rather than the `Recommends` they a
 That drags a desktop graphics stack onto every CI runner, build box and container that
 installs pkgcache — and headless is a real case here, not a hypothetical one. `pkgcache
 build`, `docker-build-setup` and `pkgcache run --` all live on machines with no screen,
-and [window_linux.go](../go/cmd/pkgcache-window/window_linux.go) already carries a
-written-out error for exactly that situation.
+and the Linux window helper of the day already carried a written-out error for exactly
+that situation.
 
 So:
 

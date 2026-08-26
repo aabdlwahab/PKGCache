@@ -372,6 +372,24 @@ inside `go test ./internal/web`: that every module is present in the embedded tr
 that every import in the HTML and in the modules resolves to a file that is actually
 embedded — which is what a blank console page would otherwise look like.
 
+The desktop app is a separate module and is not covered by any of the above: it needs a
+GUI toolchain, so `go build ./...` never reaches it. Its decisions live in
+`internal/appcore`, which is tested with no display at all, and the compiler check on the
+app itself is the CI build that packages it — see below.
+
+### What CI builds
+
+| Workflow | Fires on | Produces |
+|---|---|---|
+| [`go.yml`](../.github/workflows/go.yml) | any push touching `go/` | tests, race, vet, lint, and a cross-compile of `pkgcache` for every supported platform |
+| [`main-artifacts.yml`](../.github/workflows/main-artifacts.yml) | merge to `main` | both `.deb`s for both architectures, the `.pkg`, the `setup.exe` and every raw binary, unsigned, attached to the run |
+| [`installer-release.yml`](../.github/workflows/installer-release.yml) | a `pkgcache-v*` tag | the same artefacts, signed, notarized, attested and published as a release |
+| [`client-release.yml`](../.github/workflows/client-release.yml) | a client tag | `pkgreg-client` for three platforms, signed and attested |
+
+The middle one is how to get a build of a specific commit without building it on a laptop.
+It is also the only automated check that the app compiles on macOS and on Linux, which is
+why it builds the app rather than only packaging one.
+
 ### What the suite actually covers
 
 | Suite | Path | Notes |

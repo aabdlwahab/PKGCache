@@ -15,9 +15,17 @@ For a release, none of those are run by hand. Pushing a `pkgcache-v*` tag runs
 [`.github/workflows/installer-release.yml`](../.github/workflows/installer-release.yml),
 which builds all three, signs and notarizes the `.pkg`, Authenticode-signs the Windows
 binaries *and* the installer that carries them, attests every artefact, and publishes
-them with a `pkgcache-installers-SHA256SUMS` beside them. Building them locally is for
-trying a change, not for giving anything to anybody: an unsigned `.pkg` is refused by
-Finder and an unsigned `setup.exe` meets SmartScreen.
+them with a `pkgcache-installers-SHA256SUMS` beside them.
+
+Between releases, every merge to `main` runs
+[`.github/workflows/main-artifacts.yml`](../.github/workflows/main-artifacts.yml), which
+builds the same artefacts from the same scripts and attaches them to the run — both
+`.deb`s for both architectures, the `.pkg`, the `setup.exe`, every raw binary, and one
+bundled download with `SHA256SUMS`. Those are **unsigned**: Gatekeeper refuses the `.pkg`
+until it is opened from the right-click menu and SmartScreen warns about the installer, so
+they are for the people who merged the change rather than for customers. That is also the
+answer to "where do I get a build of this commit" — building one on a laptop is how a
+packaged app and a packaged daemon came to be from different commits.
 
 ### What each one installs
 
@@ -76,8 +84,8 @@ handed a `.pkg` and nothing else can still remove the product.
 It has to run on a Mac. A `.pkg` is a xar archive carrying a Bill of Materials in a binary
 format that only Apple's tools write correctly, and a package with a subtly wrong BOM
 installs and then misbehaves in ways that are hard to diagnose from the receiving end.
-`pkgbuild` and `productbuild` come with the same Command Line Tools that `swiftc` does, so
-any Mac that can build the menu bar helper can build the installer.
+`pkgbuild` and `productbuild` come with the Command Line Tools, so any Mac that can build
+the app — which needs cgo and the same tools — can build the installer.
 
 Unsigned packages are refused by Finder with "unidentified developer". Either right-click →
 Open, or `sudo installer -pkg pkgcache-1.0.0.pkg -target /`. To ship without that, pass

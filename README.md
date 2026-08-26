@@ -49,6 +49,7 @@ pkgcache setup -server https://cache.internal:8443 \
 pkgcache run -- pip install -r requirements.txt   # one command, through the cache
 pkgcache shell                                    # a shell where every tool uses it
 pkgcache build -t myapp .                         # docker build, through the cache
+pkgcache pull nvcr.io/nvidia/pytorch:24.01        # any registry, still named that after
 pkgcache tray                                     # keep it in your status bar
 ```
 
@@ -61,7 +62,7 @@ machine-wide and nothing is left behind when the shell exits.
 |---|---|---|
 | PyPI | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX` | yes |
 | npm | `NPM_CONFIG_REGISTRY` | yes |
-| OCI images | a registry on `127.0.0.1` | yes |
+| OCI images | a registry on `127.0.0.1` — any upstream registry, named in the path | yes |
 | apt / apk | an HTTP proxy | no — the origin comes from the request |
 | git | a path-prefixed mirror | no — same reason |
 | files | upload and download | no — nothing upstream to chain to |

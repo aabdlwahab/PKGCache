@@ -44,9 +44,13 @@ the build network. Those mean something different on the machine the cache runs 
 they are not the cache's to redirect. Every substitution is printed, because a tool that
 silently alters what gets built is a tool people stop trusting.
 
-## Three ways to reach the cache, and how to pick
+## Three ways to reach the cache
 
-The right one depends entirely on whether the daemon can see your loopback interface.
+Which one applies depends entirely on whether the Docker daemon can see your loopback
+interface, and that is worked out rather than asked: there is no native daemon on macOS or
+Windows, so the gateway is always the answer there, and on Linux the only daemon that
+needs it is Docker Desktop, which `docker info` names. The choice is printed when it is
+made.
 
 **Bridge** — tools point at the client's loopback bridge over plain HTTP. Nothing needs
 a certificate. Requires a Linux daemon sharing this machine's network namespace. This is
@@ -133,9 +137,51 @@ is also how a private registry (`registry.internal:5000`) is admitted; `["*"]` m
 anywhere. A registry needing credentials is still configured as an upstream, which also
 takes precedence over discovery.
 
-With `pkgcache docker-setup -mirror`, an unmodified `docker pull python:3.12` is served
-from the cache with no rewrite at all. That is off by default: it reroutes every pull on
-the machine, which is not something a setup command should do to you quietly.
+`pkgcache pull <image>` does the same thing from the command line and puts the name back,
+so the image ends up called what you asked for rather than what it was fetched through:
+
+```sh
+pkgcache pull prom/prometheus          # named prom/prometheus afterwards
+```
+
+`pkgcache docker-setup -mirror` is the other approach: it registers the cache as a Docker
+Hub mirror so an unmodified `docker pull python:3.12` comes from it with no wrapper. It is
+off by default because it reroutes every pull on the machine — and it needs a cache that
+answers unprefixed `/v2/` paths, which is `server.registry_mirror` on a pkgreg server. A
+`pkgcache` on a laptop does not set that, so the daemon asks, gets a 404 and falls back to
+Docker Hub. Use `pkgcache pull` there.
+
+## Anything that shells out to docker
+
+`pkgcache-docker` is docker with `build` and `pull` served from the cache. It exists for
+tools that run a container command and let you choose which one:
+
+```sh
+crate prepare -c manifest.yaml --runtime pkgcache-docker
+```
+
+Three verbs, and only two are interesting. `build` rewrites the Dockerfile in memory —
+exactly `pkgcache build`. `pull` fetches through the cache and tags the image back to the
+name the manifest gives it — exactly `pkgcache pull`. Everything else (`run`, `save`,
+`load`, `image inspect`, `compose`) is handed to docker untouched and is not slowed down
+by this program existing.
+
+Nothing in it knows about crate, so anything that runs `<command> build` and
+`<command> pull` gets the same benefit. The alternative — teaching the orchestrator about
+this cache — would be two products on two release cycles pretending to be one.
+
+It picks the cache's address the same way `pkgcache build` does, which matters more here
+because the caller is another program's `--runtime` setting and there is no flag to add.
+`PKGCACHE_HOST_ADDRESS=1` or `=0` overrides that decision, and `PKGCACHE_DOCKER` puts the
+shim in front of podman or nerdctl instead.
+
+There is also `pkgcache crate -- prepare -c manifest.yaml`, which wraps the environment
+rather than the runtime: it gives crate a Docker configuration that sends apt and apk
+through the cache, and leaves image pulls alone. `--runtime pkgcache-docker` is the fuller
+integration of the two — it covers pulls as well, and on native Linux it is the one that
+works, because the wrapper's build proxy names an address a build container cannot resolve
+without the `--add-host` that `pkgcache build` adds and crate's own `docker build` does
+not.
 
 Pulls chain to a team cache when one is configured — see
 [pkgcache.md](pkgcache.md#three-tiers) for the path shapes, which are not like the other
