@@ -1,0 +1,290 @@
+name: Artifacts from main
+
+# Every installer and every binary, built from main and attached to the run.
+#
+# This is not the release pipeline. installer-release.yml builds the same artefacts from a
+# pkgcache-v* tag, signs them with Apple and Windows credentials, notarizes the .pkg and
+# publishes a GitHub release — and every one of its jobs hard-fails when those secrets are
+# absent, deliberately, because a release that quietly shipped unsigned installers would be
+# worse than one that did not build.
+#
+# What was missing was the other half: something to download after a merge. Between tags
+# the only way to get a .deb or a setup.exe was to build it on a laptop, which is how the
+# packaged app and the packaged daemon came to be from different commits. So: same
+# packaging scripts, same Makefile targets, no signing, no release — just artefacts, named
+# with the run number so two of them can never be confused.
+#
+# Unsigned is the honest tradeoff and is stated in the summary: macOS Gatekeeper will
+# refuse these until they are opened through the right-click menu, and Windows SmartScreen
+# will warn. They are for the people who merged the change, not for customers.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Anything that changes a shipped byte. A docs-only merge does not need thirty
+      # minutes of runners, and the mac jobs bill at ten times the linux rate.
+      - "go/**"
+      - "packaging/**"
+      - "assets/**"
+      - "LICENSE"
+      - "NOTICE"
+      - ".github/workflows/main-artifacts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: "-trimpath"
+
+jobs:
+  # One version, resolved once, stamped into every binary and every package.
+  #
+  # 0.0.<run> so that dpkg, pkgbuild and NSIS all accept it and each build sorts above the
+  # last, with the commit carried in the build metadata rather than in the ordering — a
+  # hash does not sort, and `apt install` on a package whose version went backwards refuses
+  # without --allow-downgrades.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          version="0.0.${{ github.run_number }}+g${GITHUB_SHA::7}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "building $version"
+
+  # ---- the desktop app, once per platform that has to compile it natively -------------
+  #
+  # The app is the only cgo binary in the product: it links GTK and WebKit on Linux and
+  # AppKit on macOS, so it is built on a runner of that architecture rather than
+  # cross-compiled. Everything else — the daemon, the docker shim, the server — is
+  # CGO_ENABLED=0 and cross-builds from anywhere.
+  linux-app:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Install the GTK and WebKit headers the app links against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: Build the app
+        working-directory: go
+        run: make app VERSION=${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-${{ matrix.arch }}
+          path: go/bin/pkgcache-app-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
+  macos-app-amd64:
+    needs: version
+    # An Intel runner rather than cross-compiling cgo to x86_64 from arm64: the SDK path
+    # arguments that needs are not worth having when a runner that is simply Intel exists.
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build the app
+        working-directory: go
+        run: make app VERSION=${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-darwin-amd64
+          path: go/bin/pkgcache-app-darwin-amd64
+          if-no-files-found: error
+
+  # ---- Linux: both .debs, the Windows installer, and every raw binary ----------------
+  #
+  # One runner for all of it, because everything here cross-compiles: makensis runs on
+  # Linux and the three Windows binaries are pure Go, so the setup.exe needs no Windows
+  # machine until somebody wants to run it.
+  linux:
+    needs: [version, linux-app]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Install NSIS for the Windows installer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+      # Both app binaries land under the names `make deb` looks for. A missing one is not
+      # fatal there — the packaging produces a complete daemon package and says the desktop
+      # half was skipped — so the step after this one is what turns that into a failure.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: app-linux-*
+          path: go/bin
+          merge-multiple: true
+      - name: Build the packages and every binary
+        working-directory: go
+        run: |
+          set -euo pipefail
+          V=${{ needs.version.outputs.version }}
+          chmod +x bin/pkgcache-app-linux-* || true
+          # The .debs, and the Linux/macOS/Windows binaries the other installers and the
+          # install scripts are assembled from.
+          make deb VERSION="$V"
+          make pkgcache-release VERSION="$V"
+          make shim-linux shim-darwin shim-windows VERSION="$V"
+          make windows-installer VERSION="$V"
+          # The server, which is the other half of the product: a team cache is pkgreg,
+          # and it is built here rather than by hand for the same reason as everything
+          # else in this file.
+          make release VERSION="$V"
+          install -m 0755 ../packaging/install.sh bin/install.sh
+          install -m 0644 ../packaging/install.ps1 bin/install.ps1
+      - name: Require every Linux and Windows artefact
+        working-directory: go/bin
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for pattern in \
+            "pkgcache_*_amd64.deb" "pkgcache_*_arm64.deb" \
+            "pkgcache-desktop_*_amd64.deb" "pkgcache-desktop_*_arm64.deb" \
+            "pkgcache-*-setup.exe" \
+            "pkgcache-linux-amd64" "pkgcache-linux-arm64" \
+            "pkgcache-darwin-amd64" "pkgcache-darwin-arm64" \
+            "pkgcache-windows-amd64.exe" \
+            "pkgreg-linux-amd64" "pkgreg-linux-arm64"; do
+            ls $pattern >/dev/null 2>&1 || { echo "::error::nothing matching $pattern"; missing=1; }
+          done
+          [ "$missing" -eq 0 ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-and-windows
+          path: |
+            go/bin/*.deb
+            go/bin/pkgcache-*-setup.exe
+            go/bin/pkgcache-linux-*
+            go/bin/pkgcache-darwin-*
+            go/bin/pkgcache-windows-*.exe
+            go/bin/pkgcache-docker-*
+            go/bin/pkgcache-app-linux-*
+            go/bin/pkgreg-linux-*
+            go/bin/install.sh
+            go/bin/install.ps1
+          if-no-files-found: error
+
+  # ---- macOS: the .pkg, unsigned ------------------------------------------------------
+  macos:
+    needs: [version, macos-app-amd64]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-darwin-amd64
+          path: go/bin
+      - name: Build the daemon, the shim, and the arm64 app
+        working-directory: go
+        run: |
+          set -euo pipefail
+          V=${{ needs.version.outputs.version }}
+          chmod +x bin/pkgcache-app-darwin-amd64
+          make pkgcache-release VERSION="$V"
+          make shim-darwin VERSION="$V"
+          make app VERSION="$V"
+      # No --sign-app or --sign-pkg, so build-pkg.sh produces an unsigned package and says
+      # so on its way out. That is the whole difference between this file and the release
+      # one, and it is why these are labelled unsigned everywhere they appear.
+      - name: Build the package
+        working-directory: packaging/macos
+        run: |
+          ./build-pkg.sh --version ${{ needs.version.outputs.version }} \
+            --out "$GITHUB_WORKSPACE/dist"
+      # Staged flat, because upload-artifact takes the least common ancestor of the paths
+      # it is given: dist/ and go/bin/ together would ship a directory tree, and the
+      # bundle job's checksum would then be over directories.
+      - name: Stage the macOS artefacts together
+        run: cp go/bin/pkgcache-app-darwin-* dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+          if-no-files-found: error
+
+  # ---- one bundle, with checksums ----------------------------------------------------
+  #
+  # The per-job artefacts stay, because a Linux-only change should not have to download a
+  # .pkg to get a .deb. This adds the single download that has everything in it, and the
+  # checksums that make "verify what you downloaded" an instruction rather than advice.
+  bundle:
+    needs: [version, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-and-windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: dist
+      # Written outside dist and moved in, or the redirect creates the file before the
+      # glob expands and SHA256SUMS ends up listing itself, half-written.
+      - name: Checksum everything
+        working-directory: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ./* > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" .
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgcache-${{ needs.version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Say what was built and how to install it
+        shell: bash
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          {
+            echo "## pkgcache $V"
+            echo
+            echo "Download **pkgcache-$V** from this run's artefacts. Everything is **unsigned**:"
+            echo "macOS Gatekeeper will refuse the .pkg until it is opened from the right-click"
+            echo "menu, and Windows SmartScreen will warn. Signed installers come from a"
+            echo '`pkgcache-v*` tag, which runs `installer-release.yml` instead.'
+            echo
+            echo '```sh'
+            echo "# Ubuntu / Debian — both packages together: the desktop half pins the daemon's"
+            echo "# exact version, and apt is what resolves the GTK dependencies."
+            echo "sudo apt install ./pkgcache_${V}_amd64.deb ./pkgcache-desktop_${V}_amd64.deb"
+            echo
+            echo "# macOS"
+            echo "sudo installer -pkg pkgcache-$V.pkg -target /"
+            echo
+            echo "# Windows"
+            echo "./pkgcache-$V-setup.exe"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
