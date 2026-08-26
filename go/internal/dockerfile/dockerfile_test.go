@@ -382,20 +382,66 @@ func TestApkRewriteIsPerStage(t *testing.T) {
 	}
 }
 
-// A Debian image has no /etc/apk/repositories, and the guard is what keeps the injected
-// layers from failing the build there.
-func TestApkRewriteIsGuardedForImagesWithoutApk(t *testing.T) {
-	result, err := Rewrite([]byte("FROM debian:bookworm-slim\nRUN apt-get update\n"), Options{
-		Project: "global", Base: "http://127.0.0.1:41780",
-		Registry: "127.0.0.1:41780", AptProxy: "http://127.0.0.1:41780",
-		Mode: Bridge,
-	})
-	if err != nil {
-		t.Fatal(err)
+// A stage that never runs apk gets nothing injected into it. The guard inside the step
+// only covers an image that has a shell and no apk — a Debian one. It cannot cover an
+// image with no shell at all, because the failure there is exec'ing /bin/sh, which
+// happens before the guard is read.
+func TestStagesThatNeverRunApkAreLeftAlone(t *testing.T) {
+	for _, source := range []string{
+		"FROM debian:bookworm-slim\nRUN apt-get update\n",
+		"FROM node:22-alpine\nRUN npm ci\n",
+	} {
+		result, err := Rewrite([]byte(source), Options{
+			Project: "global", Base: "http://127.0.0.1:41780",
+			Registry: "127.0.0.1:41780", AptProxy: "http://127.0.0.1:41780",
+			Mode: Bridge,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(result.Content), "/etc/apk/repositories") {
+			t.Errorf("a stage with no apk was given the apk pair:\n%s", result.Content)
+		}
 	}
-	body := string(result.Content)
-	if !strings.Contains(body, "if [ -f /etc/apk/repositories ]") {
-		t.Errorf("the rewrite is unguarded and would fail on an image without apk:\n%s", body)
+}
+
+// The build this was reported from: an OpenTelemetry collector image, which is
+// distroless and has no /bin/sh. Every injected RUN failed the build on an instruction
+// nobody wrote — "exec: /bin/sh: stat /bin/sh: no such file or directory" — while the
+// Dockerfile only ever copied a config in.
+func TestAShelllessBaseImageGetsNoInjectedRun(t *testing.T) {
+	const source = `FROM otel/opentelemetry-collector-contrib:0.127.0
+COPY ./config.d /etc/otelcol-contrib/config.d
+CMD ["--config", "/etc/otelcol-contrib/config.d/config.yaml"]
+`
+	body, _ := rewrite(t, source, bridge())
+	for _, line := range strings.Split(body, "\n") {
+		if isRun(line) {
+			t.Errorf("a RUN was added to a stage that cannot run one: %q\n%s", line, body)
+		}
+	}
+}
+
+// Per stage, so a builder that installs packages still gets the rewrite even when the
+// stage it feeds cannot run a shell at all. This is the shape of a Go or Rust service.
+func TestApkPairFollowsTheStageThatUsesIt(t *testing.T) {
+	const source = `FROM golang:1.23-alpine AS builder
+RUN apk add --no-cache git
+RUN go build -o /app ./cmd/app
+
+FROM gcr.io/distroless/static
+COPY --from=builder /app /app
+`
+	body, _ := rewrite(t, source, bridge())
+	if got := strings.Count(body, "sed -i 's|^https://|http://|'"); got != 1 {
+		t.Errorf("apk rewrite appears %d times, want only in the builder:\n%s", got, body)
+	}
+	if got := strings.Count(body, "mv "+apkBackup); got != 1 {
+		t.Errorf("apk restore appears %d times, want only in the builder:\n%s", got, body)
+	}
+	// And it closed with the builder, rather than leaking into the stage that follows.
+	if strings.LastIndex(body, "mv "+apkBackup) > strings.Index(body, "distroless/static") {
+		t.Errorf("the builder's restore landed in the distroless stage:\n%s", body)
 	}
 }
 
@@ -620,6 +666,7 @@ func TestApkRestoreRunsBeforePrivilegesAreDropped(t *testing.T) {
 	const source = `FROM node:22-alpine AS runtime
 WORKDIR /app
 RUN npm ci --omit=dev && npm cache clean --force
+RUN apk add --no-cache tini
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 7000
@@ -661,6 +708,7 @@ func TestApkRestorePlacedPerStage(t *testing.T) {
 	// A builder that drops privileges and a runtime that does not: each stage has to be
 	// closed on its own terms, since a stage's file is its own.
 	const source = `FROM node:22-alpine AS builder
+RUN apk add --no-cache python3
 RUN npm ci
 USER node
 RUN npm run build
@@ -696,7 +744,7 @@ CMD ["nginx"]
 func TestApkSetupCannotFailABuildItCannotHelp(t *testing.T) {
 	// Where /etc/apk is not writable the copy fails, and the whole thing has to become a
 	// no-op rather than an error: not caching apk is a cost, breaking the build is not.
-	body, _ := rewrite(t, "FROM node:22-alpine\nRUN npm ci\n", bridge())
+	body, _ := rewrite(t, "FROM node:22-alpine\nRUN apk add --no-cache tini\n", bridge())
 	if !strings.Contains(body, "cp /etc/apk/repositories "+apkBackup+" 2>/dev/null; then") {
 		t.Errorf("the setup is not guarded on the copy succeeding:\n%s", body)
 	}

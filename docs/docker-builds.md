@@ -21,10 +21,16 @@ Compose v2.17 or newer.)
 
 ## What the rewrite does
 
-Deliberately little: **declare build arguments, and repoint `FROM`.** It never adds a
-`RUN`, never reorders, never removes. Anything larger would produce a file a reader
-could not predict from the original, and a build nobody can predict is worse than a flag
-somebody has to remember.
+Deliberately little: **declare build arguments, and repoint `FROM`.** It never reorders
+and never removes. Anything larger would produce a file a reader could not predict from
+the original, and a build nobody can predict is worse than a flag somebody has to
+remember.
+
+It adds a `RUN` in exactly one case: a stage that runs `apk`, whose repositories are
+moved to plain HTTP so the proxy can see them, and put back before the stage ends. A
+stage that never runs `apk` is left untouched — that step is a shell step, and a base
+image with no shell (distroless, `scratch`, and most final stages of a Go or Rust
+service) cannot run one at all.
 
 The arguments it declares are the ones the tools already read:
 

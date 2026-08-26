@@ -126,7 +126,10 @@ var (
 	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--[^\s]+\s+)*)(\S+)(.*)$`)
 	// AS <name> at the end of a FROM.
 	userRE = regexp.MustCompile(`(?i)^\s*USER\s+(\S+)`)
-	asRE   = regexp.MustCompile(`(?i)\sAS\s+(\S+)\s*$`)
+	// apk as a command, not as the path component in /etc/apk/repositories: the
+	// character after it decides which one it is.
+	apkRE = regexp.MustCompile(`\bapk([^\w/.]|$)`)
+	asRE  = regexp.MustCompile(`(?i)\sAS\s+(\S+)\s*$`)
 	// A RUN line, with any flags it already carries.
 	runRE = regexp.MustCompile(`(?i)^(\s*RUN\s+)(.*)$`)
 	// A heredoc opener, e.g. RUN <<EOF or COPY <<-'EOF'. Everything up to the
@@ -223,7 +226,7 @@ func Rewrite(source []byte, options Options) (Result, error) {
 	// closeStage hands the repositories back at the last point the build can still
 	// write them.
 	closeStage := func() {
-		if !proxied || !inStage {
+		if !inStage {
 			return
 		}
 		if restoreAt >= 0 {
@@ -231,10 +234,11 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		} else {
 			rewritten = append(rewritten, apkRestore())
 		}
-		restoreAt = -1
+		restoreAt, inStage = -1, false
 	}
 
-	for _, item := range parse(string(source)) {
+	items := parse(string(source))
+	for index, item := range items {
 		if !item.code {
 			rewritten = append(rewritten, item.text)
 			continue
@@ -242,7 +246,7 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		// The restore has to run while the stage can still write /etc/apk. A stage that
 		// ends with `USER node` cannot, so the spot is remembered here and the line is
 		// inserted there when the stage closes.
-		if proxied && inStage && restoreAt < 0 && dropsPrivileges(item.text) {
+		if inStage && restoreAt < 0 && dropsPrivileges(item.text) {
 			restoreAt = len(rewritten)
 		}
 
@@ -264,7 +268,9 @@ func Rewrite(source []byte, options Options) (Result, error) {
 			// Declaring it once at the top would work in the first stage and quietly
 			// do nothing in the rest — the failure people report as "works locally".
 			rewritten = append(rewritten, args...)
-			if proxied {
+			// Only where the stage runs apk. The pair is a shell step, and a base
+			// image with no shell cannot run it at all — see stageRunsApk.
+			if proxied && stageRunsApk(items, index+1) {
 				rewritten = append(rewritten, apkToPlainHTTP())
 				inStage = true
 			}
@@ -331,6 +337,34 @@ func dropsPrivileges(text string) bool {
 		name = name[:colon]
 	}
 	return name != "root" && name != "0"
+}
+
+// stageRunsApk reports whether the stage starting at items[from] runs apk.
+//
+// The repositories rewrite is a RUN, and a RUN is /bin/sh. A base image that has no
+// shell cannot run it — distroless, scratch, and the images built on them, which is
+// most final stages of a Go or Rust service — and the build then dies on an
+// instruction its author never wrote, before reaching one they did. The file guard
+// inside the step cannot help: the failure is exec'ing the shell, not reading the file.
+//
+// Detecting the use rather than the base image is what makes that decidable here: an
+// image tag says nothing reliable about what is inside it, and `FROM builder` says
+// less. A stage that never runs apk had nothing to gain from the pair anyway. The cost
+// of being wrong is one uncached apk in a stage that hid its package installs inside a
+// script — a slower build, not a broken one.
+func stageRunsApk(items []chunk, from int) bool {
+	for _, item := range items[from:] {
+		if !item.code {
+			continue
+		}
+		if isFrom(item.text) {
+			return false
+		}
+		if isRun(item.text) && apkRE.MatchString(item.text) {
+			return true
+		}
+	}
+	return false
 }
 
 func apkToPlainHTTP() string {
