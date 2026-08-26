@@ -29,6 +29,10 @@
 # ~15 MB of binary that git would keep a copy of for every rebuild.
 packaging/**/*.pkg
 packaging/**/*.deb
+# Packages staged for copying to another machine. Same reasoning, one directory up: the
+# rule above only covered the ones built in place, and 22 MB of .deb reached a commit
+# through it.
+/pkgcache-debs/
 
 # What the removed Python stack's Docker builds left behind. Root-owned, so it takes
 # `sudo rm -rf webui` to clear; ignored until then so it does not sit in every status.
