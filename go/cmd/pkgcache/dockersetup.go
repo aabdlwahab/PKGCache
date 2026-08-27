@@ -21,7 +21,7 @@ func runDockerSetup(ctx context.Context, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print every change without applying it")
 	uninstall := fs.Bool("uninstall", false, "reverse a previous run")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache docker-setup — teach the Docker daemon about this cache
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache docker-setup — teach the Docker daemon about this cache
 
 usage: pkgcache docker-setup [flags]
 
@@ -67,7 +67,7 @@ func runDockerBuildSetup(ctx context.Context, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print every change without applying it")
 	uninstall := fs.Bool("uninstall", false, "reverse a previous run")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache docker-build-setup — cache apt and apk in every build on this machine
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache docker-build-setup — cache apt and apk in every build on this machine
 
 usage: pkgcache docker-build-setup [flags]
 

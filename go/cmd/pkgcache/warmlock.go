@@ -55,7 +55,7 @@ func runWarmlock(ctx context.Context, args []string) error {
 	warmOnly := fs.Bool("warm-only", false, "fill the cache and leave the lock file alone")
 	suffix := fs.String("backup-suffix", ".old", "what to call the copy of the original")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a lock file, and point the lock at it
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a lock file, and point the lock at it
 
 usage: pkgcache warmlock [flags]
 

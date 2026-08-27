@@ -77,7 +77,7 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 	}
 	dryRun := fs.Bool("dry-run", false, "print what -on-login would write, and write nothing")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), usage)
+		_, _ = fmt.Fprint(fs.Output(), usage)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

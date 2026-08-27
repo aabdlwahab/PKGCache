@@ -52,7 +52,7 @@ func runProject(ctx context.Context, args []string) error {
 }
 
 func projectUsage(out *os.File) {
-	fmt.Fprint(out, `pkgcache project — the projects this cache serves
+	_, _ = fmt.Fprint(out, `pkgcache project — the projects this cache serves
 
 usage:
   pkgcache project ls                 list them, marking the current one
@@ -84,7 +84,7 @@ func projectFlags(name string, args []string, wantName bool) (*config.Snapshot, 
 	collect := bindLocalFlags(fs)
 	fs.Usage = func() {
 		projectUsage(os.Stderr)
-		fmt.Fprint(fs.Output(), "flags:\n")
+		_, _ = fmt.Fprint(fs.Output(), "flags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

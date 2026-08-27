@@ -116,14 +116,14 @@ func ApplyDockerSetup(setup DockerSetup) error {
 	}
 
 	if len(changes) == 0 {
-		fmt.Fprintf(out, "pkgcache: %s is already as requested\n", path)
+		_, _ = fmt.Fprintf(out, "pkgcache: %s is already as requested\n", path)
 		return nil
 	}
 	for _, change := range changes {
-		fmt.Fprintf(out, "+ %s\n", change)
+		_, _ = fmt.Fprintf(out, "+ %s\n", change)
 	}
 	if setup.DryRun {
-		fmt.Fprintln(out, "\nNothing was changed.")
+		_, _ = fmt.Fprintln(out, "\nNothing was changed.")
 		return nil
 	}
 
@@ -132,12 +132,12 @@ func ApplyDockerSetup(setup DockerSetup) error {
 	if err := writeJSONFile(path, document); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "\npkgcache: wrote %s\n", path)
-	fmt.Fprintln(out, "Restart the Docker daemon for this to take effect.")
+	_, _ = fmt.Fprintf(out, "\npkgcache: wrote %s\n", path)
+	_, _ = fmt.Fprintln(out, "Restart the Docker daemon for this to take effect.")
 	if runtime.GOOS == "linux" {
-		fmt.Fprintln(out, "  sudo systemctl restart docker")
+		_, _ = fmt.Fprintln(out, "  sudo systemctl restart docker")
 	} else {
-		fmt.Fprintln(out, "  Docker Desktop → Restart")
+		_, _ = fmt.Fprintln(out, "  Docker Desktop → Restart")
 	}
 	return nil
 }
@@ -189,12 +189,12 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 
 	if setup.Uninstall {
 		if entry == nil || entry[managedKey] != true {
-			fmt.Fprintf(out, "pkgcache: nothing installed by pkgcache in %s\n", path)
+			_, _ = fmt.Fprintf(out, "pkgcache: nothing installed by pkgcache in %s\n", path)
 			return nil
 		}
-		fmt.Fprintf(out, "+ remove proxies.default from %s\n", path)
+		_, _ = fmt.Fprintf(out, "+ remove proxies.default from %s\n", path)
 		if setup.DryRun {
-			fmt.Fprintln(out, "\nNothing was changed.")
+			_, _ = fmt.Fprintln(out, "\nNothing was changed.")
 			return nil
 		}
 		delete(proxies, "default")
@@ -206,7 +206,7 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 		if err := writeJSONFile(path, document); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "\npkgcache: removed the build proxy from %s\n", path)
+		_, _ = fmt.Fprintf(out, "\npkgcache: removed the build proxy from %s\n", path)
 		return nil
 	}
 
@@ -219,9 +219,9 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "+ set proxies.default.httpProxy = %s in %s\n", proxyURL, path)
+	_, _ = fmt.Fprintf(out, "+ set proxies.default.httpProxy = %s in %s\n", proxyURL, path)
 	if setup.DryRun {
-		fmt.Fprintln(out, "\nNothing was changed.")
+		_, _ = fmt.Fprintln(out, "\nNothing was changed.")
 		return nil
 	}
 	proxies["default"] = map[string]any{
@@ -234,10 +234,10 @@ func ApplyDockerBuildProxy(setup DockerBuildProxy) error {
 	if err := writeJSONFile(path, document); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "\npkgcache: wrote %s\n", path)
-	fmt.Fprintln(out,
+	_, _ = fmt.Fprintf(out, "\npkgcache: wrote %s\n", path)
+	_, _ = fmt.Fprintln(out,
 		"Every `docker build` on this machine now sends apt and apk through the cache.")
-	fmt.Fprintln(out,
+	_, _ = fmt.Fprintln(out,
 		"The cache must be running for those builds to work: `pkgcache limit` and "+
 			"`pkgcache persist` keep it up.")
 	return nil

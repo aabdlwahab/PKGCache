@@ -34,7 +34,7 @@ func runSetup(ctx context.Context, args []string) error {
 		"do not cache locally; use the team cache through a verified loopback bridge")
 	uninstall := fs.Bool("uninstall", false, "forget the team cache and its chain")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache setup — point this machine at a cache, once
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache setup — point this machine at a cache, once
 
 usage:
   pkgcache setup -limit 25G

@@ -80,14 +80,14 @@ func buildTrust(options Options) error {
 
 	if options.DryRun {
 		encoded, _ := json.MarshalIndent(document, "", "  ")
-		fmt.Fprintf(out, "+ write %s\n%s\n\nNothing was changed. Re-run without -dry-run to apply.\n",
+		_, _ = fmt.Fprintf(out, "+ write %s\n%s\n\nNothing was changed. Re-run without -dry-run to apply.\n",
 			path, encoded)
 		return nil
 	}
 	if err := writeDockerConfig(path, document); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, `pkgreg-client: docker builds on this machine now use the cache for OS packages
+	_, _ = fmt.Fprintf(out, `pkgreg-client: docker builds on this machine now use the cache for OS packages
 
   proxy    %s
   written  %s
@@ -117,11 +117,11 @@ func removeBuildTrust(out io.Writer, path string, dryRun bool) error {
 	proxies, _ := document["proxies"].(map[string]any)
 	entry, _ := proxies["default"].(map[string]any)
 	if entry == nil || entry[managedKey] != true {
-		fmt.Fprintf(out, "pkgreg-client: nothing installed by pkgreg in %s\n", path)
+		_, _ = fmt.Fprintf(out, "pkgreg-client: nothing installed by pkgreg in %s\n", path)
 		return nil
 	}
 	if dryRun {
-		fmt.Fprintf(out, "+ remove proxies.default from %s\n\nNothing was changed.\n", path)
+		_, _ = fmt.Fprintf(out, "+ remove proxies.default from %s\n\nNothing was changed.\n", path)
 		return nil
 	}
 	delete(proxies, "default")
@@ -133,7 +133,7 @@ func removeBuildTrust(out io.Writer, path string, dryRun bool) error {
 	if err := writeDockerConfig(path, document); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "pkgreg-client: removed the build proxy from %s\n", path)
+	_, _ = fmt.Fprintf(out, "pkgreg-client: removed the build proxy from %s\n", path)
 	return nil
 }
 

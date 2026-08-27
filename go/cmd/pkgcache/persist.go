@@ -28,7 +28,7 @@ func runPersist(ctx context.Context, args []string) error {
 	noService := fs.Bool("no-service", false,
 		"do not install socket activation; settings only")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache persist — settings that outlive the session
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache persist — settings that outlive the session
 
 usage: pkgcache persist [flags]
 

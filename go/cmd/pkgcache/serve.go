@@ -57,7 +57,7 @@ func loadSnapshot(name string, args []string, usage string) (*config.Snapshot, e
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), usage)
+		_, _ = fmt.Fprint(fs.Output(), usage)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

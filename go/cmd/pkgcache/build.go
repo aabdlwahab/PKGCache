@@ -56,7 +56,7 @@ func dockerCommand(ctx context.Context, argv []string, compose bool) error {
 	gitHosts := fs.String("git-host", strings.Join(defaultGitHosts, ","),
 		"comma-separated hosts whose clones are served from the cache")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `pkgcache %s — run docker %s through the cache
+		_, _ = fmt.Fprintf(fs.Output(), `pkgcache %s — run docker %s through the cache
 
 usage:
   pkgcache %s [flags] [docker %s arguments]

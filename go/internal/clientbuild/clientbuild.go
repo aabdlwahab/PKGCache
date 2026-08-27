@@ -344,7 +344,7 @@ func Compose(ctx context.Context, o Options, args []string) error {
 	}
 	report(o.Stderr, result.Changes)
 	if needsSecret {
-		fmt.Fprintf(o.Stderr,
+		_, _ = fmt.Fprintf(o.Stderr,
 			"pkgreg: this build needs the cache CA; add to each service's build:\n"+
 				"  secrets: [%s]\nwith a top-level secrets entry pointing at %s\n",
 			dockerfile.SecretID, o.CAFile)
@@ -394,7 +394,7 @@ func withDefaults(o Options) Options {
 // tool people stop trusting the first time a build surprises them.
 func report(w io.Writer, changes []dockerfile.Change) {
 	for _, change := range changes {
-		fmt.Fprintf(w, "pkgreg: %s -> %s\n", change.From, change.To)
+		_, _ = fmt.Fprintf(w, "pkgreg: %s -> %s\n", change.From, change.To)
 	}
 }
 

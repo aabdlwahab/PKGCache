@@ -155,7 +155,7 @@ func ApplyPersist(o PersistOptions) error {
 	files := persistFiles(home, o)
 	if o.Print {
 		for _, file := range files {
-			fmt.Fprintf(out, "# %s\n%s\n", file.path, file.content)
+			_, _ = fmt.Fprintf(out, "# %s\n%s\n", file.path, file.content)
 		}
 		return nil
 	}
@@ -168,22 +168,22 @@ func ApplyPersist(o PersistOptions) error {
 		}
 		if action != "" {
 			changed = append(changed, action)
-			fmt.Fprintf(out, "+ %s\n", action)
+			_, _ = fmt.Fprintf(out, "+ %s\n", action)
 		}
 	}
 	if len(changed) == 0 {
-		fmt.Fprintln(out, "pkgcache: nothing to change")
+		_, _ = fmt.Fprintln(out, "pkgcache: nothing to change")
 		return nil
 	}
 	if o.DryRun {
-		fmt.Fprintln(out, "\nNothing was changed.")
+		_, _ = fmt.Fprintln(out, "\nNothing was changed.")
 		return nil
 	}
 	if o.Uninstall {
 		if o.DataDir != "" {
 			_ = os.Remove(persistPath(o.DataDir))
 		}
-		fmt.Fprintln(out, "\npkgcache: persistent settings removed")
+		_, _ = fmt.Fprintln(out, "\npkgcache: persistent settings removed")
 		return nil
 	}
 	paths := make([]string, 0, len(files))
@@ -195,8 +195,8 @@ func ApplyPersist(o PersistOptions) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "\npkgcache: settings installed for this user")
-	fmt.Fprintln(out, "New shells use the cache. Remove them with `pkgcache persist -uninstall`.")
+	_, _ = fmt.Fprintln(out, "\npkgcache: settings installed for this user")
+	_, _ = fmt.Fprintln(out, "New shells use the cache. Remove them with `pkgcache persist -uninstall`.")
 	return nil
 }
 
@@ -371,7 +371,7 @@ func installSystemdSocket(
 			}
 		}
 		_ = runSystemctl("--user", "daemon-reload")
-		fmt.Fprintln(out, "pkgcache: removed the user socket unit")
+		_, _ = fmt.Fprintln(out, "pkgcache: removed the user socket unit")
 		return AvailabilityUnknown, nil
 	}
 
@@ -410,8 +410,8 @@ Environment=PKGCACHE_DATA_DIR=%s
 	if err := runSystemctl("--user", "enable", "--now", "pkgcache.socket"); err != nil {
 		return AvailabilityUnknown, fmt.Errorf("local: enable pkgcache.socket: %w", err)
 	}
-	fmt.Fprintf(out, "pkgcache: installed %s\n", socketPath)
-	fmt.Fprintln(out,
+	_, _ = fmt.Fprintf(out, "pkgcache: installed %s\n", socketPath)
+	_, _ = fmt.Fprintln(out,
 		"The port is now held open by systemd; the cache starts on the first connection\n"+
 			"and still exits when idle.")
 	return AvailabilitySocket, nil
@@ -432,7 +432,7 @@ func installLaunchdAgent(
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return AvailabilityUnknown, err
 		}
-		fmt.Fprintln(out, "pkgcache: removed the launch agent")
+		_, _ = fmt.Fprintln(out, "pkgcache: removed the launch agent")
 		return AvailabilityUnknown, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -462,7 +462,7 @@ func installLaunchdAgent(
 	if err := exec.Command("launchctl", "load", path).Run(); err != nil {
 		return AvailabilityUnknown, fmt.Errorf("local: launchctl load: %w", err)
 	}
-	fmt.Fprintf(out, "pkgcache: installed %s (unverified on macOS)\n", path)
+	_, _ = fmt.Fprintf(out, "pkgcache: installed %s (unverified on macOS)\n", path)
 	return AvailabilitySocket, nil
 }
 

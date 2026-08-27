@@ -79,7 +79,7 @@ func startSession(
 	collect := bindLocalFlags(fs)
 	flags := bindSessionFlags(fs)
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), usage)
+		_, _ = fmt.Fprint(fs.Output(), usage)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

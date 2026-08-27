@@ -39,7 +39,7 @@ func runPull(ctx context.Context, args []string) error {
 		"leave the cache-addressed tag in place as well as the original name")
 	dryRun := fs.Bool("print", false, "print what would be pulled, and pull nothing")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache pull — docker pull through the cache
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache pull — docker pull through the cache
 
 usage: pkgcache pull [flags] <image>...
 

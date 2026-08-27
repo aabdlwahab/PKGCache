@@ -24,7 +24,7 @@ func runTray(ctx context.Context, args []string) error {
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache tray — keep the cache in your status bar
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache tray — keep the cache in your status bar
 
 usage: pkgcache tray
 

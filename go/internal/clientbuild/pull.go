@@ -41,7 +41,7 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 	mapped := dockerfile.MapImage(image, o.Registry)
 	if mapped == "" {
 		if o.Notes != nil {
-			fmt.Fprintf(o.Notes,
+			_, _ = fmt.Fprintf(o.Notes,
 				"pkgcache: %s is not served by this cache; pulling it directly\n", image)
 		}
 		mapped = image
@@ -67,7 +67,7 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 	// Two names for one image is a puzzle in `docker images`, and the address is the less
 	// useful of them. Untagging cannot delete the image: the real name still refers to it.
 	if err := runDocker(ctx, o, nil, "rmi", mapped); err != nil && o.Notes != nil {
-		fmt.Fprintf(o.Notes, "pkgcache: %s is pulled, but %s is still tagged: %v\n",
+		_, _ = fmt.Fprintf(o.Notes, "pkgcache: %s is pulled, but %s is still tagged: %v\n",
 			image, mapped, err)
 	}
 	return nil

@@ -206,7 +206,7 @@ func resolveAddr(snap *config.Snapshot, notes io.Writer) error {
 	chosen := fallback.Addr().String()
 	_ = fallback.Close()
 	if notes != nil {
-		fmt.Fprintf(notes,
+		_, _ = fmt.Fprintf(notes,
 			"pkgcache: %s is in use by another program; serving on %s instead.\n"+
 				"  Settings written by `pkgcache persist` name the fixed port and will not\n"+
 				"  reach this daemon. `pkgcache run` and `pkgcache shell` are unaffected.\n",

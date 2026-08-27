@@ -79,8 +79,8 @@ func InstallAutostart(o AutostartOptions) error {
 				"  Remove it yourself first if you want this to manage it", entry.path)
 	}
 	if o.DryRun {
-		fmt.Fprintf(out, "+ %s\n\n%s\n", entry.path, entry.content)
-		fmt.Fprintln(out, "Nothing was changed.")
+		_, _ = fmt.Fprintf(out, "+ %s\n\n%s\n", entry.path, entry.content)
+		_, _ = fmt.Fprintln(out, "Nothing was changed.")
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(entry.path), 0o755); err != nil {
@@ -89,9 +89,9 @@ func InstallAutostart(o AutostartOptions) error {
 	if err := os.WriteFile(entry.path, []byte(entry.content), entry.mode); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "+ %s\n", entry.path)
-	fmt.Fprintf(out, "pkgcache: %s will start when you log in\n", describe(command))
-	fmt.Fprintln(out, "  It watches the cache; it does not keep it running.")
+	_, _ = fmt.Fprintf(out, "+ %s\n", entry.path)
+	_, _ = fmt.Fprintf(out, "pkgcache: %s will start when you log in\n", describe(command))
+	_, _ = fmt.Fprintln(out, "  It watches the cache; it does not keep it running.")
 	return nil
 }
 
@@ -109,21 +109,21 @@ func describe(command string) string {
 func removeAutostart(entry loginEntry, command string, dryRun bool, out io.Writer) error {
 	contents, err := os.ReadFile(entry.path)
 	if err != nil {
-		fmt.Fprintln(out, "pkgcache: no login entry to remove")
+		_, _ = fmt.Fprintln(out, "pkgcache: no login entry to remove")
 		return nil
 	}
 	if !strings.Contains(string(contents), autostartMarker) {
 		return fmt.Errorf("%s was not written by pkgcache; it is left alone", entry.path)
 	}
 	if dryRun {
-		fmt.Fprintf(out, "- %s\n\nNothing was changed.\n", entry.path)
+		_, _ = fmt.Fprintf(out, "- %s\n\nNothing was changed.\n", entry.path)
 		return nil
 	}
 	if err := os.Remove(entry.path); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "- %s\n", entry.path)
-	fmt.Fprintf(out, "pkgcache: %s will not start on login\n", describe(command))
+	_, _ = fmt.Fprintf(out, "- %s\n", entry.path)
+	_, _ = fmt.Fprintf(out, "pkgcache: %s will not start on login\n", describe(command))
 	return nil
 }
 
@@ -241,11 +241,11 @@ func retireLegacyAutostart(goos, home, command string, dryRun bool, out io.Write
 			continue
 		}
 		if dryRun {
-			fmt.Fprintf(out, "would remove the login entry left by an older name: %s\n", path)
+			_, _ = fmt.Fprintf(out, "would remove the login entry left by an older name: %s\n", path)
 			continue
 		}
 		if err := os.Remove(path); err == nil {
-			fmt.Fprintf(out, "removed the login entry left by an older name: %s\n", path)
+			_, _ = fmt.Fprintf(out, "removed the login entry left by an older name: %s\n", path)
 		}
 	}
 }

@@ -32,7 +32,7 @@ func runLimit(_ context.Context, args []string) error {
 	collect := bindLocalFlags(fs)
 	minFree := fs.String("min-free", "", "free-disk floor to keep underneath the limit")
 	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `pkgcache limit — set how much disk this cache may use
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache limit — set how much disk this cache may use
 
 usage:
   pkgcache limit                 show the current limit
