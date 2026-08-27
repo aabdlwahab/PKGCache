@@ -123,7 +123,7 @@ type Result struct {
 
 var (
 	// A FROM line, with its optional flags (--platform=…) kept intact.
-	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--[^\s]+\s+)*)(\S+)(.*)$`)
+	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--\S+\s+)*)(\S+)(.*)$`)
 	// AS <name> at the end of a FROM.
 	userRE = regexp.MustCompile(`(?i)^\s*USER\s+(\S+)`)
 	// The frontend a build parses itself with. An image reference like any other,

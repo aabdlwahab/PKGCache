@@ -50,8 +50,11 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(run(ctx, os.Args[1:]))
+	// Released before the exit rather than deferred: os.Exit runs no defers, so a
+	// `defer stop()` here would never have fired.
+	code := run(ctx, os.Args[1:])
+	stop()
+	os.Exit(code)
 }
 
 func run(ctx context.Context, args []string) int {

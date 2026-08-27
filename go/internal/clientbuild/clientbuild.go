@@ -118,7 +118,7 @@ func FromEnvironment(o Options) Options {
 // means the directly named indexes go upstream as they always did.
 func DiscoverIndexes(ctx context.Context, base, project string) map[string]string {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		strings.TrimRight(base, "/")+"/api/v1/projects/"+project+"/upstreams", nil)
+		strings.TrimRight(base, "/")+"/api/v1/projects/"+project+"/upstreams", http.NoBody)
 	if err != nil {
 		return nil
 	}
@@ -400,8 +400,8 @@ func report(w io.Writer, changes []dockerfile.Change) {
 
 // extractDockerfileFlag removes -f/--file from args and returns its value, because
 // the generated file replaces it.
-func extractDockerfileFlag(args []string) (string, []string) {
-	rest := make([]string, 0, len(args))
+func extractDockerfileFlag(args []string) (dockerfilePath string, rest []string) {
+	rest = make([]string, 0, len(args))
 	path := ""
 	for i := 0; i < len(args); i++ {
 		switch {

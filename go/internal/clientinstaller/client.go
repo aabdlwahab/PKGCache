@@ -93,12 +93,12 @@ func Run(ctx context.Context, options Options) error {
 		case options.CacheIP != "":
 			return errors.New("-cache-ip changes persistent machine setup; use it with -persist")
 		}
-		trust, err := fetchTrust(ctx, options)
+		verified, err := fetchTrust(ctx, options)
 		if err != nil {
 			return err
 		}
 		aptProxy, err := fetchAptProxy(
-			ctx, trust.client, trust.base, trust.cookie, trust.project)
+			ctx, verified.client, verified.base, verified.cookie, verified.project)
 		if err != nil {
 			return err
 		}
@@ -107,8 +107,8 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 		return clientbridge.Session(ctx, clientbridge.SessionOptions{
-			Server: trust.base.String(), Project: trust.project,
-			CAPEM: trust.caPEM, CAFingerprint: trust.fingerprint,
+			Server: verified.base.String(), Project: verified.project,
+			CAPEM: verified.caPEM, CAFingerprint: verified.fingerprint,
 			AptProxy: aptProxy, Token: token, Shell: options.Shell,
 			OperatingSystem: options.OperatingSystem,
 			Stdout:          options.Stdout, Stderr: options.Stderr,
@@ -176,7 +176,7 @@ type verifiedTrust struct {
 // before it is trusted. The setup script never travels over that bootstrap
 // connection.
 func Fetch(ctx context.Context, options Options) (Bundle, error) {
-	trust, err := fetchTrust(ctx, options)
+	verified, err := fetchTrust(ctx, options)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -189,12 +189,12 @@ func Fetch(ctx context.Context, options Options) (Bundle, error) {
 	if goos == "windows" {
 		extension = "ps1"
 	}
-	scriptURL := *trust.base
+	scriptURL := *verified.base
 	scriptURL.Path = path.Join(
-		trust.base.Path, "/api/v1/projects", trust.project, "setup."+extension)
+		verified.base.Path, "/api/v1/projects", verified.project, "setup."+extension)
 	script, contentType, err := download(
-		ctx, trust.client, scriptURL.String(), trust.cookie, maxScriptBytes)
-	if isUnauthorized(err) && trust.cookie == "" {
+		ctx, verified.client, scriptURL.String(), verified.cookie, maxScriptBytes)
+	if isUnauthorized(err) && verified.cookie == "" {
 		// The instance enforces control-plane authentication and this caller supplied
 		// no session. Rather than fail — which is what --persist did on every
 		// authenticated instance, making the CI and shared-host path unusable exactly
@@ -206,9 +206,9 @@ func Fetch(ctx context.Context, options Options) (Bundle, error) {
 		// allowlist for the same reason, and the fingerprint check below still has to
 		// pass, so a substituted script is caught whether it arrived as a guest or as
 		// an administrator.
-		if cookie, guestErr := guestSession(ctx, trust); guestErr == nil {
+		if cookie, guestErr := guestSession(ctx, verified); guestErr == nil {
 			script, contentType, err = download(
-				ctx, trust.client, scriptURL.String(), cookie, maxScriptBytes)
+				ctx, verified.client, scriptURL.String(), cookie, maxScriptBytes)
 		}
 	}
 	if err != nil {
@@ -227,11 +227,11 @@ func Fetch(ctx context.Context, options Options) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, fmt.Errorf("verify embedded CA: %w", err)
 	}
-	if normalizeFingerprint(embeddedDisplay) != normalizeFingerprint(trust.fingerprint) {
+	if normalizeFingerprint(embeddedDisplay) != normalizeFingerprint(verified.fingerprint) {
 		return Bundle{}, errors.New("setup script embeds a different CA certificate")
 	}
 	return Bundle{
-		Script: script, Extension: extension, Fingerprint: trust.fingerprint,
+		Script: script, Extension: extension, Fingerprint: verified.fingerprint,
 	}, nil
 }
 
@@ -421,15 +421,15 @@ func isUnauthorized(err error) bool { return errors.Is(err, errUnauthorized) }
 // Cookie header. An instance with guest browsing disabled refuses, which is not an
 // error worth surfacing on its own — the caller reports the original 401 instead,
 // because "sign in" is the actionable advice in that case.
-func guestSession(ctx context.Context, trust verifiedTrust) (string, error) {
-	target := *trust.base
-	target.Path = path.Join(trust.base.Path, "/api/v1/login/guest")
+func guestSession(ctx context.Context, verified verifiedTrust) (string, error) {
+	target := *verified.base
+	target.Path = path.Join(verified.base.Path, "/api/v1/login/guest")
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, target.String(), http.NoBody)
 	if err != nil {
 		return "", err
 	}
-	response, err := trust.client.Do(request)
+	response, err := verified.client.Do(request)
 	if err != nil {
 		return "", err
 	}

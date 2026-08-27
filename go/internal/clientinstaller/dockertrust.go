@@ -168,7 +168,7 @@ func dockerCertsDir(goos string) (directory string, root bool, err error) {
 		// there the daemon reads /etc/docker/certs.d and nothing else. Honouring the
 		// variable would write a file dockerd never opens, report success, and leave the
 		// pull failing — the same silent-no-op this whole change exists to remove.
-		return filepath.Join("/etc", "docker", "certs.d"), true, nil
+		return "/etc/docker/certs.d", true, nil
 	default:
 		return "", false, fmt.Errorf("unsupported operating system %q", goos)
 	}

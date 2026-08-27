@@ -306,7 +306,7 @@ func readJSONFile(path string) (map[string]any, error) {
 		}
 		return nil, fmt.Errorf("local: read %s: %w", path, err)
 	}
-	if len(strings.TrimSpace(string(data))) == 0 {
+	if strings.TrimSpace(string(data)) == "" {
 		return map[string]any{}, nil
 	}
 	var document map[string]any

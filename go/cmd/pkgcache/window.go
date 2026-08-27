@@ -68,7 +68,7 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
-	print := fs.Bool("print", false, "print the address and open nothing")
+	showOnly := fs.Bool("print", false, "print the address and open nothing")
 	plain := fs.Bool("tab", false, "open an ordinary browser window rather than an app window")
 	var onLogin, offLogin *bool
 	if name == "widget" {
@@ -110,7 +110,7 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 	// wants, and starting a daemon as a side effect of being asked for a URL would be a
 	// surprise in both.
 	url := snap.LocalBaseURL() + path
-	if *print {
+	if *showOnly {
 		state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, NoStart: true})
 		if err == nil {
 			url = state.BaseURL() + path

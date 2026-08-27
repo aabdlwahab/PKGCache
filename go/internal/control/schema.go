@@ -189,7 +189,13 @@ func openRawDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	return db, db.Ping()
+	// Closed on a failed ping rather than returned beside the error: a caller that
+	// checks err and drops the handle would otherwise leak an open connection.
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
 }
 
 // migrateUpTo applies migrations no further than version, which is how a test stands up

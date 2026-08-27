@@ -33,7 +33,7 @@ import (
 // shuttleCommon parses the flags every shuttle verb shares and resolves the project.
 func shuttleCommon(
 	name string, args []string, usage string, bind func(*flag.FlagSet),
-) (*config.Snapshot, string, []string, error) {
+) (loaded *config.Snapshot, projectName string, rest []string, err error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)

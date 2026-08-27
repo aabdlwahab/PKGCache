@@ -29,7 +29,7 @@ var (
 	// yarn berry: `resolution: "<descriptor>"`, the one field that names the package.
 	berryResolutionRE = regexp.MustCompile(`(?m)^\s+resolution:\s+"([^"]+)"\s*$`)
 	// pnpm: the keys of the packages: block, at exactly two spaces of indent.
-	pnpmEntryRE = regexp.MustCompile(`(?m)^  '?([^'\s][^:]*?)'?:\s*$`)
+	pnpmEntryRE = regexp.MustCompile(`(?m)^ {2}'?([^'\s][^:]*?)'?:\s*$`)
 )
 
 // ParseYarnClassic collects every registry tarball a yarn v1 lock pins.

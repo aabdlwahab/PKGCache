@@ -475,7 +475,7 @@ func (e *Engine) stream(
 	}
 	// Named closures, not `defer cancel()`: a resume below swaps both, and the deferred
 	// call must release whichever response is the live one when this returns.
-	defer func() { cancel() }()
+	defer cancel()
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {

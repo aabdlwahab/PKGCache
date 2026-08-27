@@ -172,7 +172,7 @@ func readDockerConfig(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	if len(strings.TrimSpace(string(payload))) == 0 {
+	if strings.TrimSpace(string(payload)) == "" {
 		return map[string]any{}, nil
 	}
 	var document map[string]any

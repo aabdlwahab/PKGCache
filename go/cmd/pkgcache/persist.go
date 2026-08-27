@@ -20,7 +20,7 @@ func runPersist(ctx context.Context, args []string) error {
 	gitHosts := fs.String("git-host", strings.Join(defaultGitHosts, ","),
 		"comma-separated hosts whose clones are served from the cache")
 	noGit := fs.Bool("no-git", false, "leave git configuration alone")
-	print := fs.Bool("print", false, "print the settings instead of installing them")
+	showOnly := fs.Bool("print", false, "print the settings instead of installing them")
 	dryRun := fs.Bool("dry-run", false, "print every change without applying it")
 	uninstall := fs.Bool("uninstall", false, "reverse a previous run")
 	anyway := fs.Bool("anyway", false,
@@ -60,7 +60,7 @@ flags:
 	if *anyway {
 		availability = local.AvailabilityAccepted
 	}
-	if !*noService && !*print {
+	if !*noService && !*showOnly {
 		executable, err := os.Executable()
 		if err != nil {
 			return err
@@ -97,7 +97,7 @@ flags:
 		GitHosts:  hosts,
 		DryRun:    *dryRun,
 		Uninstall: *uninstall,
-		Print:     *print,
+		Print:     *showOnly,
 		Available: availability,
 		Out:       os.Stdout,
 	})

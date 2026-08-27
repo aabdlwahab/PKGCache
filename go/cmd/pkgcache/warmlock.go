@@ -249,7 +249,7 @@ func warmUVLock(
 func daemonHandler(base string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		request, err := http.NewRequestWithContext(r.Context(), r.Method,
-			strings.TrimRight(base, "/")+r.URL.RequestURI(), nil)
+			strings.TrimRight(base, "/")+r.URL.RequestURI(), http.NoBody)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return

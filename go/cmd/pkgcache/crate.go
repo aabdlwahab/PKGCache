@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
@@ -61,7 +62,7 @@ flags:
 	if err != nil {
 		return err
 	}
-	command := append(rest, theirs...)
+	command := slices.Concat(rest, theirs)
 	if len(command) == 0 {
 		return errors.New(
 			"crate: no arguments given; use `pkgcache crate -- prepare -c <manifest>`")
@@ -116,7 +117,7 @@ flags:
 // A copy of the existing configuration rather than a fresh one: it holds registry
 // credentials, and a wrapper that silently logged somebody out of their private registry
 // would be worse than no wrapper.
-func buildProxyConfig(state local.State, existing string) (string, func(), error) {
+func buildProxyConfig(state local.State, existing string) (configPath string, remove func(), err error) {
 	directory, err := os.MkdirTemp("", "pkgcache-docker-")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("crate: %w", err)

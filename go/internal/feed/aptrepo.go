@@ -112,8 +112,9 @@ func controlFromDeb(body []byte) ([]ControlField, error) {
 			if gzErr != nil {
 				return nil, fmt.Errorf("control.tar.gz is not gzip: %w", gzErr)
 			}
-			defer func() { _ = reader.Close() }()
-			return controlFromTar(reader)
+			fields, tarErr := controlFromTar(reader)
+			_ = reader.Close()
+			return fields, tarErr
 		case strings.HasSuffix(name, ".tar"):
 			return controlFromTar(bytes.NewReader(content))
 		default:

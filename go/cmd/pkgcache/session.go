@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 
@@ -73,7 +74,7 @@ func splitList(value string) []string {
 // startSession resolves configuration, ensures a daemon and builds the environment.
 func startSession(
 	ctx context.Context, name string, args []string, usage string,
-) (*config.Snapshot, local.State, []string, []string, error) {
+) (loaded *config.Snapshot, state local.State, command, env []string, err error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
@@ -170,7 +171,7 @@ flags:
 	if err != nil {
 		return err
 	}
-	command := append(rest, theirs...)
+	command := slices.Concat(rest, theirs)
 	if len(command) == 0 {
 		return errors.New("run: no command given; use `pkgcache run -- npm ci`")
 	}

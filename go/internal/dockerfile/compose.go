@@ -116,11 +116,11 @@ func RewriteCompose(
 // fail a build that works without pkgcache.
 func buildDockerfile(
 	build map[string]any, read func(path string) ([]byte, error),
-) (string, []byte, error) {
+) (path string, content []byte, err error) {
 	if inline, ok := build["dockerfile_inline"].(string); ok && inline != "" {
 		return "", []byte(inline), nil
 	}
-	path := dockerfilePath(build)
+	path = dockerfilePath(build)
 	source, err := read(path)
 	return path, source, err
 }

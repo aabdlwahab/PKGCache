@@ -109,7 +109,7 @@ func Notify(title, body string) {
 	_ = exec.CommandContext(ctx, name, args...).Run()
 }
 
-func notifyCommand(title, body string) (string, []string) {
+func notifyCommand(title, body string) (command string, args []string) {
 	switch runtime.GOOS {
 	case "linux":
 		// No desktop session means no bus to notify on, and notify-send would block or

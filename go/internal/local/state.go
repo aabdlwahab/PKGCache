@@ -147,7 +147,7 @@ func (s State) Alive(ctx context.Context) bool {
 // one of ours rather than whatever else happened to take the port.
 func Probe(ctx context.Context, addr string) error {
 	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
+		ctx, http.MethodGet, "http://"+addr+"/healthz", http.NoBody)
 	if err != nil {
 		return err
 	}

@@ -200,7 +200,7 @@ environment; no certificate or configuration is installed on this machine.
 // sessionShell and sessionEnvironment delegate to internal/session, which pkgcache
 // shares. Which variable each tool reads is the same knowledge in both programs; what
 // differs is only the base URL and the namespace.
-func sessionShell(options SessionOptions) (string, []string, error) {
+func sessionShell(options SessionOptions) (shell string, args []string, err error) {
 	return session.Shell(options.Shell, options.OperatingSystem)
 }
 

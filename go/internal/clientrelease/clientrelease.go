@@ -445,7 +445,7 @@ func writeChecksums(dir string) error {
 // Verify reports which of a complete client release is missing from dir, and which
 // published files no longer match their recorded digest. It is what `pkgreg doctor`
 // reports and what a publish prints back.
-func Verify(dir string) (missing []string, corrupt []string, unrecorded []string, err error) {
+func Verify(dir string) (missing, corrupt, unrecorded []string, err error) {
 	sums := Checksums(dir)
 	check := func(filename string, required bool) error {
 		path := filepath.Join(dir, filename)

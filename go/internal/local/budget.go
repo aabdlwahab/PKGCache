@@ -231,7 +231,7 @@ func (g *Guard) attach(blobs *blob.Store) {
 }
 
 // MayStore reports whether an incoming artifact may be kept.
-func (g *Guard) MayStore(size int64) (bool, string) {
+func (g *Guard) MayStore(size int64) (mayStore bool, reason string) {
 	bytes, free, remeasured := g.sample()
 	if size < 0 {
 		size = 0
@@ -266,7 +266,7 @@ func (g *Guard) MayStore(size int64) (bool, string) {
 // carry: a cache that had just refused an artifact published `full: false`, and every
 // client reading it — `pkgcache run`, `pkgcache status` — reported a healthy cache
 // that was in fact storing nothing.
-func (g *Guard) refuse(bytes, free int64, wasFull bool, reason string) (bool, string) {
+func (g *Guard) refuse(bytes, free int64, wasFull bool, reason string) (mayStore bool, why string) {
 	g.full.Store(true)
 	g.reason.Store(&reason)
 	if !wasFull {
@@ -285,7 +285,7 @@ func (g *Guard) publish(bytes, free int64) {
 }
 
 // Full reports whether the cache has stopped storing, and why.
-func (g *Guard) Full() (bool, string) {
+func (g *Guard) Full() (full bool, reason string) {
 	if g == nil || !g.full.Load() {
 		return false, ""
 	}

@@ -557,7 +557,7 @@ func ApplyTeamTrust(snap *config.Snapshot) error {
 // cost more and record a request nobody made.
 func ReachableTeam(ctx context.Context, dataDir string, team Team) bool {
 	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, strings.TrimRight(team.Server, "/")+"/healthz", nil)
+		ctx, http.MethodGet, strings.TrimRight(team.Server, "/")+"/healthz", http.NoBody)
 	if err != nil {
 		return false
 	}
