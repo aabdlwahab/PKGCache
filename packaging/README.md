@@ -13,9 +13,20 @@ that as a step to remember.
 
 For a release, none of those are run by hand. Pushing a `pkgcache-v*` tag runs
 [`.github/workflows/installer-release.yml`](../.github/workflows/installer-release.yml),
-which builds all three, signs and notarizes the `.pkg`, Authenticode-signs the Windows
-binaries *and* the installer that carries them, attests every artefact, and publishes
-them with a `pkgcache-installers-SHA256SUMS` beside them.
+which builds all three, attests every artefact, and publishes them with checksums
+beside them.
+
+Signing depends on credentials being configured, and today they are not. With the Apple
+secrets it signs and notarizes the `.pkg`; with the Windows certificate it
+Authenticode-signs the Windows binaries *and* the installer that carries them. Without
+them it builds the same artefacts unsigned and says so — in the job summary and in the
+release notes, which carry the Gatekeeper and SmartScreen steps a reader will otherwise
+read as a broken download. A partial set of secrets fails the job rather than quietly
+producing an unsigned installer, because that means somebody meant to sign.
+
+Attestation is not signing and does not need an account: every file is bound to the
+workflow, commit and runner that produced it, and `gh attestation verify` checks that.
+It is not what Gatekeeper looks at.
 
 Between releases, every merge to `main` runs
 [`.github/workflows/main-artifacts.yml`](../.github/workflows/main-artifacts.yml), which

@@ -439,8 +439,11 @@
           <p class="lede rv">
             Installers for macOS, Debian and Ubuntu, and Windows; static binaries for five targets;
             the desktop app, the docker shim, the loopback bridge and the pkgreg server beside them.
-            Two channels: the signed release, and the unsigned build of every merge to
-            <code>main</code>.
+            Two channels: a tagged release with a fixed version, and the build of every
+            merge to <code>main</code>. Both are unsigned — there is no Apple or Windows
+            signing identity behind them — so the
+            <a href="tutorial/#setup">tutorial</a> has the one extra step macOS and
+            Windows each ask for on first run.
           </p>
           <div class="download-panel rv">
             <div class="download-head">
@@ -457,7 +460,7 @@
                    does not carry a version, and therefore not for the installers. -->
               <div data-role="downloads-static">
                 <p class="note">
-                  Direct links to the newest signed release. The installers are named with their
+                  Direct links to the newest tagged release. The installers are named with their
                   version, so they cannot be linked this way — take them from the
                   <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>.
                 </p>

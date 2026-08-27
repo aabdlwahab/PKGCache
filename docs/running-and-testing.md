@@ -383,7 +383,7 @@ app itself is the CI build that packages it — see below.
 |---|---|---|
 | [`go.yml`](../.github/workflows/go.yml) | any push touching `go/` | tests, race, vet, lint, and a cross-compile of `pkgcache` for every supported platform |
 | [`main-artifacts.yml`](../.github/workflows/main-artifacts.yml) | merge to `main` | both `.deb`s for both architectures, the `.pkg`, the `setup.exe` and every raw binary, unsigned, attached to the run |
-| [`installer-release.yml`](../.github/workflows/installer-release.yml) | a `pkgcache-v*` tag | the same artefacts, signed, notarized, attested and published as a release |
+| [`installer-release.yml`](../.github/workflows/installer-release.yml) | a `pkgcache-v*` tag | the same artefacts, attested and published as a release — signed and notarized when signing credentials are configured, and labelled unsigned when they are not |
 | [`client-release.yml`](../.github/workflows/client-release.yml) | a client tag | `pkgreg-client` for three platforms, signed and attested |
 
 The middle one is how to get a build of a specific commit without building it on a laptop.

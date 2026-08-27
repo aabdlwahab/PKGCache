@@ -31,8 +31,7 @@
       id: "installers",
       title: "Installers",
       blurb: "What most people want. The .deb pair installs the daemon and the desktop " +
-        "half together; the .pkg carries a universal binary; the setup.exe is signed on " +
-        "a release tag.",
+        "half together, and the .pkg carries a universal binary.",
       test: function (name) { return /(\.deb|\.pkg|-setup\.exe)$/.test(name); },
     },
     {
@@ -175,11 +174,10 @@
     var note = element("p", "note");
     if (release.prerelease) {
       note.appendChild(document.createTextNode(
-        "Built from main, unsigned: macOS Gatekeeper refuses the .pkg until it is opened " +
-        "from the right-click menu, and Windows SmartScreen warns. Verify against "));
+        "Built from main. Verify against "));
     } else {
       note.appendChild(document.createTextNode(
-        "Signed and notarized. Verify what you download against "));
+        "A fixed version. Verify what you download against "));
     }
     note.appendChild(element("code", null, "SHA256SUMS"));
     note.appendChild(document.createTextNode(" with "));
@@ -224,10 +222,10 @@
 
     var channels = [];
     if (stable) {
-      channels.push({ id: "stable", label: stable.tag_name, tag: "signed", release: stable });
+      channels.push({ id: "stable", label: stable.tag_name, tag: "tagged", release: stable });
     }
     if (rolling) {
-      channels.push({ id: "rolling", label: "Latest from main", tag: "unsigned", release: rolling });
+      channels.push({ id: "rolling", label: "Latest from main", tag: "newest", release: rolling });
     }
     if (!channels.length) return null;
 

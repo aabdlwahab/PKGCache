@@ -322,9 +322,12 @@ pkgcache build -t app:dev .</code>
           <p class="eyebrow rv">step 1</p>
           <h2 class="rv">Every file, for every platform.</h2>
           <p class="lede rv">
-            Two channels. <b>The signed release</b> is what you want: notarized on macOS,
-            signed on Windows, and checksummed everywhere. <b>The build from main</b> is the
-            newest merge, unsigned, for when you need a fix before it is tagged.
+            Two channels. <b>The tagged release</b> is what you want: a fixed version,
+            checksummed, with provenance you can verify. <b>The build from main</b> is the
+            newest merge, for when you need a fix before it is tagged. Both are currently
+            <b>unsigned</b> — there is no Apple or Windows signing identity behind them —
+            so macOS and Windows will each want convincing on first run, and the commands
+            below say how.
           </p>
           <div class="download-panel rv">
             <div class="download-head">
@@ -337,7 +340,7 @@ pkgcache build -t app:dev .</code>
             <div class="dl" data-role="downloads">
               <div data-role="downloads-static">
                 <p class="note">
-                  Direct links to the newest signed release. The installers carry their version
+                  Direct links to the newest tagged release. The installers carry their version
                   in the filename and cannot be linked this way — take those from the
                   <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>.
                 </p>

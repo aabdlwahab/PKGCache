@@ -1,12 +1,28 @@
-name: Signed pkgcache installers
+name: pkgcache installers
 
 # The three artefacts a customer actually installs.
 #
 # client-release.yml builds pkgreg-client — the forwarding shim — and signs, notarizes
 # and attests it. It does not build pkgcache, the app, the docker shim, or any of the
 # three installers, which meant every artefact a customer receives was hand-built on
-# somebody's laptop: unsigned on Windows, unsigned and un-notarized on macOS, and with
-# no published checksum anywhere. This is that pipeline.
+# somebody's laptop, with no published checksum anywhere. This is that pipeline.
+#
+# Signing is conditional, and it did not start that way. Every job used to hard-fail
+# when its credentials were absent, on the reasoning that a release which quietly
+# shipped unsigned installers is worse than one that did not build. The reasoning holds;
+# the conclusion did not, because there is no Apple Developer account and no Windows
+# certificate to sign with, so the rule meant no release could ever be published at all.
+#
+# So each platform now checks for its credentials and says which path it took. With them
+# it signs, notarizes and staples exactly as before. Without them it builds the same
+# artefacts unsigned and labels them — in the step summary, in the release notes, and in
+# the install instructions that tell a reader how to get past Gatekeeper and SmartScreen.
+# Nothing ships unsigned *quietly*, which is the part that mattered.
+#
+# Every artefact is still attested. GitHub's provenance attestation uses OIDC rather
+# than a code-signing identity, so it works with no accounts at all: `gh attestation
+# verify` proves which workflow, commit and runner produced a file. That is not what
+# Gatekeeper checks, and it is not nothing.
 #
 # Each platform's installer is built where its signing tool lives, because that is the
 # only real constraint: pkgbuild and notarytool need a Mac, signtool needs Windows, and
@@ -203,6 +219,10 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+    # Reported up to the release job, which has to tell a reader in the notes whether
+    # Gatekeeper will let the .pkg open.
+    outputs:
+      signed: ${{ steps.signing.outputs.available }}
     env:
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -221,15 +241,34 @@ jobs:
       # inside it; Developer ID Installer signs the .pkg. Signing a package with the
       # application identity produces a package that installs and cannot be verified,
       # which is the least useful of the three possible outcomes.
-      - name: Require Apple signing and notarization credentials
+      # All seven or none. A partial set is the one case worth failing on: it means
+      # somebody meant to sign and a secret is missing or misspelled, and quietly
+      # producing an unsigned .pkg would hide that from them.
+      - name: Are there Apple credentials?
+        id: signing
         shell: bash
         run: |
+          set -euo pipefail
+          present=0
+          total=0
           for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD \
             APPLE_SIGNING_IDENTITY APPLE_INSTALLER_IDENTITY APPLE_ID APPLE_TEAM_ID \
             APPLE_APP_PASSWORD; do
-            test -n "${!name:-}" || { echo "::error::$name is required"; exit 1; }
+            total=$((total + 1))
+            [ -n "${!name:-}" ] && present=$((present + 1))
           done
+          if [ "$present" -eq "$total" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "signing and notarizing"
+          elif [ "$present" -eq 0 ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no Apple credentials; the .pkg and the darwin binaries will be unsigned"
+          else
+            echo "::error::$present of $total Apple secrets are set — either all or none"
+            exit 1
+          fi
       - name: Import the Developer ID certificates
+        if: steps.signing.outputs.available == 'true'
         shell: bash
         run: |
           CERTIFICATE="$RUNNER_TEMP/developer-id.p12"
@@ -263,16 +302,24 @@ jobs:
           # Linux runner because a darwin binary in a signed release has to be signed,
           # and this is the job holding the identity.
           make bridge-release VERSION="$V"
-      - name: Build and sign the package
+      - name: Build the package
         working-directory: packaging/macos
+        shell: bash
         run: |
-          ./build-pkg.sh --version ${{ needs.version.outputs.version }} \
-            --sign-app "$APPLE_SIGNING_IDENTITY" \
-            --sign-pkg "$APPLE_INSTALLER_IDENTITY" \
-            --out "$GITHUB_WORKSPACE/dist"
+          set -euo pipefail
+          args=(--version "${{ needs.version.outputs.version }}"
+                --out "$GITHUB_WORKSPACE/dist")
+          if [ "${{ steps.signing.outputs.available }}" = true ]; then
+            args+=(--sign-app "$APPLE_SIGNING_IDENTITY"
+                   --sign-pkg "$APPLE_INSTALLER_IDENTITY")
+          fi
+          # Without the two identities build-pkg.sh produces an unsigned package and
+          # says so on its way out, which is the same path main-artifacts.yml takes.
+          ./build-pkg.sh "${args[@]}"
       # Stapled, unlike the bare client binary: a .pkg can carry its own notarization
       # ticket, so an installer that reaches a Mac with no network still opens.
       - name: Notarize and staple
+        if: steps.signing.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -283,8 +330,27 @@ jobs:
           xcrun stapler staple "$PKG"
           # The check Gatekeeper itself performs, run on the exact bytes that ship.
           spctl --assess --type install --verbose=2 "$PKG"
-      # The bare binaries, signed and notarized like the .pkg but published bare.
+      # The bare binaries, published bare — signed and notarized too when there is an
+      # identity to do it with.
       #
+      # Staging is unconditional; signing is not. These eight files are published either
+      # way, so the copy into dist cannot live inside a step that only runs when there
+      # are credentials — skipping it would silently drop eight platforms from the
+      # release and fail the completeness check at the end for the wrong reason.
+      - name: Stage the macOS binaries
+        working-directory: go/bin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          for tool in pkgcache pkgcache-docker pkgcache-app pkgreg-bridge; do
+            for arch in amd64 arm64; do
+              binary="${tool}-darwin-${arch}"
+              test -f "$binary" || { echo "::error::$binary was not built"; exit 1; }
+              chmod +x "$binary"
+              cp "$binary" "$GITHUB_WORKSPACE/dist/"
+            done
+          done
       # A notarization ticket cannot be stapled to a bare executable — Gatekeeper checks
       # it online — so the archive here is transport for the submission and nothing
       # else. It is written outside dist/ so it cannot reach the release: `pkgreg
@@ -293,17 +359,15 @@ jobs:
       # download. One submission for all eight, because notarytool takes an archive of
       # several items and eight round trips would add a quarter of an hour to every tag.
       - name: Sign and notarize the macOS binaries
-        working-directory: go/bin
+        if: steps.signing.outputs.available == 'true'
+        working-directory: dist
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/dist"
           binaries=""
           for tool in pkgcache pkgcache-docker pkgcache-app pkgreg-bridge; do
             for arch in amd64 arm64; do
               binary="${tool}-darwin-${arch}"
-              test -f "$binary" || { echo "::error::$binary was not built"; exit 1; }
-              chmod +x "$binary"
               codesign --force --options runtime --timestamp \
                 --sign "$APPLE_SIGNING_IDENTITY" "$binary"
               codesign --verify --strict --verbose=2 "$binary"
@@ -320,10 +384,9 @@ jobs:
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD"
           # Proof the signatures survived archiving and submission, on the exact bytes
-          # that ship.
+          # that ship — which are these, in dist, not a copy of them.
           for binary in $binaries; do
             codesign --verify --strict --verbose=2 "$binary"
-            cp "$binary" "$GITHUB_WORKSPACE/dist/"
           done
       - uses: actions/attest@v4
         with:
@@ -357,6 +420,8 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+    outputs:
+      signed: ${{ steps.signing.outputs.available }}
     env:
       WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
@@ -366,11 +431,24 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
-      - name: Require Windows signing credentials
+      # Both or neither, for the same reason as the Apple set: one of two present means
+      # somebody meant to sign, and an unsigned setup.exe would hide the mistake.
+      - name: Is there a Windows certificate?
+        id: signing
         shell: pwsh
         run: |
-          if (-not $env:WINDOWS_CERTIFICATE_BASE64) { throw "WINDOWS_CERTIFICATE_BASE64 is required" }
-          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) { throw "WINDOWS_CERTIFICATE_PASSWORD is required" }
+          $have = @($env:WINDOWS_CERTIFICATE_BASE64, $env:WINDOWS_CERTIFICATE_PASSWORD) |
+            Where-Object { $_ }
+          if ($have.Count -eq 2) {
+            "available=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "signing with signtool"
+          } elseif ($have.Count -eq 0) {
+            "available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "::warning::no Windows certificate; the installer and the .exe files will be unsigned"
+          } else {
+            Write-Host "::error::one of two Windows signing secrets is set — either both or neither"
+            exit 1
+          }
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis --no-progress -y
@@ -393,38 +471,48 @@ jobs:
           # anything — but it is a Windows binary this release publishes, so it is built
           # and signed here where signtool is.
           go build "-ldflags=-s -w $stamp" -o ../packaging/windows/pkgreg-bridge.exe ./cmd/pkgreg-bridge
-      # Signed before they are packed. An installer that is itself signed but carries
-      # unsigned executables trips SmartScreen on first run instead of first download,
-      # which is a worse place to meet it.
+      # Order matters when there is a certificate: every executable is signed before
+      # makensis packs it, and the installer signed after it is built. An installer that
+      # is itself signed but carries unsigned executables trips SmartScreen on first run
+      # instead of first download, which is a worse place to meet it. With no certificate
+      # the same steps run with the signing left out.
       - name: Sign the binaries, build the installer, sign the installer
         shell: pwsh
         working-directory: packaging/windows
         run: |
-          $certificate = Join-Path $env:RUNNER_TEMP "pkgcache-signing.pfx"
-          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
-          $sign = @("sign", "/fd", "SHA256", "/td", "SHA256",
-                    "/tr", "http://timestamp.digicert.com",
-                    "/f", $certificate, "/p", $env:WINDOWS_CERTIFICATE_PASSWORD)
+          $signing = "${{ steps.signing.outputs.available }}" -eq "true"
+          if ($signing) {
+            $certificate = Join-Path $env:RUNNER_TEMP "pkgcache-signing.pfx"
+            [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+            $sign = @("sign", "/fd", "SHA256", "/td", "SHA256",
+                      "/tr", "http://timestamp.digicert.com",
+                      "/f", $certificate, "/p", $env:WINDOWS_CERTIFICATE_PASSWORD)
+          }
           Copy-Item ../../LICENSE LICENSE.txt
           Copy-Item ../../NOTICE NOTICE.txt
           foreach ($exe in "pkgcache.exe", "pkgcache-app.exe", "pkgcache-docker.exe",
                            "pkgreg-bridge.exe") {
-            & signtool @sign $exe
-            if ($LASTEXITCODE -ne 0) { throw "signing $exe failed" }
+            if ($signing) {
+              & signtool @sign $exe
+              if ($LASTEXITCODE -ne 0) { throw "signing $exe failed" }
+            }
           }
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           & $makensis "/DVERSION=${{ needs.version.outputs.version }}" pkgcache.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           $setup = Get-ChildItem pkgcache-*-setup.exe | Select-Object -First 1
-          & signtool @sign $setup.FullName
-          if ($LASTEXITCODE -ne 0) { throw "signing the installer failed" }
-          & signtool verify /pa /v $setup.FullName
-          if ($LASTEXITCODE -ne 0) { throw "the installer signature does not verify" }
+          if ($signing) {
+            & signtool @sign $setup.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signing the installer failed" }
+            & signtool verify /pa /v $setup.FullName
+            if ($LASTEXITCODE -ne 0) { throw "the installer signature does not verify" }
+          }
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\dist" | Out-Null
           Move-Item $setup.FullName "$env:GITHUB_WORKSPACE\dist\"
-          # The same signed bytes the installer just packed, published under the names a
-          # download expects. Copied rather than rebuilt, so "the binary in the installer"
-          # and "the binary in the release" cannot drift into two different things.
+          # The same bytes the installer just packed — signed ones when there was a
+          # certificate — published under the names a download expects. Copied rather
+          # than rebuilt, so "the binary in the installer" and "the binary in the
+          # release" cannot drift into two different things.
           $published = @{
             "pkgcache.exe"        = "pkgcache-windows-amd64.exe"
             "pkgcache-app.exe"    = "pkgcache-app-windows-amd64.exe"
@@ -519,8 +607,57 @@ jobs:
           name: pkgcache-checksums
           path: dist/*SHA256SUMS
           if-no-files-found: error
+      # The notes say what a reader is about to run into. An unsigned .pkg is refused by
+      # Gatekeeper with a message that does not mention the right-click menu, and an
+      # unsigned setup.exe brings up a SmartScreen panel whose "Run anyway" is behind
+      # "More info" — both look like a broken download to somebody who was not told.
+      - name: Write the release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          MAC='${{ needs.pkg.outputs.signed }}'
+          WIN='${{ needs.setup-exe.outputs.signed }}'
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "Installers for macOS, Debian and Ubuntu, and Windows, with the static"
+            echo "binaries for every platform beside them."
+            echo
+            if [ "$MAC" = true ]; then
+              echo "- **macOS** — signed with a Developer ID and notarized."
+            else
+              echo "- **macOS** — **unsigned**. Gatekeeper will refuse it on a double-click:"
+              echo "  right-click the .pkg, choose Open, then confirm. Or install from the"
+              echo "  terminal, which Gatekeeper does not gate:"
+              echo "  \`sudo installer -pkg pkgcache-$V.pkg -target /\`"
+            fi
+            if [ "$WIN" = true ]; then
+              echo "- **Windows** — signed and timestamped."
+            else
+              echo "- **Windows** — **unsigned**. SmartScreen will warn: choose **More info**,"
+              echo "  then **Run anyway**."
+            fi
+            echo "- **Debian and Ubuntu** — the .deb files are not code-signed either way;"
+            echo "  apt verifies the repository signature, which \`pkgreg publish-apt\` makes."
+            echo
+            echo "Verify what you downloaded before running it:"
+            echo
+            echo '```sh'
+            echo "sha256sum --ignore-missing -c SHA256SUMS   # shasum -a 256 on macOS"
+            echo '```'
+            echo
+            echo "Every file here is also attested to this workflow, this commit and this"
+            echo "runner, which needs no signing identity and can be checked with:"
+            echo
+            echo '```sh'
+            echo "gh attestation verify pkgcache-linux-amd64 --repo $GITHUB_REPOSITORY"
+            echo '```'
+          } > "$notes"
+          cat "$notes"
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
