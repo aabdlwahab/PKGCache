@@ -559,8 +559,11 @@
 .fingerprint code { color: var(--fg2); font-size: 11.5px; overflow-wrap: anywhere; }
 .install-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Three platforms, three columns: at two columns the third card sat alone on a second
+     row beside a hole the width of a card, which reads as something failing to load. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
+  align-items: start;
 }
 .install-card { border-top: 2px solid var(--accent); }
 .install-card .card-step { margin-bottom: 8px; }
@@ -764,3 +767,7 @@
 }
 .shots .shot { margin: 0; }
 .shots .shot figcaption { max-width: 420px; }
+
+/* A lede that introduces the block under it after another block, rather than opening a
+   section. Was two inline styles; this page keeps its styling in the stylesheet. */
+.lede-gap { margin-top: 32px; }
