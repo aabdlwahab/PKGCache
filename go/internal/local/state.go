@@ -50,8 +50,8 @@ func (s State) BaseURL() string { return "http://" + s.Addr }
 // Uptime is how long this daemon has been running.
 func (s State) Uptime() time.Duration { return time.Since(s.Started) }
 
-// StatePath, LockPath, StartLockPath and LogPath keep the on-disk layout described in
-// one place.
+// StatePath is where a running daemon publishes what it is doing. It and the three
+// paths below it keep the on-disk layout described in one place.
 func StatePath(dataDir string) string { return filepath.Join(dataDir, "daemon.json") }
 
 // LockPath is held by the daemon for its whole life: one daemon per cache directory.

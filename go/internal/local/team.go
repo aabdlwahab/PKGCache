@@ -158,7 +158,7 @@ func ReadTeams(dataDir string) (TeamSet, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		// Treated as absent, as everywhere else in this package: a corrupt preference
 		// file should cost the preference, not the command.
-		return TeamSet{}, nil
+		return TeamSet{}, nil //nolint:nilerr // a corrupt preference is not an error
 	}
 	set := TeamSet{Projects: file.Projects}
 	if len(set.Projects) == 0 && file.Server != "" {

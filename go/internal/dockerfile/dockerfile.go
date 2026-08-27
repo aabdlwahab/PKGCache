@@ -680,7 +680,6 @@ func isStageIndex(ref string) bool {
 	return true
 }
 
-// mapImage returns the cache path for a Docker image reference, or "" to leave it.
 // MapImage rewrites one image reference to fetch through a cache at registry, or returns
 // "" for a reference that should be left alone.
 //

@@ -46,8 +46,8 @@ func ActivationListener() (net.Listener, error) {
 		return nil, nil
 	}
 	if pid := os.Getenv(listenPIDEnv); pid != "" {
-		wanted, err := strconv.Atoi(pid)
-		if err != nil || wanted != os.Getpid() {
+		wanted, _ := strconv.Atoi(pid)
+		if wanted != os.Getpid() {
 			// Inherited from a parent that was activated. Not ours.
 			return nil, nil
 		}

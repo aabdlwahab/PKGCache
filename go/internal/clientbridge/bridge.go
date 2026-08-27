@@ -1,4 +1,5 @@
-// Command pkgreg-bridge is an unprivileged loopback bridge to a pkgreg cache.
+// Package clientbridge is the unprivileged loopback bridge to a pkgreg cache, and the
+// program pkgreg-bridge around it.
 //
 // It exists to remove one specific piece of client setup: installing a certificate
 // authority into the machine's trust store, and telling pip that a private host is

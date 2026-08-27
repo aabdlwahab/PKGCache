@@ -138,8 +138,10 @@ func Rollback(ctx context.Context, state State, project, snapshot string) (Job, 
 
 // ---- packs, and where people keep them -----------------------------------
 
-// ShuttleIn and ShuttleOut are where the job runner stages packs.
-func ShuttleIn(dataDir string) string  { return filepath.Join(dataDir, "shuttle", "in") }
+// ShuttleIn is where the job runner stages packs that arrived.
+func ShuttleIn(dataDir string) string { return filepath.Join(dataDir, "shuttle", "in") }
+
+// ShuttleOut is where it stages packs to be carried away.
 func ShuttleOut(dataDir string) string { return filepath.Join(dataDir, "shuttle", "out") }
 
 // ErrNotAPack reports a filename the job runner will not accept.

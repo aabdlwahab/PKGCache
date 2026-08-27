@@ -31,7 +31,10 @@ func (a *API) downloadsDir() string {
 // authenticate with, and a filename plus a size is not a secret.
 func (a *API) listDownloads(w http.ResponseWriter, _ *http.Request) error {
 	list, err := clientrelease.List(a.downloadsDir())
-	if err != nil || len(list) == 0 {
+	if err != nil {
+		list = nil
+	}
+	if len(list) == 0 {
 		// An unreadable or absent directory is the normal state of a fresh instance,
 		// not a fault. Either way the answer is "nothing yet, here is how to fix it",
 		// and the hint names a command that works on a host holding only this binary.

@@ -234,14 +234,12 @@ func (a *API) storageNow() (storageDetail, error) {
 			detail.Budget = &budget
 		}
 	}
-	free, total, err := diskusage.Usage(a.DataDir)
-	if err != nil {
-		// Report what is known rather than failing the whole view. Zero here is
-		// distinguishable from a real reading because fs_total is zero too, which no
-		// mounted filesystem reports.
-		return detail, nil
+	// Report what is known rather than failing the whole view when the filesystem
+	// cannot be read. Zero is distinguishable from a real reading because fs_total is
+	// zero too, which no mounted filesystem reports.
+	if free, total, err := diskusage.Usage(a.DataDir); err == nil {
+		detail.FSFree, detail.FSTotal = free, total
 	}
-	detail.FSFree, detail.FSTotal = free, total
 	return detail, nil
 }
 

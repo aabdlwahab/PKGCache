@@ -1,8 +1,10 @@
 package local
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,9 +110,12 @@ func describe(command string) string {
 
 func removeAutostart(entry loginEntry, command string, dryRun bool, out io.Writer) error {
 	contents, err := os.ReadFile(entry.path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		_, _ = fmt.Fprintln(out, "pkgcache: no login entry to remove")
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", entry.path, err)
 	}
 	if !strings.Contains(string(contents), autostartMarker) {
 		return fmt.Errorf("%s was not written by pkgcache; it is left alone", entry.path)

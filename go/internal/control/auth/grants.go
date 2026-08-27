@@ -75,9 +75,11 @@ func (a *Accounts) SetGrant(
 	if err := a.db.PutGrant(grant); err != nil {
 		return control.Grant{}, err
 	}
+	// The write succeeded; this read-back is only for created_at, so a failure here
+	// leaves the caller with the grant it just wrote rather than an error.
 	stored, err := a.db.ListGrants(project)
 	if err != nil {
-		return grant, nil // the write succeeded; the read-back is only for created_at
+		stored = nil
 	}
 	for _, row := range stored {
 		if row.Username == username {
