@@ -60,8 +60,12 @@ jobs:
       # The definition of done requires a clean lint, so CI has to be the thing that
       # enforces it. Without this step the repository accumulated 200 findings while
       # every other gate stayed green.
+      # v7 or newer, because v6 cannot install golangci-lint v2 at all: it parses the
+      # version string and refuses, so the step failed before running a single linter
+      # while reporting nothing about the code. The pinned v2.6.2 and the v2-format
+      # .golangci.yml beside it were correct; only the action was a major version behind.
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.6.2
           working-directory: go
