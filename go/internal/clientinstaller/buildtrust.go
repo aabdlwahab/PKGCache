@@ -156,15 +156,13 @@ func aptProxyOrigin(options Options) (string, error) {
 	return "http://" + base.Host, nil
 }
 
-// refuseHTTPSProxy is not a function but a rule, recorded here because it is the one
-// thing that must never be added to this file.
+// NEVER set httpsProxy here. It is the one thing that must not be added to this file.
 //
-// Setting httpsProxy would send every HTTPS request in every build on this machine to
-// the cache's forward proxy, which answers CONNECT with 405 by design (see
+// Setting it would send every HTTPS request in every build on this machine to the
+// cache's forward proxy, which answers CONNECT with 405 by design (see
 // internal/eco/apt). The result is not "uncached" — it is every https fetch in every
 // build failing, including builds that have nothing to do with pkgreg. Only httpProxy
 // is ever written.
-const refuseHTTPSProxy = "httpsProxy is deliberately never set; see the comment above"
 
 func readDockerConfig(path string) (map[string]any, error) {
 	payload, err := os.ReadFile(path) // #nosec G304 -- a path this program derived itself

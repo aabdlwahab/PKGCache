@@ -213,7 +213,7 @@ func warmUVLock(
 	}
 
 	rewritten := lockwarm.Rewrite(original, packages, indexes, base)
-	if rewritten == string(original) {
+	if rewritten == original {
 		fmt.Printf("%s already points at this cache\n", lockPath)
 		return nil
 	}

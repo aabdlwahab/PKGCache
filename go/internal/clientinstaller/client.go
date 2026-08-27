@@ -392,15 +392,7 @@ func command(goos, script string, options Options) (name string, args []string, 
 
 func parseServer(raw string) (*url.URL, error) { return trust.ParseServer(raw) }
 
-func expectedFingerprint(options Options) (string, []byte, error) {
-	return trust.ExpectedFingerprint(options.ExpectedSHA256, options.CAFile)
-}
-
 func normalizeFingerprint(value string) string { return trust.Normalize(value) }
-
-func displayFingerprint(raw string) string { return trust.Display(raw) }
-
-func httpClient(caPEM []byte) (*http.Client, error) { return trust.ClientFor(caPEM) }
 
 func readCookie(file string) (string, error) {
 	if file == "" {

@@ -386,15 +386,6 @@ func mustGit(t *testing.T, dir string, args ...string) {
 
 func originBase(r *http.Request) string { return "http://" + r.Host }
 
-func requireClient(t *testing.T, name string) string {
-	t.Helper()
-	path, err := exec.LookPath(name)
-	if err != nil {
-		t.Skipf("%s is not installed", name)
-	}
-	return path
-}
-
 // The decision that separates pkgcache from a server: a cache with no room left keeps
 // serving and stops storing. A server refuses the request, which on a laptop would mean
 // a full cache breaks the build it exists to speed up.

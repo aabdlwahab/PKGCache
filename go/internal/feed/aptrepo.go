@@ -7,6 +7,7 @@ import (
 	"crypto/md5" // #nosec G501 -- apt's Release format requires an MD5Sum section.
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -134,7 +135,7 @@ func controlFromTar(source io.Reader) ([]ControlField, error) {
 	archive := tar.NewReader(source)
 	for {
 		header, err := archive.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -197,7 +198,7 @@ func ParseControl(text string) []ControlField {
 // "lib" special case is theirs too — libfoo would otherwise pile every library into one
 // directory named l.
 func PoolPath(component, source, filename string) string {
-	initial := ""
+	var initial string
 	switch {
 	case strings.HasPrefix(source, "lib") && len(source) > 3:
 		initial = source[:4]
