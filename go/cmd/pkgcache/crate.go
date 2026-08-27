@@ -72,7 +72,7 @@ flags:
 		return errors.New(
 			"crate is not on PATH.\n" +
 				"  This wraps the crate orchestrator; install it first, or run the underlying\n" +
-				"  docker commands through `pkgcache build` and `pkgcache pull` instead.")
+				"  docker commands through `pkgcache build` and `pkgcache pull` instead")
 	}
 
 	configDir, cleanup, err := buildProxyConfig(state, os.Getenv("DOCKER_CONFIG"))

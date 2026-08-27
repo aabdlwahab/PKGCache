@@ -273,7 +273,7 @@ func (s *Snapshot) validateLocal() error {
 			return fmt.Errorf(
 				"config: local mode refuses to bind %s=%q, which other machines can reach.\n"+
 					"  pkgcache serves with no certificate and no accounts, which is safe only\n"+
-					"  on loopback. Bind %s, or run `pkgreg serve` for a cache others use.",
+					"  on loopback. Bind %s, or run `pkgreg serve` for a cache others use",
 				addr.field, addr.value, LocalLoopback)
 		}
 	}
@@ -282,7 +282,7 @@ func (s *Snapshot) validateLocal() error {
 			"config: local mode refuses a TLS certificate.\n" +
 				"  On one port, a certificate makes the plaintext half serve only the apt proxy\n" +
 				"  and redirect everything else, so pip and npm would be answered with a 308 to\n" +
-				"  an origin this machine does not trust.")
+				"  an origin this machine does not trust")
 	}
 	if s.Local.IdleTimeout < 0 {
 		return fmt.Errorf("config: local idle timeout must not be negative")

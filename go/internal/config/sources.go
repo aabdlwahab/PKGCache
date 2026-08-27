@@ -452,14 +452,16 @@ func (s *Snapshot) EnsureDirs() error {
 					return fmt.Errorf(
 						"config: cannot create %s: %w\n"+
 							"  pkgcache keeps its cache in a directory you own; pick another with\n"+
-							"      %sDATA_DIR=~/pkgcache pkgcache ...", d, err, LocalEnvPrefix)
+							"      %sDATA_DIR=~/pkgcache pkgcache ...\n"+
+							"  and run it again", d, err, LocalEnvPrefix)
 				}
 				return fmt.Errorf(
 					"config: cannot create %s: %w\n"+
 						"  either run as root:      sudo pkgreg ...\n"+
 						"  or pick a directory you own:\n"+
 						"      pkgreg ... -data-dir ~/pkgreg\n"+
-						"      PKGREG_DATA_DIR=~/pkgreg pkgreg ...", d, err)
+						"      PKGREG_DATA_DIR=~/pkgreg pkgreg ...\n"+
+						"  and run it again", d, err)
 			}
 			return fmt.Errorf("config: create %s: %w", d, err)
 		}

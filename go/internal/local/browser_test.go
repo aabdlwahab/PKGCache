@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -135,7 +136,7 @@ func TestResolveLauncherOnDarwinAndWindows(t *testing.T) {
 // An empty launcher must never be handed to exec: it would report a confusing error from
 // deep inside os/exec rather than the sentinel every caller already handles.
 func TestOpenBrowserRefusesAnEmptyLauncher(t *testing.T) {
-	if err := OpenBrowser(nil, Launcher{}); !errors.Is(err, ErrNoBrowser) {
+	if err := OpenBrowser(context.TODO(), Launcher{}); !errors.Is(err, ErrNoBrowser) {
 		t.Fatalf("an empty launcher gave %v", err)
 	}
 }

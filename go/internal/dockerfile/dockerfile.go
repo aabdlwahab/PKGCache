@@ -644,7 +644,7 @@ func rewriteSyntax(line string, o Options) (string, *Change) {
 // stage, not an image called 0 on Docker Hub. Beyond that the terms are a FROM's:
 // -keep-images leaves it, and so does an image this machine already has.
 func rewriteBorrowedImages(line string, stages map[string]bool, o Options) (string, []Change) {
-	if o.SkipFrom || !(isCopy(line) || isRun(line)) {
+	if o.SkipFrom || (!isCopy(line) && !isRun(line)) {
 		return line, nil
 	}
 	var changes []Change

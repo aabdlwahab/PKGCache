@@ -214,7 +214,7 @@ func Fetch(ctx context.Context, options Options) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, fmt.Errorf("download setup script: %w\n"+
 			"This instance requires a signed-in caller and guest browsing is off. "+
-			"Sign in to the console, then pass that session with -cookie-file.", err)
+			"Sign in to the console, then pass that session with -cookie-file", err)
 	}
 	if !strings.HasPrefix(contentType, "text/") {
 		return Bundle{}, fmt.Errorf("setup script has unexpected content type %q", contentType)

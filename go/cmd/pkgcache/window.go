@@ -98,7 +98,7 @@ func openWindow(ctx context.Context, args []string, name, path, usage string) er
 		if !found {
 			return fmt.Errorf(
 				"the desktop app is not installed, so there is nothing to start at login.\n" +
-					"  The window lives in `pkgcache-app` — see packaging/README.md.")
+					"  The window lives in `pkgcache-app` — see packaging/README.md")
 		}
 		return local.InstallAutostart(local.AutostartOptions{
 			Executable: app, Command: "app",

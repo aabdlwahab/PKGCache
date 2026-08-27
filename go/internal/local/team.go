@@ -161,7 +161,7 @@ func ReadTeams(dataDir string) (TeamSet, error) {
 		return TeamSet{}, nil
 	}
 	set := TeamSet{Projects: file.Projects}
-	if len(set.Projects) == 0 && file.Team.Server != "" {
+	if len(set.Projects) == 0 && file.Server != "" {
 		set.Projects = map[string]Team{config.GlobalProject: file.Team}
 	}
 	// A pre-projects cache kept its CA in the file the pool reads. Adopt it, so the

@@ -158,9 +158,9 @@ func dockerCertsDir(goos string) (directory string, root bool, err error) {
 		return filepath.Join(home, ".docker", "certs.d"), false, nil
 	case "windows":
 		return "", false, errors.New(
-			"Docker Desktop for Windows reads registry trust from the Windows certificate " +
-				"store, not a per-registry directory — a path named \"<host>:<port>\" is not " +
-				"expressible on Windows.\nUse --persist, which imports the CA into " +
+			"on Windows, Docker Desktop reads registry trust from the certificate store " +
+				"rather than a per-registry directory — and a path named \"<host>:<port>\" is " +
+				"not expressible there.\nUse --persist, which imports the CA into " +
 				"LocalMachine\\Root from an Administrator PowerShell")
 	case "linux":
 		// DOCKER_CONFIG is deliberately ignored here. It names the *client's* config

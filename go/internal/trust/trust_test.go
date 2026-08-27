@@ -191,8 +191,12 @@ func TestPoolKeepsTheSystemRoots(t *testing.T) {
 	if err != nil {
 		t.Skip("no system certificate pool on this host")
 	}
-	if len(system.Subjects()) > 0 && //nolint:staticcheck // comparing pool size is the point
-		len(roots.Subjects()) <= len(system.Subjects()) {
+	// Subjects is deprecated because it omits the system roots for a pool that came
+	// from SystemCertPool — and the size of that pool is precisely what is being
+	// compared here, so the deprecation does not apply to what this asserts.
+	systemRoots := len(system.Subjects()) //nolint:staticcheck // pool size is the point
+	withCA := len(roots.Subjects())       //nolint:staticcheck // pool size is the point
+	if systemRoots > 0 && withCA <= systemRoots {
 		t.Fatal("the CA replaced the system roots instead of adding to them")
 	}
 }

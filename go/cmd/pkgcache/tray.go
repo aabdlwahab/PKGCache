@@ -60,7 +60,7 @@ flags:
 			"the desktop app is not installed on this machine.\n" +
 				"  The status bar icon lives in `pkgcache-app`, which installs beside this\n" +
 				"  binary — see packaging/README.md. Without it, `pkgcache widget` still\n" +
-				"  opens the console in a browser.")
+				"  opens the console in a browser")
 	}
 
 	// The login entry names the app, not this binary: it is the app that has to start.

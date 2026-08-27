@@ -283,7 +283,7 @@ func explainImport(err error, project, head string) error {
         pkgcache project create %s-incoming
         pkgcache import -project %s-incoming -file …
 
-  Nothing has been written, and %s is unchanged.`,
+  Nothing has been written, and %s is unchanged`,
 		project, at, short(head), project, project, project)
 }
 
