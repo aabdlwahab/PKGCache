@@ -791,6 +791,52 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl</co
                   <button class="cp" type="button">copy</button>
                 </div>
                 <p>
+                  <b>Two more lines fetch an image, and neither looks like it.</b> A
+                  <code># syntax=</code> parser directive names the frontend BuildKit parses
+                  this file with, and it is fetched before the first instruction is read — so
+                  a build whose every base came from the cache still goes to Docker Hub for
+                  that one, first, and on a host with no route there it fails on line 1. A
+                  <code>COPY --from=</code> or a <code>RUN --mount=from=</code> that names an
+                  <i>image</i> rather than an earlier stage —
+                  <code>COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv</code> —
+                  borrows a published image the same way. Both take the prefix a
+                  <code>FROM</code> takes; <code>COPY --from=build</code> above names a stage
+                  and is not an image at all.
+                </p>
+                <p>
+                  Neither one can be a build argument, which matters here because the bridge
+                  port changes every session. The directive has its own override:
+                  <code>BUILDKIT_SYNTAX</code> names the frontend on the command line, so a
+                  file that needs one gets it from the cache without an address being written
+                  into the file. A borrowed image is refused outright —
+                  <code>variable expansion is not supported for --from</code> — so name it in
+                  a stage, where a variable does work, and borrow from the stage:
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd"># Dockerfile — a borrowed image, addressable by build argument
+ARG BASE
+ARG UV_IMAGE
+FROM ${UV_IMAGE} AS uv
+FROM ${BASE}
+COPY --from=uv /uv /usr/local/bin/uv</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <div class="term term-multi">
+                  <code class="term-cmd">docker build --network=host \
+  --build-arg BUILDKIT_SYNTAX="$PKGREG_DOCKER_REGISTRY/dockerhub/docker/dockerfile:1" \
+  --build-arg BASE="$PKGREG_DOCKER_REGISTRY/dockerhub/library/python:3.13-alpine" \
+  --build-arg UV_IMAGE="$PKGREG_DOCKER_REGISTRY/ghcr/astral-sh/uv:0.10.8" \
+  -t myapp:dev .</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Both <code>ARG</code>s are declared before the first <code>FROM</code>, which
+                  is the only place a variable a <code>FROM</code> reads can live. And
+                  <code>BUILDKIT_SYNTAX</code> is worth passing only when the file wants a
+                  frontend at all: with no directive and no override, BuildKit uses its
+                  built-in one and fetches nothing.
+                </p>
+                <p>
                   <b>Every ecosystem at once.</b> Each tool reads its own variable, so one
                   block of <code>ARG</code>s covers all of them and every later
                   <code>RUN</code> is an ordinary command. <code>ARG</code> rather than
@@ -927,8 +973,10 @@ services:
                   in no layer afterwards.
                 </p>
                 <div class="term term-multi">
-                  <code class="term-cmd"># Dockerfile — the CA is mounted for the step, never written into the image
-# syntax=docker/dockerfile:1
+                  <code class="term-cmd"># syntax=cache.example.com:8443/dockerhub/docker/dockerfile:1
+# Dockerfile — the CA is mounted for the step, never written into the image.
+# The directive is line 1 and comes from the cache: BuildKit stops looking for one
+# after the first comment, and fetches the frontend it names before reading anything.
 FROM cache.example.com:8443/dockerhub/library/python:3.13-alpine
 
 RUN --mount=type=secret,id=pkgca,target=/pkgca.crt \

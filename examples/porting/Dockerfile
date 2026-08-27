@@ -19,8 +19,19 @@ ARG PORT=8443
 ARG PROJECT=global
 
 # 1. BASE IMAGES — prefix the registry and the upstream. `dockerhub` selects Docker
-#    Hub (`ghcr` and `quay` are the other two); official images keep `library/`.
-#    Kept as an ARG so CI can point it elsewhere without editing this file.
+#    Hub and official images keep `library/`; any other registry names itself —
+#    `ghcr`, `quay`, `nvcr.io`, `gcr.io`, `public.ecr.aws` — with nothing configured
+#    on the cache first. Kept as an ARG so CI can point it elsewhere without editing
+#    this file.
+#
+#    A `FROM` is not the only line that fetches an image, and the other two are easy
+#    to miss. A `# syntax=` directive names the frontend BuildKit parses this file
+#    with, fetched before the first instruction is read; a `COPY --from=<image>` or a
+#    `RUN --mount=from=<image>` borrows a published image rather than an earlier
+#    stage. Both take this same prefix. Neither accepts a variable, so a borrowed
+#    image that has to stay configurable goes through a stage — `ARG UV_IMAGE` before
+#    the first `FROM`, `FROM ${UV_IMAGE} AS uv`, then `COPY --from=uv` — and the
+#    directive is overridden with `--build-arg BUILDKIT_SYNTAX=…` instead.
 ARG BASE_IMAGE=${HOST}:${PORT}/dockerhub/library/python:3.12-slim
 FROM ${BASE_IMAGE}
 

@@ -1,6 +1,13 @@
-# syntax=docker/dockerfile:1.7
-#
 # A reusable integration-test client for all six pkgcache repository roles.
+#
+# Deliberately no `# syntax=` directive. It names the frontend BuildKit parses this
+# file with, and that image is fetched from Docker Hub before the first instruction is
+# read — fatal on an air-gapped builder, and absurd in a file whose point is that every
+# image comes through the cache. Nothing here needs a frontend newer than the built-in
+# one. A build that does can take its frontend from the cache too, without naming an
+# address in the file:
+#
+#   docker build --build-arg BUILDKIT_SYNTAX=cache.example:8443/dockerhub/docker/dockerfile:1.7 …
 #
 # The registry prefix is deliberately configurable: leaving BASE_REGISTRY at its
 # default builds directly from Docker Hub, while pointing it at pkgcache makes the

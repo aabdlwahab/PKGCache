@@ -44,6 +44,32 @@ Not used by this example, but the same idea:
 | PyTorch wheels | swap the index: `.../pypi/root/pytorch-cu124/+simple/` |
 | files (artifacts) | `wget --no-check-certificate https://HOST:8443/global/files/<path>` |
 
+### The other two image fetches
+
+Change 1 is `FROM`, but two more lines fetch an image and neither reads like one.
+Both take the same prefix a `FROM` takes, and any registry names itself — `ghcr`,
+`quay`, `nvcr.io` — with nothing configured on the cache first.
+
+| Line | What it fetches | Pointed at the cache |
+|---|---|---|
+| `# syntax=docker/dockerfile:1` | the frontend BuildKit parses the file with, fetched **before the first instruction is read** — so a file whose every `FROM` resolves still fails on line 1 with no route to Docker Hub | `# syntax=HOST:8443/dockerhub/docker/dockerfile:1`, or leave the file alone and pass `--build-arg BUILDKIT_SYNTAX=HOST:8443/dockerhub/docker/dockerfile:1` |
+| `COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /usr/local/bin/uv`, `RUN --mount=from=<image>` | a published image, borrowed for one binary. `--from=build` naming an earlier stage is not an image and needs nothing | `COPY --from=HOST:8443/ghcr/astral-sh/uv:0.10.8 …` |
+
+Neither takes a variable. The directive must be the **first line** — BuildKit stops
+looking for one after the first comment — and `--from=` refuses expansion outright
+(`variable expansion is not supported for --from`). To keep a borrowed image
+configurable, name it in a stage and borrow from the stage:
+
+```dockerfile
+ARG UV_IMAGE
+FROM ${UV_IMAGE} AS uv          # ARG declared before the first FROM
+...
+COPY --from=uv /uv /usr/local/bin/uv
+```
+
+`pkgcache build` does all of this to a copy of the file in memory, if the machine
+doing the build has it — see [`docs/docker-builds.md`](../../docs/docker-builds.md).
+
 ## No root, no `ca.crt`, no Dockerfile
 
 Everything above writes to `/etc`, names a cert and lives in a file you can edit.
