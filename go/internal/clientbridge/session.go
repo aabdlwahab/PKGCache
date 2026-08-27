@@ -189,7 +189,7 @@ environment; no certificate or configuration is installed on this machine.
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelShutdown()
-	_ = server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx) //nolint:contextcheck // detached on purpose: the session context is already cancelled here
 	if sessionErr != nil {
 		return fmt.Errorf("temporary session: %w", sessionErr)
 	}

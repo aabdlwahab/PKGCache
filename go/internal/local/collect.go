@@ -17,7 +17,7 @@ import (
 // now" must not be ambiguous. The cost is a restart on the next command, which is
 // invisible because the next command starts a daemon anyway.
 func Collect(ctx context.Context, snap *config.Snapshot) error {
-	instance, err := app.Open(snap)
+	instance, err := app.Open(snap) //nolint:contextcheck // single-writer storage; its lifetime is the process's, not a request's
 	if err != nil {
 		return err
 	}

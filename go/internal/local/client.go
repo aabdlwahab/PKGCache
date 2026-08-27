@@ -145,7 +145,7 @@ func spawn(o EnsureOptions) error {
 
 	// #nosec G204 -- the executable is this program and every argument is derived from
 	// a validated snapshot, not from user input.
-	cmd := exec.Command(executable, args...)
+	cmd := exec.Command(executable, args...) //nolint:noctx // the daemon must outlive the CLI that spawned it; CommandContext would kill it
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil

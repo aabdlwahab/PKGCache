@@ -579,7 +579,7 @@ func (e *Engine) stream(
 
 		// Worth a line: a transfer that needs picking up says something about the origin,
 		// and without this the only visible symptom is a fetch that takes minutes.
-		obs.LoggerFrom(e.baseCtx).Warn("resuming an interrupted transfer",
+		obs.LoggerFrom(e.baseCtx).Warn("resuming an interrupted transfer", //nolint:contextcheck // the engine's own logger, whose lifetime is the engine's, not this fetch's
 			"url", req.URL, "eco", f.Eco, "at", w.Written(), "total", total,
 			"attempt", attempt+1, "of", maxResumeAttempts)
 

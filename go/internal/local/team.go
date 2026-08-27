@@ -384,7 +384,7 @@ func ChainRows(team Team, known func(eco string) bool) []control.Upstream {
 func ConfigureChains(
 	ctx context.Context, snap *config.Snapshot, set TeamSet,
 ) (unknown []string, err error) {
-	instance, err := app.Open(snap)
+	instance, err := app.Open(snap) //nolint:contextcheck // single-writer storage; its lifetime is the process's, not a request's
 	if err != nil {
 		return nil, err
 	}

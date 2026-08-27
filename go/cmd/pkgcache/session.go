@@ -150,7 +150,7 @@ func reachCache(
 	if err != nil {
 		return local.State{}, nil, err
 	}
-	return local.State{Addr: running.Addr}, func() { _ = running.Close() }, nil
+	return local.State{Addr: running.Addr}, func() { _ = running.Close() }, nil //nolint:contextcheck // io.Closer takes no context, by definition
 }
 
 func runRun(ctx context.Context, args []string) error {

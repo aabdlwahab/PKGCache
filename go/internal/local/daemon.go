@@ -87,7 +87,7 @@ func Run(ctx context.Context, o RunOptions) error {
 	if activated != nil {
 		openOptions = append(openOptions, app.WithListener(activated))
 	}
-	a, err := app.Open(snap, openOptions...)
+	a, err := app.Open(snap, openOptions...) //nolint:contextcheck // single-writer storage; its lifetime is the daemon's, not a request's
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func Run(ctx context.Context, o RunOptions) error {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}
 
-	runtime, err := a.StartListeners()
+	runtime, err := a.StartListeners() //nolint:contextcheck // binding a local socket has nothing to cancel
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func Run(ctx context.Context, o RunOptions) error {
 		Started: time.Now(),
 	}
 	if err := WriteState(snap.DataDir, state); err != nil {
-		_ = runtime.Shutdown(context.Background())
+		_ = runtime.Shutdown(context.Background()) //nolint:contextcheck // detached on purpose: a cancelled context would drain nothing
 		return err
 	}
 	defer RemoveState(snap.DataDir)
@@ -168,7 +168,7 @@ func Run(ctx context.Context, o RunOptions) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
-	if err := runtime.Shutdown(shutdownCtx); err != nil {
+	if err := runtime.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdownCtx is deliberately built from Background, above
 		a.Log.Warn("listeners did not drain cleanly", "error", err)
 		if serveErr == nil {
 			serveErr = err
@@ -189,7 +189,7 @@ func Run(ctx context.Context, o RunOptions) error {
 // address from the state file and are unaffected.
 func resolveAddr(snap *config.Snapshot, notes io.Writer) error {
 	address := snap.LocalAddr()
-	listener, err := net.Listen("tcp", address)
+	listener, err := net.Listen("tcp", address) //nolint:noctx // an availability probe: it binds and closes immediately, with nothing to cancel
 	if err == nil {
 		// Closed immediately and re-bound by the listener layer a moment later. The gap
 		// is a race in principle; losing it produces a clear bind error rather than a
@@ -198,7 +198,7 @@ func resolveAddr(snap *config.Snapshot, notes io.Writer) error {
 		_ = listener.Close()
 		return nil
 	}
-	fallback, fallbackErr := net.Listen("tcp", net.JoinHostPort(config.LocalLoopback, "0"))
+	fallback, fallbackErr := net.Listen("tcp", net.JoinHostPort(config.LocalLoopback, "0")) //nolint:noctx // the same probe, for the loopback fallback
 	if fallbackErr != nil {
 		return fmt.Errorf("local: cannot bind %s, and no loopback port is available: %w",
 			address, err)

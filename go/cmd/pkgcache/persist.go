@@ -65,7 +65,7 @@ flags:
 		if err != nil {
 			return err
 		}
-		got, err := local.InstallService(executable, snap.DataDir, *uninstall, os.Stdout)
+		got, err := local.InstallService(executable, snap.DataDir, *uninstall, os.Stdout) //nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
 		if err != nil {
 			if !*anyway {
 				return fmt.Errorf("%w\n  or pass -anyway to install the settings regardless", err)

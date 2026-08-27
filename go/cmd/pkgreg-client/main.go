@@ -35,7 +35,7 @@ func main() {
 	// Standard streams are handed over directly, so the terminal, the child's prompt and
 	// its interactive shell all work; Ctrl-C reaches both through the process group.
 	// #nosec G204 -- target is pkgcache, resolved beside this binary or on PATH.
-	cmd := exec.Command(target, os.Args[1:]...)
+	cmd := exec.Command(target, os.Args[1:]...) //nolint:noctx // Ctrl-C reaches the child through the process group; see the comment above
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
