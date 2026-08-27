@@ -217,7 +217,8 @@ func TestLockIsReleasedWhenTheHolderDies(t *testing.T) {
 // would then pass for the wrong reason on the day that regressed.
 func TestIdleExitThenRestart(t *testing.T) {
 	snap := testSnapshot(t, 2*time.Second)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 60*time.Second*startBudgetFactor)
 	defer cancel()
 
 	first, err := Ensure(ctx, EnsureOptions{Snapshot: snap, Executable: os.Args[0]})
@@ -225,7 +226,7 @@ func TestIdleExitThenRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(30 * time.Second * startBudgetFactor)
 	for time.Now().Before(deadline) {
 		// A clean exit removes its own state file, unlike the killed case above.
 		if _, err := os.Stat(StatePath(snap.DataDir)); errors.Is(err, os.ErrNotExist) {

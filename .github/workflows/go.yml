@@ -38,8 +38,14 @@ jobs:
           docker pull alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
       - name: Unit, integration, and real-client acceptance
         run: go test ./...
+      # -p 2, because the failure this step produced was starvation rather than a race.
+      # Race instrumentation costs several times the CPU, the default -p is GOMAXPROCS —
+      # four on this runner — and with fifty packages competing, three tests failed on
+      # "the cache did not start within 30s" at 30 to 32 seconds each. Two at a time
+      # leaves a spawned daemon enough CPU to open its databases and answer. Slower in
+      # wall clock, and the only thing that made it flaky was the contention.
       - name: Race detector
-        run: go test -race ./...
+        run: go test -race -p 2 ./...
       - name: Static analysis
         run: go vet ./...
       # pkgcache's macOS and Windows branches — the daemon lock, process control,

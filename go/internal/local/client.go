@@ -16,7 +16,9 @@ import (
 // startTimeout bounds how long a client waits for a daemon it started. Opening two
 // SQLite databases and sweeping interrupted downloads is the slow part, and on a cold
 // cache with a large store it is still seconds, not tens of seconds.
-const startTimeout = 30 * time.Second
+//
+// The factor is 1 everywhere except under the race detector; see startbudget_race.go.
+const startTimeout = 30 * time.Second * startBudgetFactor
 
 // EnsureOptions configures auto-start.
 type EnsureOptions struct {
