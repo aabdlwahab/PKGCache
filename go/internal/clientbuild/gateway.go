@@ -52,13 +52,13 @@ func NeedsHostGateway(ctx context.Context, goos string, info DaemonInfo) bool {
 // DockerInfo asks the daemon what it is. Empty on any failure, which is read as "an
 // ordinary Linux daemon" — the assumption that changes nothing for anybody whose setup
 // already worked.
-func DockerInfo(docker string) DaemonInfo {
+func DockerInfo(ctx context.Context, docker string) DaemonInfo {
 	return func(ctx context.Context) string {
 		if docker == "" {
 			docker = "docker"
 		}
 		// #nosec G204 -- the command is the container client, not caller input.
-		cmd := exec.Command(docker, "info", "--format", "{{.OperatingSystem}} {{.Name}}")
+		cmd := exec.CommandContext(ctx, docker, "info", "--format", "{{.OperatingSystem}} {{.Name}}")
 		out, err := cmd.Output()
 		if err != nil {
 			return ""
@@ -70,7 +70,7 @@ func DockerInfo(docker string) DaemonInfo {
 // GatewayDefault is NeedsHostGateway wired to this machine: what the commands use when no
 // flag has settled the question.
 func GatewayDefault(ctx context.Context, docker string) bool {
-	return NeedsHostGateway(ctx, runtime.GOOS, DockerInfo(docker))
+	return NeedsHostGateway(ctx, runtime.GOOS, DockerInfo(ctx, docker))
 }
 
 // GatewayAuthority swaps a cache address for the name a container resolves this machine

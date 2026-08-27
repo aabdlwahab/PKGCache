@@ -2,6 +2,7 @@ package local
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
 )
@@ -428,7 +430,7 @@ func installLaunchdAgent(
 	}
 	path := filepath.Join(home, "Library", "LaunchAgents", "dev.pkgcache.plist")
 	if uninstall {
-		_ = exec.Command("launchctl", "unload", path).Run() // #nosec G204 -- fixed path
+		_ = runLaunchctl("unload", path)
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return AvailabilityUnknown, err
 		}
@@ -458,8 +460,7 @@ func installLaunchdAgent(
 	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
 		return AvailabilityUnknown, err
 	}
-	// #nosec G204 -- a fixed program and a path this function just wrote.
-	if err := exec.Command("launchctl", "load", path).Run(); err != nil {
+	if err := runLaunchctl("load", path); err != nil {
 		return AvailabilityUnknown, fmt.Errorf("local: launchctl load: %w", err)
 	}
 	_, _ = fmt.Fprintf(out, "pkgcache: installed %s (unverified on macOS)\n", path)
@@ -470,7 +471,23 @@ func installLaunchdAgent(
 // bound an ephemeral port would defeat the whole reason persistent settings exist.
 func defaultPort() int { return config.LocalPort }
 
+// serviceManagerTimeout bounds a call into launchd or systemd. Long enough that a
+// loaded machine is not cut off, short enough that a wedged service manager does not
+// hold the terminal open.
+const serviceManagerTimeout = 20 * time.Second
+
+func runLaunchctl(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), serviceManagerTimeout)
+	defer cancel()
+	// #nosec G204 -- a fixed program, and paths this package derived itself.
+	return exec.CommandContext(ctx, "launchctl", args...).Run()
+}
+
 func runSystemctl(args ...string) error {
+	// Bounded, because systemctl talks to a service manager that can be wedged and this
+	// runs while somebody waits at a prompt.
+	ctx, cancel := context.WithTimeout(context.Background(), serviceManagerTimeout)
+	defer cancel()
 	// #nosec G204 -- every argument is a literal in this file.
-	return exec.Command("systemctl", args...).Run()
+	return exec.CommandContext(ctx, "systemctl", args...).Run()
 }

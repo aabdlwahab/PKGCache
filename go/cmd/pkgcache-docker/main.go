@@ -158,7 +158,7 @@ func runBuild(
 		// for: an orchestrator that builds a shared base image first and then builds
 		// every service FROM it. Rewriting that name sends the build to a registry for
 		// something never published.
-		LocalImage: clientbuild.DefaultLocalImage(docker),
+		LocalImage: clientbuild.DefaultLocalImage(ctx, docker),
 		Indexes: clientbuild.DiscoverIndexes(ctx, state.BaseURL(),
 			local.CurrentProject(snapshot.DataDir)),
 	}

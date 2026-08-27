@@ -63,13 +63,13 @@ flags:
 	if errors.Is(err, local.ErrNoDaemon) {
 		fmt.Printf("daemon     not running\n")
 		fmt.Printf("address    %s (when started)\n", snap.LocalBaseURL())
-		return reportBudget(snap.DataDir, snap.BlobRoot(), project)
+		return reportBudget(ctx, snap.DataDir, snap.BlobRoot(), project)
 	}
 	fmt.Printf("daemon     running, pid %d, up %s\n",
 		state.PID, state.Uptime().Round(time.Second))
 	fmt.Printf("address    %s\n", state.BaseURL())
 	fmt.Printf("version    %s\n", state.Version)
-	if err := reportBudget(snap.DataDir, snap.BlobRoot(), project); err != nil {
+	if err := reportBudget(ctx, snap.DataDir, snap.BlobRoot(), project); err != nil {
 		// The per-project table is still worth printing under a full cache, which is
 		// exactly when somebody wants to know which project is holding what — so it goes
 		// out before the exit status this returns.
@@ -111,7 +111,7 @@ func reportProjects(ctx context.Context, state local.State) {
 // reportBudget prints what the cache holds against what it is allowed to hold, and is
 // the second of the four channels: a non-zero status while the cache is full, from a
 // command whose whole job is to answer "is this healthy?".
-func reportBudget(dataDir, blobRoot, project string) error {
+func reportBudget(ctx context.Context, dataDir, blobRoot, project string) error {
 	budget, err := local.ReadBudget(dataDir)
 	if errors.Is(err, local.ErrNoLimit) {
 		fmt.Println("limit      not set — pkgcache will not serve until it is")
@@ -129,7 +129,7 @@ func reportBudget(dataDir, blobRoot, project string) error {
 				local.FormatSize(size), local.FormatSize(budget.LimitBytes))
 		}
 	}
-	if err := reportTiers(dataDir, project); err != nil {
+	if err := reportTiers(ctx, dataDir, project); err != nil {
 		return err
 	}
 	if record, found := local.ReadPersisted(dataDir); found {
@@ -151,7 +151,7 @@ func reportBudget(dataDir, blobRoot, project string) error {
 //
 // Tiering is only worth having if it is visible: a team cache that has been down for a
 // week is otherwise just "builds got slower", noticed by nobody.
-func reportTiers(dataDir, project string) error {
+func reportTiers(ctx context.Context, dataDir, project string) error {
 	team, has, err := local.ReadTeam(dataDir, project)
 	if err != nil {
 		return err
@@ -161,7 +161,7 @@ func reportTiers(dataDir, project string) error {
 		fmt.Println("direct     always")
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	started := time.Now()
 	reachable := local.ReachableTeam(ctx, dataDir, team)

@@ -159,13 +159,13 @@ func DiscoverIndexes(ctx context.Context, base, project string) map[string]strin
 // `image inspect` and not `images`: it takes the reference as written — tag, digest,
 // registry prefix and all — and answers with an exit status, which is the whole question.
 // Output is discarded; a missing image is not an error worth printing.
-func DefaultLocalImage(docker string) func(string) bool {
+func DefaultLocalImage(ctx context.Context, docker string) func(string) bool {
 	if docker == "" {
 		docker = "docker"
 	}
 	return func(ref string) bool {
 		// #nosec G204 -- the reference comes from a Dockerfile the caller is building.
-		cmd := exec.Command(docker, "image", "inspect", ref)
+		cmd := exec.CommandContext(ctx, docker, "image", "inspect", ref)
 		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 		return cmd.Run() == nil
 	}
