@@ -153,10 +153,38 @@ func stateFile() string {
 
 func dockerCA(port int) string {
 	authority := net.JoinHostPort(cacheHost, strconv.Itoa(port))
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		return filepath.Join(os.Getenv("ProgramData"), "docker", "certs.d", authority, "ca.crt")
+	case "darwin":
+		// Docker Desktop reads certs.d from the invoking user's home, not root's and not
+		// /etc — which is what the installer writes, and why it resolves the home from
+		// SUDO_USER (see docker_ca_path in internal/onboarding). This test runs under
+		// sudo too, so it has to resolve it the same way or it asserts a path that is
+		// never written on a Mac.
+		return filepath.Join(desktopHome(), ".docker", "certs.d", authority, "ca.crt")
+	default:
+		return filepath.Join("/etc/docker/certs.d", authority, "ca.crt")
 	}
-	return filepath.Join("/etc/docker/certs.d", authority, "ca.crt")
+}
+
+// desktopHome mirrors the installer's desktop_home: the home of the user who invoked
+// sudo, falling back to this process's own when it was not invoked through sudo.
+func desktopHome() string {
+	if user := os.Getenv("SUDO_USER"); user != "" {
+		if resolved, err := exec.Command("sh", "-c", "eval printf '%s' ~"+user).Output(); err == nil {
+			if home := strings.TrimSpace(string(resolved)); home != "" {
+				if info, statErr := os.Stat(home); statErr == nil && info.IsDir() {
+					return home
+				}
+			}
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 func hostsFile() string {

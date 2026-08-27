@@ -557,8 +557,22 @@ function Install-Client {
         ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $StateFile
     }
     [IO.File]::WriteAllText($CAFile, $CAPem, [Text.UTF8Encoding]::new($false))
-    $existing = Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq $CASha1
-    if (-not $existing) { Import-Certificate -FilePath $CAFile -CertStoreLocation Cert:\LocalMachine\Root | Out-Null }
+    # The .NET store rather than the Cert: drive and Import-Certificate. Both of those
+    # come from modules that are normally auto-loaded and are not always: on a runner
+    # with a trimmed PSModulePath the provider never registers, and the script dies with
+    # "A drive with the name 'Cert' does not exist" after having already written files.
+    # X509Store is in the base runtime on both PowerShell 5.1 and 7, so it cannot go
+    # missing.
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new("Root", "LocalMachine")
+    $store.Open("ReadWrite")
+    try {
+      $already = @($store.Certificates | Where-Object Thumbprint -eq $CASha1)
+      if ($already.Count -eq 0) {
+        $store.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new($CAFile))
+      }
+    } finally {
+      $store.Close()
+    }
     foreach ($name in $EnvironmentNames) {
       [Environment]::SetEnvironmentVariable($name, [string]$values[$name], "Machine")
     }
@@ -594,7 +608,13 @@ function Uninstall-Client {
     if ($DryRun) {
       Show-Change "remove CA $CASha1 from LocalMachine\Root"
     } else {
-      Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq $CASha1 | Remove-Item -Force
+      $store = [Security.Cryptography.X509Certificates.X509Store]::new("Root", "LocalMachine")
+      $store.Open("ReadWrite")
+      try {
+        $store.Certificates | Where-Object Thumbprint -eq $CASha1 | ForEach-Object { $store.Remove($_) }
+      } finally {
+        $store.Close()
+      }
     }
     Remove-ManagedFile $CAFile
   }

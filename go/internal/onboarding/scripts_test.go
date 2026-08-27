@@ -97,7 +97,10 @@ func TestPowerShellPreservesEnvironmentForUninstall(t *testing.T) {
 		"[switch]$DryRun",
 		"[switch]$Uninstall",
 		"PreviousEnvironment",
-		`Cert:\LocalMachine\Root`,
+		// The store, not the means of reaching it. This used to assert the Cert: drive,
+		// which named an implementation that turned out not to exist on every runner —
+		// the assertion held while the script failed.
+		`X509Store]::new("Root", "LocalMachine")`,
 		"PIP_INDEX_URL",
 		"NPM_CONFIG_REGISTRY",
 		"PKGREG_DOCKER_REGISTRY",

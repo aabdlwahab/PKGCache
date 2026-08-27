@@ -84,10 +84,17 @@ func TestSocketActivationServesOnAnAlreadyBoundPort(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Both conditions, not just the first. The daemon binds, then serves, then
+	// publishes its state file — the bound address is not knowable before the bind, so
+	// that order is forced. Waiting only for the probe wins a race the daemon never
+	// promised: it answers on the inherited socket a moment before the file naming it
+	// exists, and the ReadState below then fails with "no daemon is running".
 	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
 		if Probe(ctx, address) == nil {
-			break
+			if _, err := ReadState(dir); err == nil {
+				break
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
