@@ -11,6 +11,15 @@ name: Signed pkgcache installers
 # Each platform's installer is built where its signing tool lives, because that is the
 # only real constraint: pkgbuild and notarytool need a Mac, signtool needs Windows, and
 # the .deb needs neither and is built on Linux with the app compiled natively beside it.
+#
+# The release carries the raw binaries too — pkgcache, the docker shim, the desktop app,
+# the bridge, the pkgreg server, and the two install scripts — because an installer is
+# not the only way people take this. A CI runner untars a binary, `install.sh --from`
+# fetches one, an air-gapped host is handed one on a disk, and until now every one of
+# those came from somebody's laptop even when a signed release existed. They are built
+# in the job that can sign them for their platform, never cross-built somewhere cheaper:
+# an unsigned darwin binary in a signed release is the quiet failure this whole file
+# exists to prevent.
 
 on:
   push:
@@ -85,7 +94,7 @@ jobs:
           path: go/bin/pkgcache-app-linux-${{ matrix.arch }}
           if-no-files-found: error
 
-  debs:
+  linux:
     needs: [version, linux-app]
     runs-on: ubuntu-24.04
     permissions:
@@ -106,12 +115,23 @@ jobs:
           pattern: app-linux-*
           path: go/bin
           merge-multiple: true
-      - name: Build both packages for both architectures
+      - name: Build both packages, the server, the bridge, and the Linux binaries
         working-directory: go
         run: |
+          set -euo pipefail
+          V=${{ needs.version.outputs.version }}
           chmod +x bin/pkgcache-app-linux-* 2>/dev/null || true
-          make deb VERSION=${{ needs.version.outputs.version }}
-      - name: Require all four packages
+          # `make deb` builds pkgcache and the shim for both architectures on its way.
+          make deb VERSION="$V"
+          # The server, and the bridge. bridge-release builds all five targets; only the
+          # Linux pair is published from here, because the darwin and windows halves of
+          # it are built and signed in the jobs below and these unsigned copies must not
+          # be mistaken for them.
+          make release VERSION="$V"
+          make bridge-release VERSION="$V"
+          install -m 0755 ../packaging/install.sh bin/install.sh
+          install -m 0644 ../packaging/install.ps1 bin/install.ps1
+      - name: Require all four packages and every Linux binary
         working-directory: go/bin
         shell: bash
         run: |
@@ -123,14 +143,34 @@ jobs:
                 echo "::error::no ${name} package for ${arch}"; missing=1; }
             done
           done
+          for name in pkgcache pkgcache-docker pkgcache-app pkgreg-bridge pkgreg; do
+            for arch in amd64 arm64; do
+              test -f "${name}-linux-${arch}" || {
+                echo "::error::no ${name} for linux/${arch}"; missing=1; }
+            done
+          done
           [ "$missing" -eq 0 ]
       - uses: actions/attest@v4
         with:
-          subject-path: "go/bin/*.deb"
+          subject-path: |
+            go/bin/*.deb
+            go/bin/pkgcache-linux-*
+            go/bin/pkgcache-docker-linux-*
+            go/bin/pkgcache-app-linux-*
+            go/bin/pkgreg-bridge-linux-*
+            go/bin/pkgreg-linux-*
       - uses: actions/upload-artifact@v4
         with:
-          name: installers-linux
-          path: go/bin/*.deb
+          name: release-linux
+          path: |
+            go/bin/*.deb
+            go/bin/pkgcache-linux-*
+            go/bin/pkgcache-docker-linux-*
+            go/bin/pkgcache-app-linux-*
+            go/bin/pkgreg-bridge-linux-*
+            go/bin/pkgreg-linux-*
+            go/bin/install.sh
+            go/bin/install.ps1
           if-no-files-found: error
 
   # ---- macOS ------------------------------------------------------------------------
@@ -219,6 +259,10 @@ jobs:
           make pkgcache-release VERSION="$V"
           make shim-darwin VERSION="$V"
           make app VERSION="$V"
+          # The bridge, for the same two architectures. Built here rather than on the
+          # Linux runner because a darwin binary in a signed release has to be signed,
+          # and this is the job holding the identity.
+          make bridge-release VERSION="$V"
       - name: Build and sign the package
         working-directory: packaging/macos
         run: |
@@ -239,13 +283,65 @@ jobs:
           xcrun stapler staple "$PKG"
           # The check Gatekeeper itself performs, run on the exact bytes that ship.
           spctl --assess --type install --verbose=2 "$PKG"
+      # The bare binaries, signed and notarized like the .pkg but published bare.
+      #
+      # A notarization ticket cannot be stapled to a bare executable — Gatekeeper checks
+      # it online — so the archive here is transport for the submission and nothing
+      # else. It is written outside dist/ so it cannot reach the release: `pkgreg
+      # publish-client` accepts only the bare filename grammar in internal/clientrelease,
+      # and a release that shipped zips instead is a release where macOS silently has no
+      # download. One submission for all eight, because notarytool takes an archive of
+      # several items and eight round trips would add a quarter of an hour to every tag.
+      - name: Sign and notarize the macOS binaries
+        working-directory: go/bin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          binaries=""
+          for tool in pkgcache pkgcache-docker pkgcache-app pkgreg-bridge; do
+            for arch in amd64 arm64; do
+              binary="${tool}-darwin-${arch}"
+              test -f "$binary" || { echo "::error::$binary was not built"; exit 1; }
+              chmod +x "$binary"
+              codesign --force --options runtime --timestamp \
+                --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+              codesign --verify --strict --verbose=2 "$binary"
+              binaries="$binaries $binary"
+            done
+          done
+          # Staged into a directory and archived from there: `ditto -c -k` takes one
+          # source, and notarytool takes one archive that may hold many signed items.
+          mkdir -p "$RUNNER_TEMP/notarize"
+          # shellcheck disable=SC2086 -- deliberate word splitting: one arg per binary.
+          cp $binaries "$RUNNER_TEMP/notarize/"
+          ditto -c -k --keepParent "$RUNNER_TEMP/notarize" "$RUNNER_TEMP/macos-binaries.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/macos-binaries.zip" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD"
+          # Proof the signatures survived archiving and submission, on the exact bytes
+          # that ship.
+          for binary in $binaries; do
+            codesign --verify --strict --verbose=2 "$binary"
+            cp "$binary" "$GITHUB_WORKSPACE/dist/"
+          done
       - uses: actions/attest@v4
         with:
-          subject-path: "dist/pkgcache-*.pkg"
+          subject-path: |
+            dist/pkgcache-*.pkg
+            dist/pkgcache-darwin-*
+            dist/pkgcache-docker-darwin-*
+            dist/pkgcache-app-darwin-*
+            dist/pkgreg-bridge-darwin-*
       - uses: actions/upload-artifact@v4
         with:
-          name: installers-macos
-          path: dist/pkgcache-*.pkg
+          name: release-macos
+          path: |
+            dist/pkgcache-*.pkg
+            dist/pkgcache-darwin-*
+            dist/pkgcache-docker-darwin-*
+            dist/pkgcache-app-darwin-*
+            dist/pkgreg-bridge-darwin-*
           if-no-files-found: error
 
   # ---- Windows ----------------------------------------------------------------------
@@ -278,7 +374,7 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis --no-progress -y
-      - name: Build the three binaries
+      - name: Build the four binaries
         shell: pwsh
         working-directory: go
         run: |
@@ -293,6 +389,10 @@ jobs:
           Push-Location cmd/pkgcache-app
           go build "-ldflags=-s -w -H windowsgui $stamp" -o ../../../packaging/windows/pkgcache-app.exe .
           Pop-Location
+          # The bridge is not in the installer — it is the alternative to installing
+          # anything — but it is a Windows binary this release publishes, so it is built
+          # and signed here where signtool is.
+          go build "-ldflags=-s -w $stamp" -o ../packaging/windows/pkgreg-bridge.exe ./cmd/pkgreg-bridge
       # Signed before they are packed. An installer that is itself signed but carries
       # unsigned executables trips SmartScreen on first run instead of first download,
       # which is a worse place to meet it.
@@ -307,7 +407,8 @@ jobs:
                     "/f", $certificate, "/p", $env:WINDOWS_CERTIFICATE_PASSWORD)
           Copy-Item ../../LICENSE LICENSE.txt
           Copy-Item ../../NOTICE NOTICE.txt
-          foreach ($exe in "pkgcache.exe", "pkgcache-app.exe", "pkgcache-docker.exe") {
+          foreach ($exe in "pkgcache.exe", "pkgcache-app.exe", "pkgcache-docker.exe",
+                           "pkgreg-bridge.exe") {
             & signtool @sign $exe
             if ($LASTEXITCODE -ne 0) { throw "signing $exe failed" }
           }
@@ -321,49 +422,102 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "the installer signature does not verify" }
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\dist" | Out-Null
           Move-Item $setup.FullName "$env:GITHUB_WORKSPACE\dist\"
+          # The same signed bytes the installer just packed, published under the names a
+          # download expects. Copied rather than rebuilt, so "the binary in the installer"
+          # and "the binary in the release" cannot drift into two different things.
+          $published = @{
+            "pkgcache.exe"        = "pkgcache-windows-amd64.exe"
+            "pkgcache-app.exe"    = "pkgcache-app-windows-amd64.exe"
+            "pkgcache-docker.exe" = "pkgcache-docker-windows-amd64.exe"
+            "pkgreg-bridge.exe"   = "pkgreg-bridge-windows-amd64.exe"
+          }
+          foreach ($exe in $published.Keys) {
+            Copy-Item $exe (Join-Path "$env:GITHUB_WORKSPACE\dist" $published[$exe])
+          }
       - uses: actions/attest@v4
         with:
-          subject-path: "dist/pkgcache-*-setup.exe"
+          subject-path: |
+            dist/pkgcache-*-setup.exe
+            dist/*-windows-amd64.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: installers-windows
-          path: dist/pkgcache-*-setup.exe
+          name: release-windows
+          path: |
+            dist/pkgcache-*-setup.exe
+            dist/*-windows-amd64.exe
           if-no-files-found: error
 
   # ---- one release ------------------------------------------------------------------
   release:
-    needs: [version, debs, pkg, setup-exe]
+    needs: [version, linux, pkg, setup-exe]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: installers-*
+          pattern: release-*
           path: dist
           merge-multiple: true
       # The thing none of these artefacts had. A checksum a customer can check against
       # something we published is the difference between "verify what you downloaded" as
       # advice and as an instruction they can follow.
+      #
+      # Four files, not one, because two audiences read them. SHA256SUMS covers
+      # everything in the release and is what a person verifies a download against;
+      # pkgcache-installers-SHA256SUMS keeps its name for whatever already reads it; and
+      # the two per-tool files are the format `pkgreg publish-client` parses, so an
+      # operator can drop this release into an instance's downloads directory and have
+      # it publish with checksums rather than without. Their contents are generated here
+      # rather than by `make`, because the darwin and windows binaries in this release
+      # are the signed ones and a sums file written before signing describes bytes that
+      # no longer exist.
       - name: Generate checksums
-        working-directory: dist
-        run: |
-          set -euo pipefail
-          sha256sum ./*.deb ./*.pkg ./*-setup.exe > pkgcache-installers-SHA256SUMS
-          cat pkgcache-installers-SHA256SUMS
-      - name: Require every installer
         working-directory: dist
         shell: bash
         run: |
           set -euo pipefail
+          sha256sum ./*.deb ./*.pkg ./*-setup.exe > "$RUNNER_TEMP/pkgcache-installers-SHA256SUMS"
+          sha256sum pkgcache-linux-* pkgcache-darwin-* pkgcache-windows-amd64.exe \
+            > "$RUNNER_TEMP/pkgcache-SHA256SUMS"
+          sha256sum pkgreg-bridge-* > "$RUNNER_TEMP/pkgreg-bridge-SHA256SUMS"
+          mv "$RUNNER_TEMP"/*-SHA256SUMS .
+          # Written outside dist and moved in, or the redirect creates the file before
+          # the glob expands and SHA256SUMS ends up listing itself, half-written.
+          sha256sum ./* > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" .
+          cat SHA256SUMS
+      - name: Require every installer and every binary
+        working-directory: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
           for pattern in "*.pkg" "*-setup.exe" "pkgcache_*_amd64.deb" "pkgcache_*_arm64.deb" \
-            "pkgcache-desktop_*_amd64.deb" "pkgcache-desktop_*_arm64.deb"; do
-            ls $pattern >/dev/null 2>&1 || { echo "::error::no artefact matching $pattern"; exit 1; }
+            "pkgcache-desktop_*_amd64.deb" "pkgcache-desktop_*_arm64.deb" \
+            "install.sh" "install.ps1"; do
+            ls $pattern >/dev/null 2>&1 || { echo "::error::no artefact matching $pattern"; missing=1; }
           done
+          # pkgcache and the shim on five targets, the app on three, the bridge on five,
+          # the server on two. Named one by one rather than counted, so a target that
+          # stops being built fails the release instead of shrinking it quietly.
+          for name in pkgcache pkgcache-docker pkgreg-bridge; do
+            for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.exe; do
+              test -f "${name}-${target}" || { echo "::error::no ${name} for ${target}"; missing=1; }
+            done
+          done
+          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.exe; do
+            test -f "pkgcache-app-${target}" || {
+              echo "::error::no desktop app for ${target}"; missing=1; }
+          done
+          for target in linux-amd64 linux-arm64; do
+            test -f "pkgreg-${target}" || { echo "::error::no pkgreg for ${target}"; missing=1; }
+          done
+          [ "$missing" -eq 0 ]
       - uses: actions/upload-artifact@v4
         with:
-          name: pkgcache-installer-checksums
-          path: dist/pkgcache-installers-SHA256SUMS
+          name: pkgcache-checksums
+          path: dist/*SHA256SUMS
           if-no-files-found: error
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')

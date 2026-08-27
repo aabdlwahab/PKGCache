@@ -155,6 +155,11 @@ jobs:
           # and it is built here rather than by hand for the same reason as everything
           # else in this file.
           make release VERSION="$V"
+          # The bridge, which no pipeline built until now. It is the unprivileged way
+          # onto a cache — the answer for a laptop that will not install a CA — and
+          # `pkgreg publish-client` serves it beside pkgcache, so a release without it
+          # is a release that quietly drops one of the three tools an instance offers.
+          make bridge-release VERSION="$V"
           install -m 0755 ../packaging/install.sh bin/install.sh
           install -m 0644 ../packaging/install.ps1 bin/install.ps1
       - name: Require every Linux and Windows artefact
@@ -170,6 +175,11 @@ jobs:
             "pkgcache-linux-amd64" "pkgcache-linux-arm64" \
             "pkgcache-darwin-amd64" "pkgcache-darwin-arm64" \
             "pkgcache-windows-amd64.exe" \
+            "pkgcache-app-windows-amd64.exe" \
+            "pkgcache-docker-linux-amd64" "pkgcache-docker-darwin-arm64" \
+            "pkgcache-docker-windows-amd64.exe" \
+            "pkgreg-bridge-linux-amd64" "pkgreg-bridge-darwin-arm64" \
+            "pkgreg-bridge-windows-amd64.exe" \
             "pkgreg-linux-amd64" "pkgreg-linux-arm64"; do
             ls $pattern >/dev/null 2>&1 || { echo "::error::nothing matching $pattern"; missing=1; }
           done
@@ -185,6 +195,9 @@ jobs:
             go/bin/pkgcache-windows-*.exe
             go/bin/pkgcache-docker-*
             go/bin/pkgcache-app-linux-*
+            go/bin/pkgcache-app-windows-*.exe
+            go/bin/pkgreg-bridge-*
+            go/bin/pkgcache-SHA256SUMS
             go/bin/pkgreg-linux-*
             go/bin/install.sh
             go/bin/install.ps1
@@ -240,6 +253,10 @@ jobs:
   bundle:
     needs: [version, linux, macos]
     runs-on: ubuntu-latest
+    # Write, because this job publishes the rolling prerelease below. Nothing else in
+    # this file needs more than read.
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -264,6 +281,90 @@ jobs:
           name: pkgcache-${{ needs.version.outputs.version }}
           path: dist/*
           if-no-files-found: error
+      # ---- the rolling channel -----------------------------------------------------
+      #
+      # A run artefact is not a download: it expires, it needs a GitHub login, and
+      # `install.sh --from` cannot fetch one. So every merge also replaces one
+      # prerelease, `main-latest`, whose asset URLs are stable and whose contents are
+      # always the newest build of main.
+      #
+      # Publishing to a stable URL is where a red commit starts to matter, which it did
+      # not when these were run artefacts. go.yml runs the race suite on the same push
+      # and cannot be depended on from here — they are separate workflows — so its
+      # result is asked for directly. A run still in flight is not a reason to withhold
+      # a build: the installers here take longer than the suite does, so "unfinished"
+      # means something unusual happened, and the honest response is to publish and say
+      # so rather than to silently skip the merge that people are waiting for.
+      - name: Ask whether the test suite passed for this commit
+        id: tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 900))
+          status=""; conclusion=""
+          while :; do
+            run="$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/go.yml/runs?head_sha=$GITHUB_SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty' 2>/dev/null || true)"
+            [ -n "$run" ] || run='{}'
+            status="$(printf '%s' "$run" | jq -r '.status // ""')"
+            conclusion="$(printf '%s' "$run" | jq -r '.conclusion // ""')"
+            [ "$status" = completed ] && break
+            [ "$SECONDS" -ge "$deadline" ] && break
+            sleep 30
+          done
+          publish=true
+          if [ -z "$status" ]; then
+            note="no test run was found for this commit"
+          elif [ "$status" != completed ]; then
+            note="the test suite had not finished when this was published"
+          elif [ "$conclusion" = success ]; then
+            note="the test suite was green"
+          else
+            publish=false
+            note="the test suite concluded $conclusion"
+            echo "::warning::not publishing main-latest: $note"
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "note=$note" >> "$GITHUB_OUTPUT"
+          echo "$note"
+      # Deleted and recreated rather than updated in place. `gh release upload
+      # --clobber` overwrites the assets it is given and leaves every other one alone,
+      # so a binary that stopped being built would stay downloadable from `main-latest`
+      # forever, at whatever version it last had.
+      - name: Replace the rolling prerelease
+        if: steps.tests.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            echo "Every installer and every binary, built from \`main\` at ${GITHUB_SHA::7}."
+            echo
+            echo "**These are unsigned.** macOS Gatekeeper will refuse the .pkg until it is"
+            echo "opened from the right-click menu, and Windows SmartScreen will warn."
+            echo "Signed, notarized installers come from a \`pkgcache-v*\` tag."
+            echo
+            echo "Verify a download against \`SHA256SUMS\` before running it."
+            echo "At publication, ${{ steps.tests.outputs.note }}."
+            echo
+            echo '```sh'
+            echo "sudo apt install ./pkgcache_${V}_amd64.deb ./pkgcache-desktop_${V}_amd64.deb"
+            echo "sudo installer -pkg pkgcache-$V.pkg -target /"
+            echo "./pkgcache-$V-setup.exe"
+            echo '```'
+          } > "$notes"
+          gh release delete main-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create main-latest dist/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "pkgcache $V — unsigned, from main" \
+            --notes-file "$notes"
       - name: Say what was built and how to install it
         shell: bash
         run: |
@@ -271,7 +372,11 @@ jobs:
           {
             echo "## pkgcache $V"
             echo
-            echo "Download **pkgcache-$V** from this run's artefacts. Everything is **unsigned**:"
+            echo "Published to the rolling prerelease **main-latest**, whose asset URLs are"
+            echo "stable: <https://github.com/$GITHUB_REPOSITORY/releases/tag/main-latest>."
+            echo "(${{ steps.tests.outputs.note }}.)"
+            echo
+            echo "The same files are attached to this run as **pkgcache-$V**. Everything is **unsigned**:"
             echo "macOS Gatekeeper will refuse the .pkg until it is opened from the right-click"
             echo "menu, and Windows SmartScreen will warn. Signed installers come from a"
             echo '`pkgcache-v*` tag, which runs `installer-release.yml` instead.'
