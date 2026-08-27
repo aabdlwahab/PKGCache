@@ -252,11 +252,22 @@ func assertUninstalled(t *testing.T, port int) {
 
 func curl(target string) (string, error) {
 	program := "curl"
+	args := []string{"--silent", "--show-error", "--fail", "--noproxy", "*"}
 	if runtime.GOOS == "windows" {
 		program = "curl.exe"
+		// Windows curl verifies through schannel, which insists on a revocation check
+		// and treats "could not check" as fatal: CRYPT_E_NO_REVOCATION_CHECK. pkgreg's
+		// CA is private and publishes no CRL or OCSP endpoint, so there is nothing for
+		// schannel to reach and never will be.
+		//
+		// This is a property of curl on Windows, not of the trust the script installs.
+		// The clients it actually configures — pip, npm, git, uv — are pointed at the CA
+		// file through PIP_CERT, NPM_CONFIG_CAFILE, GIT_SSL_CAINFO and NODE_EXTRA_CA_CERTS
+		// and use their own TLS stacks, none of which requires a revocation endpoint. So
+		// the flag belongs to the probe rather than to the product.
+		args = append(args, "--ssl-revoke-best-effort")
 	}
-	command := exec.Command(program,
-		"--silent", "--show-error", "--fail", "--noproxy", "*", target)
+	command := exec.Command(program, append(args, target)...)
 	output, err := command.CombinedOutput()
 	return string(output), err
 }
