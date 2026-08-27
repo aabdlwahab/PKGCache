@@ -196,7 +196,15 @@ jobs:
   # runner that is simply Intel exists.
   macos-app-amd64:
     needs: version
-    runs-on: macos-13
+    # macos-15-intel, not macos-13. The Intel image this job needs was macos-13, which
+    # GitHub has since retired — and a job whose label no longer exists does not fail, it
+    # queues: three runs of this workflow sat unstarted for eleven hours with every Linux
+    # job green, and nothing said why. macos-15-intel is the current standard Intel image.
+    #
+    # Still an Intel runner rather than cross-compiling cgo to x86_64 from Apple silicon:
+    # the SDK path arguments that needs are not worth having while a runner that is simply
+    # Intel exists.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
