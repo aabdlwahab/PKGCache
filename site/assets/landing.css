@@ -987,3 +987,18 @@ h2 {
   /* the hero scene renders a static end-state (see landing.js); kill the idles too */
   .cas-tile.ping, .scene-status .dot { animation: none; }
 }
+
+/* ---------- screenshots ------------------------------------------------- */
+/* Held to the width the app window actually opens at, and framed like a window. The
+   drawn .preview card above is still used elsewhere; this is for real captures. */
+.shot { margin: 0; }
+.shot img {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}

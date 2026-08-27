@@ -44,6 +44,7 @@
           <a href="#commands">Your tools</a>
           <a href="#docker">Docker</a>
           <a href="#team">Team cache</a>
+          <a href="#ui">The app</a>
           <a href="#help">Troubleshooting</a>
         </nav>
         <div class="hdr-right">
@@ -376,7 +377,7 @@ pkgcache build -t app:dev .</code>
             <article class="plain-card rv">
               <h3>Which file do I want?</h3>
               <ul class="check-list">
-                <li><b>An installer</b> if this is your own machine — it carries the daemon, the app and the docker shim together.</li>
+                <li><b>An installer</b> if this is your own machine — it carries the daemon, the docker shim and <a href="#ui">the desktop app</a> together. On Debian and Ubuntu that is two files: <code>pkgcache</code> and <code>pkgcache-desktop</code>.</li>
                 <li><b><code>pkgcache-&lt;os&gt;-&lt;arch&gt;</code></b> for a CI runner, a container image or a server: one static binary, no dependencies.</li>
                 <li><b><code>install.sh</code></b> to script it, including on a machine that should be pointed at a team cache as it installs.</li>
                 <li><b><code>pkgreg-linux-*</code></b> only if you are setting up the team's cache rather than your own.</li>
@@ -815,12 +816,123 @@ pkgcache docker-build-setup</code>
       <!-- ============================== THE APP ======================== -->
       <section class="sec tint" id="ui">
         <div class="wrap">
-          <p class="eyebrow rv">watching it</p>
-          <h2 class="rv">A window, a status-bar item, or nothing at all.</h2>
+          <p class="eyebrow rv">the desktop app</p>
+          <h2 class="rv">There is an app. You do not have to open a terminal to use it.</h2>
           <p class="lede rv">
-            The installers carry a desktop app beside the daemon. Everything it shows is on
-            this machine, bound to loopback — there is no service to deploy and no page anyone
-            else can open.
+            <code>pkgcache-app</code> is a window and a status-bar item that watch the cache
+            already running on this machine: what is downloading, how much of the budget is
+            used, how much is being served from here, and whether it has filled up and
+            stopped storing. It never keeps the daemon alive — when nothing has used the
+            cache for a while the daemon exits as usual and the icon says <b>asleep</b>.
+            Everything it shows is local and bound to loopback; there is no service to
+            deploy and no page anyone else can open.
+          </p>
+
+          <p class="rv" style="margin: 0 0 6px">
+            Two windows, both real: the same cache a moment apart. On the left a package
+            being fetched for the first time, on the right six requests answered off the
+            disk without leaving the machine — which is the whole product, in the order it
+            happens.
+          </p>
+          <div class="shots rv">
+            <figure class="shot">
+              <img
+                src="../assets/widget-fetching.png"
+                width="840" height="1320"
+                alt="The pkgcache window while a package is being fetched: 9.2 MiB of a 5.0 GiB limit, 100 percent served from here, 19 objects held, and a DOWNLOADING (1) section showing a matplotlib wheel at 1.1 MiB of 10.3 MiB with a progress bar."
+                loading="lazy" decoding="async"
+              />
+              <figcaption>
+                <b>A miss, in flight.</b> The first request for a package is fetched once and
+                kept, and the window says which one and how far along it is. Everything
+                waiting on the same file gets that one transfer rather than starting its own.
+              </figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="../assets/widget-now.png"
+                width="840" height="1320"
+                alt="The pkgcache window a moment later: 2.2 MiB of a 5.0 GiB limit, 100 percent served from here, 15 objects held, and a list of six wheels each marked local hit with its size."
+                loading="lazy" decoding="async"
+              />
+              <figcaption>
+                <b>Hits, afterwards.</b> Every row marked <code>local hit</code> is a request
+                that never left this machine. <code>100% served from here</code> is the same
+                fact as a number, and it is what the cache exists to make true.
+              </figcaption>
+            </figure>
+          </div>
+          <p class="fp-note rv">
+            The four tabs are <code>now</code>, which is what opens; <code>packages</code>,
+            what is held, by ecosystem; <code>transfer</code>, for checkpoints and packs; and
+            <code>sources</code>, the chain behind the cache. <code>Go offline</code> at the
+            bottom is the same switch as <code>pkgcache serve -offline</code> — serve what is
+            held and never reach upstream, which is how you find out what a build actually
+            needs. Both screenshots are a real window against a real cache; the figures and
+            the filenames are what that daemon was doing.
+          </p>
+
+          <div class="two-col">
+            <article class="plain-card rv">
+              <h3>On Linux it is the second package</h3>
+              <p>
+                The <code>.deb</code> ships as a pair, because a build box should not carry a
+                graphics stack it will never draw with:
+              </p>
+              <ul class="check-list">
+                <li><b><code>pkgcache</code></b> — the daemon and the CLI. Depends on nothing; this is the one a container image or a headless server wants.</li>
+                <li><b><code>pkgcache-desktop</code></b> — the app, its icon, its launcher entry and its login item. Depends on <code>pkgcache (= same version)</code>, GTK4 and WebKitGTK&nbsp;6.0.</li>
+              </ul>
+              <p>
+                So one command gets both, because apt resolves the dependency — and it is
+                the desktop package you name, not the daemon:
+              </p>
+              <div class="term term-multi">
+                <code class="term-cmd">sudo apt install ./pkgcache-desktop_*_amd64.deb ./pkgcache_*_amd64.deb</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+              <p class="fp-note">
+                The version lock is deliberate. The app talks to the daemon over a local API,
+                and two halves of one product drifting apart on a machine produces a bug
+                report nobody can read.
+              </p>
+            </article>
+            <article class="plain-card rv">
+              <h3>How it opens</h3>
+              <p>Every installer leaves something to click, which is most of what "installed" means:</p>
+              <ul class="check-list">
+                <li><b>Linux</b> — an application-menu entry called <b>pkgcache</b>, from the launcher entry in the desktop package. Or run <code>pkgcache-app</code>.</li>
+                <li><b>macOS</b> — <code>/Applications/pkgcache.app</code>. The <code>.pkg</code> registers it as a login item and opens it as it finishes, so installing is the whole of it.</li>
+                <li><b>Windows</b> — a Start-menu shortcut under <b>pkgcache</b>, pointing at <code>pkgcache-app.exe</code>.</li>
+              </ul>
+              <p>
+                On Linux and macOS it starts with your session by default. Turning that off is
+                one command — or your desktop's own Startup Applications panel, which writes
+                the same per-user override:
+              </p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache-app --off-login
+pkgcache-app --on-login</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+              <p class="fp-note">
+                <code>--background</code> is what the login entry itself runs: the status-bar
+                icon with no window, so logging in does not put a window in your face.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout rv">
+            <b><code>pkgcache-app</code> takes no commands.</b> It is the window and the icon,
+            and nothing else — <code>pkgcache-app status</code> is refused with a message
+            pointing at <code>pkgcache status</code>, because reaching for the CLI on the app
+            binary is the first thing everybody tries. The cache itself is always
+            <code>pkgcache</code>.
+          </div>
+
+          <p class="lede rv">
+            And if you would rather not have an app at all, the same figures are a command
+            away. The daemon does not care which one you use.
           </p>
           <div class="tool-grid">
             <article class="tool-card rv">
