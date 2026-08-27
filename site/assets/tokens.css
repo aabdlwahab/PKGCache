@@ -1,0 +1,130 @@
+/* Design tokens for the pkgcache site.
+
+   Forked from go/internal/web/dist/tokens.css, which the server serves from inside its
+   own binary. The two will drift, because the two products' pages are diverging on
+   purpose; this copy is the one GitHub Pages publishes.
+
+   Everything here is plain CSS custom properties. There is no build step: the file
+   the browser fetches is the file in the repository.
+
+   The server's copy declares an @font-face pointing at /fonts/IBMPlexMono.woff2. That
+   file does not exist in the repository — the rule only ever resolved through its
+   local() arm — and an absolute path would not resolve under /PKGCache/ anyway. So the
+   face is left to the stack below: installed IBM Plex Mono if the reader has it, and
+   the platform's own monospace otherwise. */
+
+:root {
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 3px;
+  --tspace: 0.12em;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --glow: 74 128 240;   /* accent, as space-separated rgb for shadows */
+  --glow-ok: 69 217 138;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.185 0.012 250); --bg2: oklch(0.155 0.012 250);
+  --panel: oklch(0.215 0.013 250); --panel2: oklch(0.255 0.014 250);
+  --inset: oklch(0.155 0.012 252);
+  --line: oklch(0.315 0.012 252); --line2: oklch(0.40 0.012 252);
+  /* Control boundary. --line is a separator between things that are already distinct
+     surfaces; a form field has to announce itself as a field, which WCAG 1.4.11 puts at
+     3:1 against the surface behind it. --line measures 1.36:1 there, so borrowing it for
+     inputs and buttons left them with no perceivable edge at all. */
+  --control-line: oklch(0.57 0.014 252);
+  --fg: oklch(0.93 0.006 250); --fg2: oklch(0.80 0.008 250); --muted: oklch(0.66 0.012 252);
+  --ok: oklch(0.78 0.15 152); --bad: oklch(0.70 0.18 28); --warn: oklch(0.82 0.13 82);
+  --accent: oklch(0.66 0.16 248); --accent-ink: #05121f; --accent-soft: oklch(0.66 0.16 248 / 0.16);
+  --shadow-md: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.34);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.4);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: oklch(0.955 0.004 250); --bg2: oklch(0.925 0.005 250);
+  --panel: oklch(0.995 0.001 250); --panel2: oklch(0.975 0.003 250);
+  --inset: oklch(0.965 0.004 250);
+  --line: oklch(0.895 0.005 252); --line2: oklch(0.82 0.008 252);
+  --control-line: oklch(0.60 0.012 252);
+  /* --muted was 0.52, which measured 4.41:1 on --bg2 — under AA for the 10-11px labels
+     that use it most. --accent was 0.55, which measured 3.82:1 on the tinted section
+     background and 4.30:1 inside command blocks. --warn was 0.58, which put the
+     offline-state pill at 4.34:1. All three are darkened to clear 4.5:1 on the
+     secondary surfaces they actually sit on, not just on --panel. */
+  --fg: oklch(0.27 0.012 252); --fg2: oklch(0.40 0.012 252); --muted: oklch(0.485 0.014 252);
+  --ok: oklch(0.52 0.15 152); --bad: oklch(0.55 0.20 28); --warn: oklch(0.505 0.13 70);
+  --accent: oklch(0.495 0.17 248); --accent-ink: #ffffff; --accent-soft: oklch(0.495 0.17 248 / 0.12);
+  --shadow-md: 0 1px 2px rgba(20,30,45,.08), 0 8px 22px rgba(20,30,45,.08);
+  --shadow-lg: 0 16px 44px rgba(20,30,45,.16), 0 4px 12px rgba(20,30,45,.10);
+}
+
+/* ---- chart palette -------------------------------------------------------
+
+   These are NOT the interface tokens above. Chart marks answer a different
+   question from surfaces and text, and reusing --accent or --ok as a series
+   colour would make a green bar mean "healthy" when it only ever meant "npm".
+
+   The six categorical slots are assigned to ecosystems in a fixed order and are
+   never cycled or reassigned by rank, so filtering the chart cannot repaint the
+   series that remain.
+
+   Validated against this console's own panel surfaces (#151a1f dark,
+   #fdfdfe light) rather than against a generic backdrop:
+
+     dark   all six >= 3:1 contrast; worst adjacent CVD dE 8.4; normal-vision 19.3
+     light  worst adjacent CVD dE 9.1; normal-vision 19.6; three slots (aqua,
+            yellow, magenta) fall below 3:1 contrast
+
+   That last line is the reason every chart in this console ships either direct
+   labels or a table view. It is a hard requirement, not a nicety: on the light
+   surface those three marks cannot be told from the background by colour alone.
+   charts.js enforces it by construction — the table toggle is part of the chart
+   component, not something each view remembers to add. */
+:root {
+  --series-1: #2a78d6;  /* blue    - pypi  */
+  --series-2: #eb6834;  /* orange  - npm   */
+  --series-3: #1baf7a;  /* aqua    - oci   */
+  --series-4: #eda100;  /* yellow  - apt   */
+  --series-5: #e87ba4;  /* magenta - git   */
+  --series-6: #008300;  /* green   - files */
+
+  /* Outcomes are ordinal, not categorical: hit, dedup and peer are the same event
+     at increasing distance from the caller. One hue, darkening toward "closest",
+     reads as a scale the way six unrelated hues never could. Miss leaves the ramp
+     entirely because it left the cache, and fail wears a reserved status colour. */
+  --outcome-hit: #256abf;
+  --outcome-dedup: #5598e7;
+  --outcome-peer: #86b6ef;
+  --outcome-miss: #898781;
+  --outcome-fail: #d03b3b;
+
+  /* Reserved status steps. Never used as a series colour, always paired with an
+     icon or a word so the meaning does not rest on hue. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+
+  /* Chart chrome. Recessive on purpose — the data is the only thing with weight. */
+  --chart-grid: oklch(0.895 0.005 252);
+  --chart-axis: oklch(0.82 0.008 252);
+}
+
+[data-theme="dark"] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+
+  --outcome-hit: #3987e5;
+  --outcome-dedup: #6da7ec;
+  --outcome-peer: #9ec5f4;
+  --outcome-miss: #898781;
+  --outcome-fail: #d03b3b;
+
+  --chart-grid: oklch(0.315 0.012 252);
+  --chart-axis: oklch(0.40 0.012 252);
+}

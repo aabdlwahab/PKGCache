@@ -1,0 +1,147 @@
+/* The download panel, mounted by both pages and filled in by downloads.js.
+
+   The panel, the status dot and the button rows come from the tutorial stylesheet the
+   server serves (go/internal/web/dist/tutorial.css), where they framed the files one
+   instance had published. They are lifted into a file of their own because the client
+   site shows the same component on the landing page, which loads landing.css and
+   nothing else. Everything below the rule marked "new" is this site's: channels,
+   groups, and a table dense enough for thirty-odd files. */
+
+.download-panel {
+  margin-top: 34px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.download-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  background: var(--inset);
+  border-bottom: 1px solid var(--line);
+}
+.download-head h3 { margin: 0; font-size: 17px; }
+.download-head .download-k { margin-bottom: 4px; }
+.download-live {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.download-live i {
+  width: 7px;
+  height: 7px;
+  background: var(--warn);
+  border-radius: 50%;
+}
+.download-live.ready { color: var(--ok); }
+.download-live.ready i { background: var(--ok); }
+.download-live.empty { color: var(--warn); }
+.dl { padding: 20px; }
+.dl-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.dl-btn {
+  justify-content: space-between;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+}
+.dl-btn.recommended {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.dl-size { color: var(--muted); font-size: 11px; }
+.dl-hash {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.dl .note { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.dl .note:last-child { margin-bottom: 0; }
+.dl .note code {
+  color: var(--fg2);
+  background: var(--inset);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+}
+
+/* new ------------------------------------------------------------------- */
+
+/* Two channels: the signed release and the unsigned build of main. Radio inputs
+   rather than buttons, so the choice works before JavaScript decides to and reads as
+   one control to a screen reader. */
+.dl-channels { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px 0; }
+.dl-channel-tab {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dl-channel-tab:hover { color: var(--fg2); border-color: var(--line2); }
+.dl-channel-tab input { position: absolute; opacity: 0; pointer-events: none; }
+.dl-channel-tab b { font-weight: 600; }
+.dl-channel-tab .dl-tag { font-size: 10px; letter-spacing: var(--tspace); text-transform: uppercase; }
+/* Two selectors for one state: :has() where it exists, and a class downloads.js sets
+   on the same label where it does not, so the selected channel is never invisible. */
+.dl-channel-tab:has(input:checked),
+.dl-channel-tab.is-on {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dl-channel-tab:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.dl-group { margin-top: 22px; }
+.dl-group:first-child { margin-top: 0; }
+.dl-group > h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: var(--tspace);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dl-group > p { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+
+/* The file list. A table on a wide screen, stacked cards on a narrow one, because a
+   six-column table on a phone is a horizontal scrollbar with a name. */
+.dl-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dl-table th {
+  padding: 0 10px 7px 0;
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: var(--tspace);
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+.dl-table td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+.dl-table tr:last-child td { border-bottom: 0; }
+.dl-table .dl-file { font-family: var(--mono); overflow-wrap: anywhere; }
+.dl-table .dl-file a { font-weight: 600; }
+.dl-table .dl-plat { color: var(--fg2); white-space: nowrap; }
+.dl-table .dl-bytes { color: var(--muted); white-space: nowrap; text-align: right; }
+.dl-table tr.is-yours .dl-plat { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .dl-table, .dl-table tbody, .dl-table tr, .dl-table td { display: block; width: 100%; }
+  .dl-table thead { display: none; }
+  .dl-table tr { padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .dl-table td { padding: 1px 0; border-bottom: 0; }
+  .dl-table .dl-bytes { text-align: left; }
+}

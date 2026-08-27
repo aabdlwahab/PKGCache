@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgcache — a package cache for the machine you are sitting at</title>
+    <meta
+      name="description"
+      content="pkgcache fetches a package once and serves every later request from this machine — Docker images, Python, Node, apt, apk, Git and files — on one loopback port, with no certificate, no account and no privileged setup."
+    />
+    <!-- Apply the persisted theme before first paint. -->
+    <script src="assets/theme.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/landing.css" />
+    <link rel="stylesheet" href="assets/downloads.css" />
+    <!-- Bracket-and-cursor mark. -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151a'/><rect x='0.6' y='0.6' width='30.8' height='30.8' rx='6.6' fill='none' stroke='%232b3540'/><path d='M13 8 H9 V24 H13' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><path d='M19 8 H23 V24 H19' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><rect x='14.4' y='13.6' width='3.2' height='4.8' rx='1' fill='%2345d98a'/></svg>"
+    />
+  </head>
+  <body>
+    <div class="progress" aria-hidden="true"></div>
+
+    <!-- ========================= HEADER ========================= -->
+    <header class="hdr">
+      <div class="wrap hdr-in">
+        <a class="lockup" href="#top" aria-label="pkgcache home">
+          <span class="mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect class="mark-cur" x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="lockup-txt">
+            <span class="wordmark">pkgcache</span>
+            <span class="sublabel">package-registry</span>
+          </span>
+        </a>
+        <nav class="nav" aria-label="Sections">
+          <a href="#ecosystems">What it caches</a>
+          <a href="#how">How it works</a>
+          <a href="#team">Team cache</a>
+          <a href="#airgap">Offline</a>
+          <a href="#downloads">Downloads</a>
+          <a href="tutorial/">Tutorial</a>
+        </nav>
+        <div class="hdr-right">
+          <button class="icon-btn" id="theme" type="button" aria-label="Toggle theme">
+            <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+            <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          </button>
+          <a class="btn btn-primary hdr-cta" href="#downloads">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ========================= THE STORY =========================
+        One pinned stage, four beats. The panel is decorative (aria-hidden) and
+        scroll-driven; the copy beside it is ordinary flow content that
+        cross-fades between beats — with JS off it simply stacks and reads.
+
+        The markup is the shape landing.js drives, kept class-for-class from the
+        page the server serves. What changed is who the scene is about: the
+        clients and the cache are all one machine here. -->
+      <section class="stage night" id="story" data-act="1">
+       <div class="stage-pin">
+        <div class="stage-visual" aria-hidden="true">
+          <div class="deck">
+            <div class="deck-top">
+              <span class="deck-title">the same download, again</span>
+              <span class="deck-hud"><b class="hud-v">again</b><i class="hud-k">already on this disk</i></span>
+            </div>
+
+            <div class="scene stage-scene">
+              <div class="upzone"></div>
+
+              <svg class="rails" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line class="rail" x1="18" y1="6"  x2="74" y2="6"></line>
+                <line class="rail" x1="18" y1="23" x2="74" y2="23"></line>
+                <line class="rail" x1="18" y1="40" x2="74" y2="40"></line>
+                <line class="rail" x1="18" y1="57" x2="74" y2="57"></line>
+                <line class="rail" x1="18" y1="74" x2="74" y2="74"></line>
+                <line class="rail" x1="18" y1="91" x2="74" y2="91"></line>
+                <g class="rails-up">
+                  <line class="rail" x1="50" y1="6"  x2="74" y2="6"></line>
+                  <line class="rail" x1="50" y1="23" x2="74" y2="23"></line>
+                  <line class="rail" x1="50" y1="40" x2="74" y2="40"></line>
+                  <line class="rail" x1="50" y1="57" x2="74" y2="57"></line>
+                  <line class="rail" x1="50" y1="74" x2="74" y2="74"></line>
+                  <line class="rail" x1="50" y1="91" x2="74" y2="91"></line>
+                </g>
+              </svg>
+
+              <div class="gapline"></div>
+              <div class="gaplabel">no network</div>
+
+              <!-- beat 2: the cache peels in across every lane -->
+              <div class="wall">
+                <div class="wall-h">this machine</div>
+                <div class="cas"></div>
+                <div class="wall-ckpt">saved<br>v12</div>
+              </div>
+
+              <!-- beat 3: each checkpoint is a name you can return to -->
+              <div class="gitgraph">
+                <span class="gg-rail"></span>
+                <span class="gg-node" data-v="v13"></span>
+                <span class="gg-node" data-v="v14"></span>
+                <span class="gg-node" data-v="v15"></span>
+              </div>
+
+              <!-- beat 4: the laptop on the far side of the gap -->
+              <div class="host-off">
+                <div class="host-h">offline laptop</div>
+                <div class="cas cas-off"></div>
+                <div class="host-note">serving cached<br>packages</div>
+                <div class="off-clients">
+                  <div class="fnode fclient e-docker"><span class="fdot"></span>docker</div>
+                  <div class="fnode fclient e-pip"><span class="fdot"></span>pip / uv</div>
+                  <div class="fnode fclient e-npm"><span class="fdot"></span>npm</div>
+                </div>
+              </div>
+
+              <!-- beat 4: the exported pack, carried across by hand -->
+              <div class="shuttle"><b>pack</b><span class="shut-v">v15</span></div>
+
+              <div class="flow"></div>
+
+              <div class="clients">
+                <div class="fnode fclient e-docker" data-node="c-docker"><span class="fdot"></span>docker</div>
+                <div class="fnode fclient e-pip"    data-node="c-pip"><span class="fdot"></span>pip / uv</div>
+                <div class="fnode fclient e-npm"    data-node="c-npm"><span class="fdot"></span>npm</div>
+                <div class="fnode fclient e-apt"    data-node="c-apt"><span class="fdot"></span>apt / apk</div>
+                <div class="fnode fclient e-git"    data-node="c-git"><span class="fdot"></span>git</div>
+                <div class="fnode fclient e-files"  data-node="c-files"><span class="fdot"></span>files</div>
+              </div>
+
+              <div class="ups">
+                <div class="fnode fup e-docker" data-node="u-docker">registry-1.docker.io</div>
+                <div class="fnode fup e-pip"    data-node="u-pip">pypi.org</div>
+                <div class="fnode fup e-npm"    data-node="u-npm">registry.npmjs.org</div>
+                <div class="fnode fup e-apt"    data-node="u-apt">deb.debian.org</div>
+                <div class="fnode fup e-git"    data-node="u-git">github.com</div>
+                <div class="fnode fup e-files"  data-node="u-files">artifacts.internal</div>
+              </div>
+
+              <div class="scene-key">
+                <div class="items">
+                  <span class="item"><span class="swatch"></span>cached · served from disk</span>
+                  <span class="item item-miss"><span class="swatch"></span>new · fetched once</span>
+                </div>
+                <div class="scene-status"><span class="dot"></span><span class="label">online</span></div>
+              </div>
+            </div>
+
+            <div class="deck-rail">
+              <span class="tick on"><i></i>problem</span>
+              <span class="tick"><i></i>one cache</span>
+              <span class="tick"><i></i>checkpoint</span>
+              <span class="tick"><i></i>offline</span>
+              <span class="rail-fill"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-copy">
+          <article class="act is-current" id="problem">
+            <p class="eyebrow">the problem</p>
+            <h1>This machine downloads the same packages over and over.</h1>
+            <p class="lede">
+              A fresh clone, a rebuilt container, a colleague's branch, a CI job on the box under your
+              desk — each one pulls the wheels, the tarballs and the base images that are already on
+              this disk, and each one waits for them.
+            </p>
+            <div class="hero-ctas">
+              <a class="btn btn-primary" href="#downloads">Download pkgcache</a>
+              <a class="btn btn-ghost" href="tutorial/">Read the tutorial</a>
+            </div>
+            <p class="hero-note">One static binary, one command to set up, and a disk budget you choose. No certificate, no account, nothing that needs administrator access.</p>
+            <div class="pains">
+              <div class="pain">
+                <span class="pain-k">the waiting</span>
+                <h3>The same bytes, every build</h3>
+                <p>A multi-gigabyte CUDA image and a 300&nbsp;MB wheel do not get faster the fourth time you fetch them.</p>
+              </div>
+              <div class="pain">
+                <span class="pain-k">the sprawl</span>
+                <h3>Six tools, six ways to configure</h3>
+                <p>pip has a variable, npm has a file, apt has a proxy, Docker has a daemon. Setting all of them up by hand is a morning nobody has.</p>
+              </div>
+              <div class="pain">
+                <span class="pain-k">the wall</span>
+                <h3>On a plane, nothing installs</h3>
+                <p>Away from the network an uncached dependency stops the work, even though the package sat in a directory two builds ago.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="act" id="how">
+            <p class="eyebrow">one cache, every ecosystem</p>
+            <h2>Fetch once. Everything after that is local.</h2>
+            <p class="lede">
+              pkgcache runs on this machine and answers on one loopback port. Point a tool at it — or
+              let <code>pkgcache run</code> point it for you — and the first request is fetched and
+              kept. Every request after that is served off this disk.
+            </p>
+            <div class="hows">
+              <div class="how">
+                <div class="how-n">01</div>
+                <h3>Local after the first fetch</h3>
+                <p>An artifact is stored the first time anything asks for it, and served from disk to everything that asks afterwards.</p>
+              </div>
+              <div class="how">
+                <div class="how-n">02</div>
+                <h3>Nothing privileged, nothing permanent</h3>
+                <p>No TLS certificate, no account, no daemon that has to run as root. It refuses to bind an address another machine can reach.</p>
+              </div>
+              <div class="how">
+                <div class="how-n">03</div>
+                <h3>One process for the whole build</h3>
+                <p>Containers, Python, Node, apt and apk, Git and plain files come out of one binary and one directory.</p>
+              </div>
+            </div>
+            <div class="flowcard">
+              <div class="flow-body">
+                <div class="flow-row"><span class="flow-badge b-ok">LOCAL</span><span class="flow-txt">cached artifact → served from this disk, at loopback speed</span></div>
+                <div class="flow-row"><span class="flow-badge b-accent">ONCE</span><span class="flow-txt">uncached artifact → one upstream fetch, shared by everything waiting</span></div>
+                <div class="flow-row"><span class="flow-badge b-warn">VALID</span><span class="flow-txt">an interrupted download is never committed as cached content</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="act" id="versioning">
+            <p class="eyebrow">what a project holds</p>
+            <h2>Name what works today. Come back to it in March.</h2>
+            <p class="lede">
+              Every project keeps its own cache. Checkpoint one while it is running, and that name is
+              a state you can return to — the same content, the same versions, after the upstream has
+              moved on.
+            </p>
+            <ol class="steps">
+              <li class="step"><span class="step-k">capture</span><b>Checkpoint</b><span class="step-d">Record exactly what this project holds, without stopping anything.</span></li>
+              <li class="step"><span class="step-k">transfer</span><b>Export a pack</b><span class="step-d">Write out what a project holds, or only what has changed since the last pack.</span></li>
+              <li class="step"><span class="step-k">recover</span><b>Roll back</b><span class="step-d">Make an earlier checkpoint this project's content again.</span></li>
+            </ol>
+          </article>
+
+          <article class="act" id="airgap">
+            <p class="eyebrow">built for the machine with no network</p>
+            <h2>Carry the cache. Keep building.</h2>
+            <p class="lede">
+              Export a pack on the machine that has a network, carry it however your rules allow, and
+              import it on the one that does not. The tools are configured exactly as before; they
+              simply never leave the disk.
+            </p>
+            <ol class="steps">
+              <li class="step step-gap"><span class="step-k">move</span><b>Carry the pack</b><span class="step-d">A single verified file on approved media or an internal transfer path.</span></li>
+              <li class="step"><span class="step-k">import</span><b>Load it there</b><span class="step-d">Import on the disconnected machine and start the cache offline.</span></li>
+              <li class="step"><span class="step-k">serve</span><b>Build cache-only</b><span class="step-d">Cached dependencies resolve normally. An uncached one fails clearly instead of hanging on a network that is not there.</span></li>
+            </ol>
+          </article>
+        </div>
+       </div>
+
+       <!-- the scroll length the pinned stage plays against: one screen per
+            beat plus a hold at the end. landing.js maps scroll onto it. -->
+       <div class="stage-track" aria-hidden="true"></div>
+      </section>
+
+      <!-- ========================= ECOSYSTEMS ========================= -->
+      <section class="sec tint" id="ecosystems">
+        <div class="wrap">
+          <p class="eyebrow rv">Six ecosystems · one binary</p>
+          <h2 class="rv">One cache for the tools you already type.</h2>
+          <p class="lede rv">
+            All six roles answer on one loopback port — <b>127.0.0.1:41780</b> by default, the apt and
+            apk forward proxy included. <code>pkgcache run</code> and <code>pkgcache shell</code> set
+            the variables each tool reads, so the commands below are the ones you already know. Docker
+            is a separate daemon that cannot read your shell, so it has its own section in the
+            tutorial.
+          </p>
+          <div class="ecos">
+            <article class="eco eco-docker rv">
+              <div class="eco-h"><span class="eco-badge">containers</span><span class="eco-was">any registry, by name</span></div>
+              <h3>Container images</h3>
+              <p>Pull and build through the cache. Any registry works by naming it — Docker Hub, ghcr, quay, nvcr.io — with nothing configured first.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache build <span class="c-s">-t</span> app:dev .</span></pre>
+            </article>
+            <article class="eco eco-pip rv">
+              <div class="eco-h"><span class="eco-badge">python</span><span class="eco-was">pip · uv</span></div>
+              <h3>Python packages</h3>
+              <p>Fetch a large wheel once. Every later install, in every virtualenv on this machine, is a local copy.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache run -- pip install numpy</span></pre>
+            </article>
+            <article class="eco eco-npm rv">
+              <div class="eco-h"><span class="eco-badge">node</span><span class="eco-was">npm · yarn · pnpm</span></div>
+              <h3>Node packages</h3>
+              <p>A cold <code>node_modules</code> stops being a network operation, and keeps working with the network off.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache run -- npm install</span></pre>
+            </article>
+            <article class="eco eco-apt rv">
+              <div class="eco-h"><span class="eco-badge">system</span><span class="eco-was">apt · apk</span></div>
+              <h3>System packages</h3>
+              <p>Debian, Ubuntu and Alpine packages through one plain-HTTP forward proxy — in a shell, or in every container build on this machine.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache docker-build-setup</span></pre>
+            </article>
+            <article class="eco eco-git rv">
+              <div class="eco-h"><span class="eco-badge">git</span><span class="eco-was">read-only mirrors</span></div>
+              <h3>Git repositories</h3>
+              <p>An unmodified <code>github.com</code> clone is redirected through a local mirror — submodules and <code>pip install git+https://…</code> with it.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache run -- git clone \</span><span class="cmd-line cmd-cont">https://github.com/pallets/click.git</span></pre>
+            </article>
+            <article class="eco eco-files rv">
+              <div class="eco-h"><span class="eco-badge">everything else</span><span class="eco-was">downloads · uploads</span></div>
+              <h3>Anything else</h3>
+              <p>Model weights, toolchain tarballs, your own build outputs — anything with a URL and no package manager behind it.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache warmlock uv.lock</span></pre>
+            </article>
+          </div>
+          <div class="eco-next rv">
+            <div class="eco-next-txt">
+              <span class="eco-next-k">new here? two commands</span>
+              <h3>Install it, then tell it how much disk it may use.</h3>
+              <p>
+                <b>pkgcache will not start without a budget</b>, because a cache that grows until the
+                disk is full is a cache that breaks the machine it was meant to help. Give it a
+                number — <code>pkgcache setup -limit 25G</code> — and nothing else is required. The
+                tutorial covers the rest: Docker, a team cache, projects, and carrying the whole thing
+                onto a machine with no network.
+              </p>
+            </div>
+            <a class="btn btn-primary eco-next-cta" href="tutorial/">Open the tutorial →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================= TEAM CACHE ========================= -->
+      <section class="sec" id="team">
+        <div class="wrap">
+          <p class="eyebrow rv">and when there is a cache in front of you</p>
+          <h2 class="rv">Put your team's pkgreg behind it. Nothing else changes.</h2>
+          <p class="lede rv">
+            A team cache is <b>pkgreg</b> — the same engine, run as a host other machines point at.
+            Tell pkgcache about it once and you get three tiers: this machine answers first, the team
+            cache answers what this machine has never seen, and only the team cache talks to the
+            internet. Your commands do not change, because they were already pointed at loopback.
+          </p>
+          <div class="hows rv">
+            <div class="how">
+              <div class="how-n">01</div>
+              <h3>This machine</h3>
+              <p>Everything it already holds is served from disk at loopback speed, with nothing crossing the network at all.</p>
+            </div>
+            <div class="how">
+              <div class="how-n">02</div>
+              <h3>The team cache</h3>
+              <p>A miss goes to pkgreg, which has probably already fetched it for a colleague. It is verified by CA fingerprint, pinned at setup.</p>
+            </div>
+            <div class="how">
+              <div class="how-n">03</div>
+              <h3>Upstream, once</h3>
+              <p>Only what nobody has ever asked for reaches pypi.org or Docker Hub — and <code>-no-direct</code> says even that must go through the team.</p>
+            </div>
+          </div>
+          <div class="flowcard rv">
+            <div class="flow-body">
+              <div class="flow-row"><span class="flow-badge b-ok">ONCE</span><span class="flow-txt"><code>pkgcache setup -server https://cache.internal:8443 -ca-sha256 AA:BB:… -limit 25G</code></span></div>
+              <div class="flow-row"><span class="flow-badge b-accent">THEN</span><span class="flow-txt">every tool keeps talking to 127.0.0.1; the chain behind it is the only thing that changed</span></div>
+              <div class="flow-row"><span class="flow-badge b-warn">OR</span><span class="flow-txt"><code>-no-cache</code> — a pure client with no local cache, which is what pkgreg-client used to be</span></div>
+            </div>
+          </div>
+          <p class="ps-note rv">
+            The fingerprint comes from whoever runs the cache; it is what makes the first connection
+            safe without installing a CA on this machine. The tutorial's
+            <a href="tutorial/#team">team cache section</a> covers projects, per-project chains, and
+            how to undo all of it.
+          </p>
+        </div>
+      </section>
+
+      <!-- ========================= LOCAL UI ========================= -->
+      <section class="sec tint" id="app">
+        <div class="wrap cols">
+          <div class="rv">
+            <p class="eyebrow">it is not only a command line</p>
+            <h2>A window, a status-bar item, and a console — all on this machine.</h2>
+            <p class="lede">
+              The installers carry a desktop app beside the daemon. It watches the cache that is
+              already running: what it holds, what it saved, whether it is still caching. Nothing here
+              is a service you deploy or a page anyone else can open — it is bound to loopback and
+              refuses to be anything else.
+            </p>
+            <ul class="clist">
+              <li><b>The window</b> — <code>pkgcache widget</code>, or the app: size against the budget, hit rate, what arrived recently.</li>
+              <li><b>The status bar</b> — <code>pkgcache tray</code> keeps a small item beside the clock, and <code>-on-login</code> starts it with your session.</li>
+              <li><b>The console</b> — <code>pkgcache console</code> opens the full view in your browser, on 127.0.0.1, for the times a number is not enough.</li>
+              <li><b>Or none of it</b> — <code>pkgcache status</code> prints the same figures and exits, which is what a CI runner wants.</li>
+            </ul>
+            <p class="ps-note">
+              The screenshot beside this is a drawing, not a link: everything the app shows lives on
+              the machine that is running the cache, so there is nothing here for a website to open.
+            </p>
+          </div>
+          <div class="rv">
+            <!-- Deliberately a div, not an anchor: the console it depicts is at
+                 127.0.0.1 on the reader's own machine, and a link from a public site
+                 could only ever go nowhere. -->
+            <div class="preview" role="img" aria-label="A drawing of the pkgcache console: 41.6 GB stored, 8.2 GB deduplicated, a 93 percent hit rate, and a feed of recently served packages.">
+              <div class="pv-bar"><i></i><i></i><i></i><span class="pv-ttl">pkgcache · 127.0.0.1:41780</span></div>
+              <div class="pv-body">
+                <div class="pv-kpis">
+                  <div class="pv-kpi"><span class="pv-n">41.6 GB</span><span class="pv-l">stored</span></div>
+                  <div class="pv-kpi"><span class="pv-n">8.2 GB</span><span class="pv-l">deduplicated</span></div>
+                  <div class="pv-kpi ok"><span class="pv-n">93%</span><span class="pv-l">served locally</span></div>
+                  <div class="pv-kpi"><span class="pv-n">25 GB</span><span class="pv-l">budget</span></div>
+                </div>
+                <div class="pv-feed">
+                  <div class="pv-row"><span class="pv-badge ok">LOCAL</span><span class="pv-name">library/python:3.12-slim</span><span class="pv-sz">­</span></div>
+                  <div class="pv-row"><span class="pv-badge ac">ONCE</span><span class="pv-name">torch-2.3.0-cp312.whl</span><span class="pv-sz">·</span></div>
+                  <div class="pv-row"><span class="pv-badge ok">LOCAL</span><span class="pv-name">left-pad@1.3.0.tgz</span><span class="pv-sz">·</span></div>
+                  <div class="pv-row"><span class="pv-badge ok">LOCAL</span><span class="pv-name">github.com/pallets/click</span><span class="pv-sz">·</span></div>
+                </div>
+                <div class="pv-open">on your machine only</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================= DOWNLOADS ========================= -->
+      <section class="sec" id="downloads">
+        <div class="wrap">
+          <p class="eyebrow rv">every platform, every binary</p>
+          <h2 class="rv">Download it.</h2>
+          <p class="lede rv">
+            Installers for macOS, Debian and Ubuntu, and Windows; static binaries for five targets;
+            the desktop app, the docker shim, the loopback bridge and the pkgreg server beside them.
+            Two channels: the signed release, and the unsigned build of every merge to
+            <code>main</code>.
+          </p>
+          <div class="download-panel rv">
+            <div class="download-head">
+              <div>
+                <p class="download-k k">from GitHub releases</p>
+                <h3>Files</h3>
+              </div>
+              <span class="download-live"><i></i><span data-role="downloads-state">not checked</span></span>
+            </div>
+            <div class="dl" data-role="downloads">
+              <!-- The no-JavaScript answer, and the one a reader sees if GitHub cannot be
+                   reached. These links work because GitHub resolves the newest release for
+                   /releases/latest/download/<name> — which holds for every file whose name
+                   does not carry a version, and therefore not for the installers. -->
+              <div data-role="downloads-static">
+                <p class="note">
+                  Direct links to the newest signed release. The installers are named with their
+                  version, so they cannot be linked this way — take them from the
+                  <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>.
+                </p>
+                <div class="dl-group">
+                  <h4>pkgcache</h4>
+                  <table class="dl-table">
+                    <thead><tr><th>File</th><th>For</th></tr></thead>
+                    <tbody>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-amd64">pkgcache-linux-amd64</a></td><td class="dl-plat">Linux amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-arm64">pkgcache-linux-arm64</a></td><td class="dl-plat">Linux arm64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-arm64">pkgcache-darwin-arm64</a></td><td class="dl-plat">macOS arm64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-amd64">pkgcache-darwin-amd64</a></td><td class="dl-plat">macOS amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-windows-amd64.exe">pkgcache-windows-amd64.exe</a></td><td class="dl-plat">Windows amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/install.sh">install.sh</a></td><td class="dl-plat">Linux and macOS</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/SHA256SUMS">SHA256SUMS</a></td><td class="dl-plat">verify first</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="ps-note rv">
+            Verify before you run: <code>sha256sum -c SHA256SUMS</code>, or
+            <code>shasum -a 256 -c SHA256SUMS</code> on macOS. The
+            <a href="tutorial/#setup">tutorial's install section</a> has the per-platform commands,
+            including what to do about Gatekeeper and SmartScreen on an unsigned build.
+          </p>
+        </div>
+      </section>
+
+      <!-- ========================= FOOTER ========================= -->
+      <footer class="foot night">
+        <div class="wrap">
+          <span class="mark mark-big" aria-hidden="true">
+            <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <h2>Make the next build a local one.</h2>
+          <p class="lede foot-lede">Install pkgcache, give it a disk budget, and let the first fetch be the only one. One static binary — six ecosystems, the window, and the whole cache in a directory you can carry.</p>
+          <div class="hero-ctas foot-ctas">
+            <a class="btn btn-primary" href="#downloads">Download</a>
+            <a class="btn btn-ghost" href="tutorial/">Read the tutorial</a>
+            <a class="btn btn-ghost" href="#top">Back to top</a>
+          </div>
+          <div class="foot-meta">
+            <span>package-registry · pkgcache</span>
+            <span>six ecosystems · one static binary · cached packages available offline</span>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <script src="assets/landing.js"></script>
+    <script src="assets/downloads.js"></script>
+  </body>
+</html>

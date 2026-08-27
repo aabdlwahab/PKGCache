@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pkgcache — install it, set a budget, stop waiting</title>
+    <meta
+      name="description"
+      content="Install pkgcache on Linux, macOS or Windows, give it a disk budget, and run pip, npm, apt, Git and Docker through a cache on your own machine — then point it at your team's pkgreg server."
+    />
+    <script src="../assets/theme.js"></script>
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/landing.css" />
+    <link rel="stylesheet" href="../assets/tutorial.css" />
+    <link rel="stylesheet" href="../assets/downloads.css" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151a'/><rect x='0.6' y='0.6' width='30.8' height='30.8' rx='6.6' fill='none' stroke='%232b3540'/><path d='M13 8 H9 V24 H13' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><path d='M19 8 H23 V24 H19' fill='none' stroke='%2345d98a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/><rect x='14.4' y='13.6' width='3.2' height='4.8' rx='1' fill='%2345d98a'/></svg>"
+    />
+  </head>
+  <body>
+    <div class="progress" aria-hidden="true"></div>
+
+    <header class="hdr">
+      <div class="wrap hdr-in">
+        <a class="lockup" href="../" aria-label="pkgcache home">
+          <span class="mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect class="mark-cur" x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="lockup-txt">
+            <span class="wordmark">pkgcache</span>
+            <span class="sublabel">getting started</span>
+          </span>
+        </a>
+        <nav class="nav" aria-label="Tutorial sections">
+          <a href="#tldr">TL;DR</a>
+          <a href="#download">Download</a>
+          <a href="#setup">Set up</a>
+          <a href="#commands">Your tools</a>
+          <a href="#docker">Docker</a>
+          <a href="#team">Team cache</a>
+          <a href="#help">Troubleshooting</a>
+        </nav>
+        <div class="hdr-right">
+          <button class="icon-btn" id="theme" type="button" aria-label="Toggle theme">
+            <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+            <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          </button>
+          <a class="btn btn-primary hdr-cta" href="#download">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="thero night">
+        <div class="hero-grid px" aria-hidden="true" data-px="0.6"></div>
+        <div class="wrap thero-in">
+          <div class="hero-copy px" data-px="-0.1">
+            <p class="eyebrow">install and setup</p>
+            <h1>One binary. One budget. Then stop waiting.</h1>
+            <p class="lede thero-lede">
+              Install <code>pkgcache</code>, tell it how much disk it may use, and run your
+              normal commands through it. It starts when something needs it, sleeps when
+              nothing does, and keeps every package it has already fetched.
+            </p>
+            <div class="hero-ctas">
+              <a class="btn btn-primary" href="#tldr">Three commands</a>
+              <a class="btn btn-ghost" href="#setup">Explain each one</a>
+            </div>
+            <p class="hero-note">No <code>sudo</code> for the cache itself, no certificate, no account, and nothing another machine can reach.</p>
+          </div>
+          <aside class="hero-status px" aria-label="What pkgcache does on this machine" data-px="0.16">
+            <span class="status-k">once it is set up</span>
+            <div class="status-row"><span class="status-ok">✓</span><span>pip, uv, npm, yarn and pnpm are pointed at loopback</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>Git clones of public hosts come from a local mirror</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>apt and apk go through a plain-HTTP proxy on the same port</span></div>
+            <div class="status-row"><span class="status-ok">✓</span><span>Docker pulls and builds are rewritten as they run</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================= TL;DR ===========================
+           The whole page with the reasons removed, for the reader who knows what a
+           package cache is and wants the commands. Three columns because the install
+           differs per platform and nothing else does. -->
+      <section class="sec fastpath night" id="tldr">
+        <div class="fp-field px" data-px="0.55" aria-hidden="true"></div>
+        <div class="fp-glow px" data-px="-0.4" aria-hidden="true"></div>
+        <div class="wrap">
+          <div class="fp-head">
+            <h2>Your commands, top to bottom.</h2>
+            <p class="lede">
+              Pick your platform and run the column. Everything below this section is the
+              same steps with the reasons attached.
+            </p>
+          </div>
+
+          <div class="fp-download">
+            <span class="fp-out-k">first, for every platform</span>
+            <h3>Get <code>pkgcache</code></h3>
+            <div class="fp-quick">
+              <a class="btn btn-ghost dl-btn" href="#download"><b>Choose your build</b><span class="dl-size">installers + 5 targets</span></a>
+            </div>
+          </div>
+
+          <div class="fp-os">
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>Linux</h3>
+                <p>The <code>.deb</code> pair installs the daemon and the desktop half together; apt resolves the GTK dependencies.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">sudo apt install ./pkgcache_*_amd64.deb ./pkgcache-desktop_*_amd64.deb</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">No desktop? The first package alone is a complete daemon and CLI.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Give it a budget</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -limit 25G</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Mandatory. Without a number it refuses to start.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Use it</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache run -- pip install numpy
+pkgcache run -- npm ci
+pkgcache shell</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Docker</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache pull python:3.12-slim
+pkgcache build -t app:dev .</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Your Dockerfile is not modified. Add <code>-print</code> to see the rewrite and build nothing.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Optional — a team cache in front</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">The fingerprint comes from whoever runs it. See <a class="ps-link" href="#team">Team cache</a>.</p>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>macOS</h3>
+                <p>The <code>.pkg</code> installs a universal binary, the app and the docker shim, and symlinks all three into <code>/usr/local/bin</code>.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">sudo installer -pkg pkgcache-*.pkg -target /</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Or double-click it. On an unsigned build, open it from the right-click menu once.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Give it a budget</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -limit 25G</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">The installer sets one already; this changes it.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Use it</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache run -- pip install numpy
+pkgcache run -- npm ci
+pkgcache shell</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Docker</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache pull python:3.12-slim
+pkgcache build -t app:dev .</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Docker Desktop runs in a VM. <code>pkgcache build</code> works that out for you — see <a class="ps-link" href="#docker">Docker</a>.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Optional — a team cache in front</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+
+            <article class="fp-card">
+              <header class="fp-card-head">
+                <h3>Windows</h3>
+                <p>The installer carries the CLI, the app and the docker shim, and puts them on <code>PATH</code>.</p>
+              </header>
+              <div class="fp-track">
+                <span class="fp-beam" aria-hidden="true"><i></i></span>
+                <ol class="fp-steps">
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Install</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">.\pkgcache-1.0.0-setup.exe</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">On an unsigned build SmartScreen warns: <b>More info → Run anyway</b>.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Give it a budget</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -limit 25G</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                      <p class="fp-note">Open a new terminal first, so <code>PATH</code> is picked up.</p>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Use it</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache run -- pip install numpy
+pkgcache run -- npm ci
+pkgcache shell</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Docker</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache pull python:3.12-slim
+pkgcache build -t app:dev .</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="fp-step">
+                    <span class="fp-mark" aria-hidden="true"></span>
+                    <div class="fp-body">
+                      <h4>Optional — a team cache in front</h4>
+                      <div class="term term-multi">
+                        <code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT"</code>
+                        <button class="cp" type="button">copy</button>
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ DOWNLOAD ========================= -->
+      <section class="sec" id="download">
+        <div class="wrap">
+          <p class="eyebrow rv">step 1</p>
+          <h2 class="rv">Every file, for every platform.</h2>
+          <p class="lede rv">
+            Two channels. <b>The signed release</b> is what you want: notarized on macOS,
+            signed on Windows, and checksummed everywhere. <b>The build from main</b> is the
+            newest merge, unsigned, for when you need a fix before it is tagged.
+          </p>
+          <div class="download-panel rv">
+            <div class="download-head">
+              <div>
+                <p class="download-k k">from GitHub releases</p>
+                <h3>Files</h3>
+              </div>
+              <span class="download-live"><i></i><span data-role="downloads-state">not checked</span></span>
+            </div>
+            <div class="dl" data-role="downloads">
+              <div data-role="downloads-static">
+                <p class="note">
+                  Direct links to the newest signed release. The installers carry their version
+                  in the filename and cannot be linked this way — take those from the
+                  <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>.
+                </p>
+                <div class="dl-group">
+                  <h4>pkgcache</h4>
+                  <table class="dl-table">
+                    <thead><tr><th>File</th><th>For</th></tr></thead>
+                    <tbody>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-amd64">pkgcache-linux-amd64</a></td><td class="dl-plat">Linux amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-arm64">pkgcache-linux-arm64</a></td><td class="dl-plat">Linux arm64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-arm64">pkgcache-darwin-arm64</a></td><td class="dl-plat">macOS arm64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-amd64">pkgcache-darwin-amd64</a></td><td class="dl-plat">macOS amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-windows-amd64.exe">pkgcache-windows-amd64.exe</a></td><td class="dl-plat">Windows amd64</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/install.sh">install.sh</a></td><td class="dl-plat">Linux and macOS</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/install.ps1">install.ps1</a></td><td class="dl-plat">Windows</td></tr>
+                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/SHA256SUMS">SHA256SUMS</a></td><td class="dl-plat">verify first</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="callout rv">
+            <b>Verify before you run.</b> Every release ships <code>SHA256SUMS</code> over
+            everything in it. Download it beside the file and check:
+            <code>sha256sum --ignore-missing -c SHA256SUMS</code>, or
+            <code>shasum -a 256 --ignore-missing -c SHA256SUMS</code> on macOS. This is worth
+            the ten seconds on an unsigned build, where nothing else vouches for the bytes.
+          </div>
+
+          <div class="two-col">
+            <article class="plain-card rv">
+              <h3>Which file do I want?</h3>
+              <ul class="check-list">
+                <li><b>An installer</b> if this is your own machine — it carries the daemon, the app and the docker shim together.</li>
+                <li><b><code>pkgcache-&lt;os&gt;-&lt;arch&gt;</code></b> for a CI runner, a container image or a server: one static binary, no dependencies.</li>
+                <li><b><code>install.sh</code></b> to script it, including on a machine that should be pointed at a team cache as it installs.</li>
+                <li><b><code>pkgreg-linux-*</code></b> only if you are setting up the team's cache rather than your own.</li>
+              </ul>
+            </article>
+            <article class="plain-card rv">
+              <h3>Or build it</h3>
+              <p>Nothing here needs a release. The client is one Go package with no cgo.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">git clone https://github.com/aabdlwahab/PKGCache.git
+cd PKGCache/go &amp;&amp; make pkgcache</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+              <p class="fp-note">Or <code>go install github.com/aabdlwahab/PKGCache/cmd/pkgcache@latest</code>. The desktop app is the one part that needs a toolchain — GTK4 and WebKitGTK on Linux, Xcode's on macOS.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= SET UP ========================== -->
+      <section class="sec tint walkthrough" id="setup">
+        <div class="wrap">
+          <p class="eyebrow rv">step 2</p>
+          <h2 class="rv">Install it, then name a budget.</h2>
+          <p class="lede rv">
+            Two commands, and the second one is the only decision. After that the cache
+            starts itself whenever something asks for a package, and exits when nothing has
+            for a while.
+          </p>
+
+          <ol class="build-steps start-steps">
+            <li class="build-step rv">
+              <span class="quick-n">1</span>
+              <div>
+                <h3>Put the binary somewhere on <code>PATH</code></h3>
+                <p>
+                  An installer has already done this. If you took the raw binary, it is two
+                  commands — and on macOS, move it into place rather than writing over an
+                  existing copy: a code signature is cached against the file's inode, and
+                  overwriting the bytes of a running binary's file leaves later runs killed by
+                  the kernel with no message but <code>killed</code>.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">chmod +x pkgcache-linux-amd64
+sudo install -m 0755 pkgcache-linux-amd64 /usr/local/bin/pkgcache</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p class="fp-note">Windows: put <code>pkgcache-windows-amd64.exe</code> in a folder on <code>PATH</code> and rename it <code>pkgcache.exe</code>.</p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">2</span>
+              <div>
+                <h3>Tell it how much disk it may use</h3>
+                <p>
+                  <b>This is mandatory, and deliberately so.</b> A cache with no ceiling grows
+                  until the disk is full, and the machine it was supposed to speed up stops
+                  working entirely. Give it a number and it will stay under it.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache setup -limit 25G</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Change it later with <code>pkgcache limit 40G</code>, or
+                  <code>pkgcache limit none</code> if you genuinely want no ceiling. Add
+                  <code>-min-free 10G</code> to keep a floor of free disk underneath the
+                  budget, which is what you want on the partition your builds also write to.
+                </p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">3</span>
+              <div>
+                <h3>Run something through it</h3>
+                <p>
+                  <code>pkgcache run</code> sets the variables the tools read, runs one
+                  command, and puts the environment back. Nothing is written to your project,
+                  your home directory or the operating system.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache run -- pip install numpy</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  The first run fetches from upstream and keeps what it fetched. Run it again
+                  in a fresh virtualenv and watch where the time goes.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache status</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+              </div>
+            </li>
+          </ol>
+
+          <div class="after-install rv">
+            <h3>What that actually changed</h3>
+            <p>
+              A directory, and nothing else. No system files, no certificate store, no
+              service running as root, and no port another machine can reach — pkgcache
+              refuses to bind one. Print the environment it hands your tools at any time:
+            </p>
+            <div class="term term-multi">
+              <code class="term-cmd">pkgcache env</code>
+              <button class="cp" type="button">copy</button>
+            </div>
+            <ul class="check-list">
+              <li><code>PIP_INDEX_URL</code>, <code>UV_DEFAULT_INDEX</code>, <code>NPM_CONFIG_REGISTRY</code> — why pip, uv and npm need no flags</li>
+              <li><code>GIT_CONFIG_COUNT</code> and friends — an unmodified <code>github.com</code> clone, redirected through the mirror</li>
+              <li><code>PKGCACHE_APT_PROXY</code> — the plain-HTTP proxy apt and apk use</li>
+              <li><code>PKGCACHE_FILES_URL</code>, <code>PKGCACHE_DOCKER_REGISTRY</code> — artifacts, and the image registry covered under <a class="ps-link" href="#docker">Docker</a></li>
+            </ul>
+            <p>
+              To keep those settings in a shell that outlives one command, use
+              <code>pkgcache shell</code>, or <code>eval "$(pkgcache env)"</code>. To make
+              them survive a reboot, <code>pkgcache persist</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ YOUR TOOLS ======================= -->
+      <section class="sec" id="commands">
+        <div class="wrap">
+          <p class="eyebrow rv">step 3</p>
+          <h2 class="rv">Use normal package commands.</h2>
+          <p class="lede rv">
+            Inside <code>pkgcache run</code> or <code>pkgcache shell</code>, every one of
+            these is the command you already type. The cache is on loopback, so there is no
+            certificate anywhere in the path and nothing to add to a config file.
+          </p>
+          <div class="tool-grid">
+            <article class="tool-card eco-pip rv">
+              <div class="tool-head"><span class="eco-badge">Python</span><h3>pip</h3></div>
+              <div class="term"><code class="term-cmd">pkgcache run -- pip install numpy</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-uv rv">
+              <div class="tool-head"><span class="eco-badge">Python</span><h3>uv</h3></div>
+              <p>With a lock file, <code>pkgcache warmlock</code> fills the cache from it and points the lock at the cache.</p>
+              <div class="term"><code class="term-cmd">pkgcache run -- uv sync --locked</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-npm rv">
+              <div class="tool-head"><span class="eco-badge">Node</span><h3>npm, yarn, pnpm</h3></div>
+              <div class="term"><code class="term-cmd">pkgcache run -- npm ci</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-git rv">
+              <div class="tool-head"><span class="eco-badge">Source</span><h3>Git</h3></div>
+              <p>The URL does not change. Submodules and <code>pip install git+https://…</code> are redirected with it.</p>
+              <div class="term"><code class="term-cmd">pkgcache run -- git clone https://github.com/pallets/click.git</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-apt rv">
+              <div class="tool-head"><span class="eco-badge">System</span><h3>apt and apk</h3></div>
+              <p>Here <code>sudo</code> is for changing operating-system packages, not for pkgcache.</p>
+              <div class="term"><code class="term-cmd">sudo apt-get -o Acquire::http::Proxy="$PKGCACHE_APT_PROXY" update</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card eco-files rv">
+              <div class="tool-head"><span class="eco-badge">Artifacts</span><h3>Files</h3></div>
+              <p>Anything with a URL and no package manager behind it — model weights, toolchains, your own build outputs.</p>
+              <div class="term"><code class="term-cmd">pkgcache run -- wget "${PKGCACHE_FILES_URL}builds/v1.2/app.tar.gz"</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+
+          <div class="callout rv">
+            <b>Do not add TLS workarounds.</b> No <code>--trusted-host</code>, no
+            <code>--insecure</code>, no CA path. The cache answers plain HTTP on your own
+            loopback interface, so every such flag removes a check that was not in the way.
+            If a tool reports a certificate error, it is talking to something else — see
+            <a class="ps-link" href="#help">Troubleshooting</a>.
+          </div>
+
+          <div class="info-strip rv">
+            <b>A command that is not in this list?</b> <code>pkgcache shell</code> puts the
+            same variables in an ordinary child shell, so anything that reads the
+            environment — a Makefile, tox, a script, your editor's terminal — picks them up
+            with no per-tool work.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== DOCKER ========================= -->
+      <section class="sec tint walkthrough" id="docker">
+        <div class="wrap">
+          <p class="eyebrow rv">step 4</p>
+          <h2 class="rv">Docker plays by different rules.</h2>
+          <p class="lede rv">
+            Every other tool reads your shell. The Docker daemon does not — it is a separate
+            process, often in a virtual machine with its own idea of <code>localhost</code>.
+            So pkgcache drives docker for you rather than asking you to configure it.
+          </p>
+
+          <ol class="build-steps">
+            <li class="build-step rv">
+              <span class="quick-n">A</span>
+              <div>
+                <h3>Pull an image, keeping its name</h3>
+                <p>
+                  A pull through a cache normally means retagging: you ask for
+                  <code>127.0.0.1:41780/dockerhub/library/python:3.12-slim</code> and live with
+                  an image whose name is an address. <code>pkgcache pull</code> fetches through
+                  the cache and then gives you back the name you asked for.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache pull python:3.12-slim
+pkgcache pull ghcr.io/astral-sh/uv:0.10.8</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  Any registry works by naming it — <code>ghcr.io</code>, <code>quay.io</code>,
+                  <code>nvcr.io</code>, <code>gcr.io</code> — with nothing configured first.
+                </p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">B</span>
+              <div>
+                <h3>Build an image</h3>
+                <p>
+                  <code>pkgcache build</code> takes the same arguments <code>docker build</code>
+                  does. It rewrites a copy of your Dockerfile in memory and hands that to
+                  docker on stdin; <b>the file on disk is never touched</b>.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache build -t app:dev .
+pkgcache compose build</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>What it changes, and nothing else:</p>
+                <ul class="check-list">
+                  <li><b>Build arguments</b> for the tools that read them — <code>PIP_INDEX_URL</code>, <code>UV_DEFAULT_INDEX</code>, <code>NPM_CONFIG_REGISTRY</code>, the Git ones, and <code>http_proxy</code> for apt and apk. <code>ARG</code>, never <code>ENV</code>: an image that ships someone's laptop address is broken the moment it leaves that laptop.</li>
+                  <li><b><code>FROM</code> lines</b>, for any registry the reference names. A registry only this machine can reach — <code>localhost:5000</code>, an address, a <code>host:port</code> on the build network — is left alone, because it means something different where the cache runs.</li>
+                  <li><b>The <code># syntax=</code> directive</b>, which names the frontend BuildKit parses the file with and is fetched before the first instruction is read. A build whose every <code>FROM</code> came from the cache would otherwise still go to Docker Hub for that one, first.</li>
+                  <li><b>A borrowed image</b> — <code>COPY --from=ghcr.io/astral-sh/uv:0.10.8</code> or a mount's <code>from=</code>. A stage name or a stage index is left alone; it has no registry to be fetched from.</li>
+                  <li><b>One <code>RUN</code></b>, only in a stage that runs <code>apk</code>, moving its repositories to plain HTTP so the proxy can see them — and putting them back before the stage ends.</li>
+                </ul>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache build -print .</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p class="fp-note">Prints the rewritten Dockerfile and every substitution, and builds nothing. Worth running once on a Dockerfile you know well.</p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">C</span>
+              <div>
+                <h3>Builds you start some other way</h3>
+                <p>
+                  A Makefile, an IDE, a CI script, <code>docker compose up</code> — anything
+                  that calls docker itself cannot be wrapped. Two one-time commands cover
+                  those.
+                </p>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache docker-setup
+pkgcache docker-build-setup</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  The first teaches the Docker daemon about this cache, so
+                  <code>docker pull</code> against it works from anywhere on the machine; add
+                  <code>-mirror</code> and even an unmodified <code>docker pull python:3.12</code>
+                  is served from the cache, which is off by default because it reroutes every
+                  pull on the machine. The second sends <code>apt</code> and <code>apk</code>
+                  through the cache in every build on this machine, whoever started it.
+                </p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="callout rv">
+            <b>Docker Desktop, and any remote builder.</b> On macOS and Windows the daemon
+            lives in a VM where <code>127.0.0.1</code> is not your machine, and a
+            <code>RUN</code> step is in its own network namespace even on Linux.
+            <code>pkgcache build</code> works out an address the daemon can actually dial and
+            passes it in, which is why it is a wrapper rather than a page of instructions.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ TEAM CACHE ======================= -->
+      <section class="sec walkthrough" id="team">
+        <div class="wrap">
+          <p class="eyebrow rv">step 5 — optional</p>
+          <h2 class="rv">Put your team's pkgreg behind it.</h2>
+          <p class="lede rv">
+            A team cache is <b>pkgreg</b>: the same engine run as a host other machines point
+            at. Tell pkgcache about it once, and a package this machine has never seen is
+            asked of the team before it is asked of the internet. Nothing about your commands
+            changes — they were already pointed at loopback.
+          </p>
+
+          <!-- The address field. The server's copy of this page reads the instance's own
+               address out of the page it is served from; a static site cannot, so the
+               reader fills it in and every example below follows. -->
+          <div class="fingerprint rv">
+            <span class="fingerprint-k">your team cache</span>
+            <p>
+              Paste the address you were given and every command on this page will use it.
+              It is remembered in this browser and sent nowhere.
+            </p>
+            <p>
+              <input
+                type="text"
+                data-role="cache-address"
+                placeholder="cache.example.com:8443"
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="Your team cache address"
+              />
+            </p>
+            <p class="fp-note"><span data-role="cache-address-count">examples use the placeholder address</span></p>
+          </div>
+
+          <ol class="build-steps start-steps">
+            <li class="build-step rv">
+              <span class="quick-n">1</span>
+              <div>
+                <h3>Get the fingerprint from whoever runs it</h3>
+                <p>
+                  A team cache serves TLS from its own CA. pkgcache fetches that CA over an
+                  unverified connection and then <b>refuses it unless it matches a fingerprint
+                  you were given separately</b> — which is exactly the check that would catch
+                  someone impersonating the cache, so it is the one thing you cannot skip. Ask
+                  for it over a channel you trust; it looks like
+                  <code>AA:BB:CC:…</code>.
+                </p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">2</span>
+              <div>
+                <h3>Point this machine at it</h3>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache setup -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT" -limit 25G</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  That is the whole change. It writes two ordinary upstream rows per index —
+                  the team at priority 10, the public registry at 20 — and the engine walks
+                  the chain it already knew how to walk.
+                </p>
+                <p class="fp-note">Have the CA file itself instead of a fingerprint? <code>-ca-file ./ca.crt</code> takes it and derives the fingerprint from it.</p>
+              </div>
+            </li>
+
+            <li class="build-step rv">
+              <span class="quick-n">3</span>
+              <div>
+                <h3>Check the chain</h3>
+                <div class="term term-multi">
+                  <code class="term-cmd">pkgcache status</code>
+                  <button class="cp" type="button">copy</button>
+                </div>
+                <p>
+                  All three tiers for the current project, with the team cache probed — so one
+                  that has been down for a week shows as down, rather than as "builds got
+                  slower".
+                </p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="two-col">
+            <article class="plain-card rv">
+              <h3>What happens when the team cache is unreachable</h3>
+              <p>
+                The next origin is tried: on a connection refused, a DNS failure, a timeout or
+                a 5xx. Deliberately <b>not</b> on a 404 — that is what a cache in offline mode
+                answers, and falling through would defeat it — and not on a 401 or 403, which
+                is a credential problem that going around would hide.
+              </p>
+            </article>
+            <article class="plain-card rv">
+              <h3>Never fetch from the internet myself</h3>
+              <p>
+                <code>-no-direct</code> omits the public row entirely, so this machine reaches
+                upstream only through the team. It holds even for a registry nobody
+                configured, because a discovered registry is chained through the team's own
+                <code>/v2</code> root.
+              </p>
+              <div class="term"><code class="term-cmd">pkgcache setup -no-direct</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+
+          <details class="advanced rv">
+            <summary>Projects, a client with no local cache, and undoing it</summary>
+            <div class="advanced-body">
+              <h3>One project at a time</h3>
+              <p>
+                <code>-project work</code> configures the chain for one of this machine's
+                projects, and <code>-team-project</code> names the project on the team's side —
+                which defaults to their global project, because assuming a name exists on
+                somebody else's server is not this program's call. A project with no
+                configuration of its own inherits the global one, and
+                <code>pkgcache project ls</code> marks an inherited chain with <code>*</code>.
+              </p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache setup -project work -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT" -team-project platform</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+
+              <h3>A pure client, with no cache of its own</h3>
+              <p>
+                <code>-no-cache</code> is the old <code>pkgreg-client</code> exactly: a verified
+                loopback bridge to the team cache, with nothing stored locally. Nothing is
+                written to the cache directory and no database is opened. Use it on a shared
+                host, or where the disk is not yours to spend.
+              </p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache setup -no-cache -server https://cache.example.com:8443 -ca-sha256 "PASTE_FINGERPRINT"</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+
+              <h3>Forget it again</h3>
+              <p>Removes the team cache and its chain, including the CA that came with it. Your local cache and everything in it stay.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache setup -uninstall</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+            </div>
+          </details>
+
+          <div class="info-strip rv">
+            <b>Chained ecosystems are pypi, npm and OCI.</b> apt and Git work out their origin
+            from the request itself rather than from configuration, and <code>files</code> has
+            no upstream at all — its content arrives by upload. Those three are absent from the
+            chain rather than half-supported.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== THE APP ======================== -->
+      <section class="sec tint" id="ui">
+        <div class="wrap">
+          <p class="eyebrow rv">watching it</p>
+          <h2 class="rv">A window, a status-bar item, or nothing at all.</h2>
+          <p class="lede rv">
+            The installers carry a desktop app beside the daemon. Everything it shows is on
+            this machine, bound to loopback — there is no service to deploy and no page anyone
+            else can open.
+          </p>
+          <div class="tool-grid">
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Window</span><h3>pkgcache widget</h3></div>
+              <p>A small window that watches this cache: size against the budget, what arrived recently, whether it is still caching.</p>
+              <div class="term"><code class="term-cmd">pkgcache widget -on-login</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Status bar</span><h3>pkgcache tray</h3></div>
+              <p>The same, kept beside the clock. <code>-on-login</code> starts it with your session.</p>
+              <div class="term"><code class="term-cmd">pkgcache tray -on-login</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Browser</span><h3>pkgcache console</h3></div>
+              <p>The full view, opened in your browser on <code>127.0.0.1</code>, for when a number is not enough.</p>
+              <div class="term"><code class="term-cmd">pkgcache console</code><button class="cp" type="button">copy</button></div>
+            </article>
+            <article class="tool-card rv">
+              <div class="tool-head"><span class="eco-badge">Terminal</span><h3>pkgcache status</h3></div>
+              <p>The same figures, printed and gone. What a CI runner or a script wants.</p>
+              <div class="term"><code class="term-cmd">pkgcache status</code><button class="cp" type="button">copy</button></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================== OFFLINE ======================== -->
+      <section class="sec" id="offline">
+        <div class="wrap">
+          <p class="eyebrow rv">projects, checkpoints, and no network</p>
+          <h2 class="rv">Name what works. Carry it somewhere else.</h2>
+          <p class="lede rv">
+            Every project keeps its own cache. You can name what one holds right now, come
+            back to that name later, and move the whole thing to a machine that has never had
+            a network.
+          </p>
+          <div class="two-col">
+            <article class="plain-card rv">
+              <h3>Projects</h3>
+              <p>One per piece of work, so a checkpoint means something. A command uses the project you last selected.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache project create work
+pkgcache project use work
+pkgcache project ls</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+            </article>
+            <article class="plain-card rv">
+              <h3>Checkpoints</h3>
+              <p>Record what this project holds, without stopping anything, and return to it after the upstream has moved on.</p>
+              <div class="term term-multi">
+                <code class="term-cmd">pkgcache checkpoint "green build"
+pkgcache snapshots
+pkgcache rollback "green build"</code>
+                <button class="cp" type="button">copy</button>
+              </div>
+            </article>
+          </div>
+          <div class="after-install rv">
+            <h3>Onto a machine with no network</h3>
+            <p>On the machine that has one, write a pack. On the one that does not, import it.</p>
+            <div class="term term-multi">
+              <code class="term-cmd">pkgcache export -o work.pack
+pkgcache import work.pack</code>
+              <button class="cp" type="button">copy</button>
+            </div>
+            <p>
+              A second trip carries only what is new. Afterwards the tools are configured
+              exactly as they were — they simply never leave the disk, and an uncached
+              dependency fails clearly instead of hanging on a network that is not there.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================== TROUBLESHOOTING =================== -->
+      <section class="sec tint" id="help">
+        <div class="wrap">
+          <p class="eyebrow rv">troubleshooting</p>
+          <h2 class="rv">When something does not work.</h2>
+          <div class="faq-grid">
+            <article class="faq rv">
+              <h3><code>a disk budget is required</code></h3>
+              <p>
+                pkgcache will not start without one, on purpose. Run
+                <code>pkgcache setup -limit 25G</code>, or
+                <code>pkgcache limit none</code> if you really do want it unbounded.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>CA fingerprint mismatch</code></h3>
+              <p>
+                The certificate the team cache served does not match the value you passed.
+                Stop and confirm the fingerprint with whoever runs it, over a channel you
+                trust. This is the check that would catch an impersonated cache, so do not
+                work around it.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>server must use https</code></h3>
+              <p>
+                A team cache is only accepted over HTTPS. An <code>http://</code> address means
+                the instance has no certificate pair yet — that is a fix on their side, not a
+                flag on yours.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>A tool ignores the cache and goes upstream</h3>
+              <p>
+                It is not reading the environment. Check with <code>pkgcache env</code>, and
+                remember that a tool started outside <code>pkgcache run</code> or
+                <code>pkgcache shell</code> — an IDE, a daemon, a login shell opened earlier —
+                has the old environment. <code>pkgcache persist</code> is the answer for the
+                ones you cannot wrap.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3><code>connection refused</code> inside <code>docker build</code></h3>
+              <p>
+                A <code>RUN</code> step runs in its own network namespace, where
+                <code>127.0.0.1</code> is the build container and not your machine. Use
+                <code>pkgcache build</code>, which works out an address the daemon can dial
+                rather than assuming loopback.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>A <code>FROM</code> line was not rewritten</h3>
+              <p>
+                Run <code>pkgcache build -print .</code> — every substitution is printed, and a
+                line that was left alone was left alone for a reason: a variable in the image
+                name, an image this machine already has locally, or a registry only this
+                machine can reach.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>It filled up</h3>
+              <p>
+                Nothing is ever deleted without your say-so. <code>pkgcache prune</code>
+                reclaims space when you ask; <code>pkgcache limit</code> changes the ceiling;
+                <code>-min-free</code> keeps a floor of free disk underneath it.
+              </p>
+            </article>
+            <article class="faq rv">
+              <h3>How do I undo all of this?</h3>
+              <p>
+                <code>pkgcache setup -uninstall</code> forgets a team cache.
+                <code>pkgcache stop</code> stops the daemon. Beyond that, deleting the cache
+                directory is the uninstall — nothing was written anywhere else. On macOS the
+                <code>.pkg</code> also installs <code>pkgcache-uninstall</code>, which removes
+                the bundle, the symlinks and the login item.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <footer class="foot night">
+        <div class="wrap">
+          <span class="mark mark-big" aria-hidden="true">
+            <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
+              <path d="M13 8 H9 V24 H13" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M19 8 H23 V24 H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+              <rect x="14.4" y="13.6" width="3.2" height="4.8" rx="1" fill="currentColor" />
+            </svg>
+          </span>
+          <h2>Install. Budget. Build.</h2>
+          <p class="lede foot-lede">One static binary, one number, and the first fetch is the only one. Everything else on this page is optional.</p>
+          <div class="hero-ctas foot-ctas">
+            <a class="btn btn-primary" href="#download">Download</a>
+            <a class="btn btn-ghost" href="../">About pkgcache</a>
+            <a class="btn btn-ghost" href="#top">Back to top</a>
+          </div>
+          <div class="foot-meta">
+            <span>package-registry · pkgcache</span>
+            <span>six ecosystems · one static binary · cached packages available offline</span>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <script src="../assets/tutorial.js"></script>
+    <script src="../assets/downloads.js"></script>
+  </body>
+</html>
