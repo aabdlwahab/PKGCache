@@ -35,6 +35,21 @@ on:
 permissions:
   contents: read
 
+# One publisher at a time, newest wins.
+#
+# Without this, two runs raced for one rolling release and the loser was the newer one.
+# A push at 12:22 published main-latest at 12:28; the run from the push at 12:01 — still
+# sitting in a poll that has since been removed — reached its own publish step at 12:42,
+# deleted the release that was already there, and then failed to create its replacement.
+# The channel was left with no release and no tag, from two runs that both did what they
+# were told.
+#
+# cancel-in-progress, because for a rolling channel a superseded run has nothing left to
+# contribute: whatever it would publish is older than what the next one will.
+concurrency:
+  group: main-artifacts
+  cancel-in-progress: true
+
 env:
   GOFLAGS: "-trimpath"
 
