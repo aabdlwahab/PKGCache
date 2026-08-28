@@ -395,6 +395,18 @@ code { font-family: var(--mono); }
   position: sticky; top: 56px; height: calc(100vh - 56px); min-height: 520px;
   display: grid; grid-template-columns: 40% 60%;
 }
+/* dvh on a phone, because 100vh there is the height with the address bar retracted.
+   While the bar is showing, a frame sized in vh is taller than the screen — and this
+   frame is sticky, so the part hanging below the fold cannot be scrolled to at all. The
+   vh line above stays as the fallback for browsers without dvh. */
+@supports (height: 100dvh) {
+  .stage-pin { height: calc(100dvh - 56px); }
+}
+/* The 520px floor is for a desktop window someone has made short. On a phone held
+   sideways the viewport is about 330px, and the floor then makes the frame 520px tall
+   inside it — measured — which puts the beat rail permanently off-screen. Below that
+   height the frame matches the screen instead, and the deck gives up a little of its
+   share so the copy beside it still has room to read. */
 /* one screen of scroll per beat, then a hold on the finished state */
 .stage-track { height: 460vh; }
 
@@ -732,6 +744,21 @@ code { font-family: var(--mono); }
   .deck-title { display: none; }
 }
 /* short viewports: the pinned frame has to hold a whole beat, so trim it */
+/* Short viewports last, deliberately: the width breakpoints above set the same
+   properties at the same specificity, so this has to come after them to win. Placing it
+   beside the base .stage-pin rule left row one empty and the copy in row two, which is
+   the layout the 1080px block asks for. */
+@media (max-height: 600px) {
+  .stage-pin { min-height: 0; grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  /* And the deck goes away rather than being squeezed. With the floor removed the frame
+     fits, but the scene had about a hundred pixels for six stacked client rows and a
+     legend, which put the labels on top of each other. The panel is decorative — it is
+     aria-hidden — and the copy beside it carries the same four beats, so on a screen this
+     short the words get the whole frame and still cross-fade as the reader scrolls. */
+  .stage-visual { display: none; }
+  .stage-copy { grid-column: 1; grid-row: 1; }
+}
+
 @media (max-height: 780px) and (min-width: 1081px) {
   .act { padding: 26px 32px 26px 44px; }
   .act h1, .act h2 { font-size: clamp(21px, 1.9vw, 26px); margin-bottom: 9px; }
