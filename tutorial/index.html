@@ -8,11 +8,11 @@
       name="description"
       content="Install pkgcache on Linux, macOS or Windows, give it a disk budget, and run pip, npm, apt, Git and Docker through a cache on your own machine — then point it at your team's pkgreg server."
     />
-    <script src="../assets/theme.js"></script>
-    <link rel="stylesheet" href="../assets/tokens.css" />
-    <link rel="stylesheet" href="../assets/landing.css" />
-    <link rel="stylesheet" href="../assets/tutorial.css" />
-    <link rel="stylesheet" href="../assets/downloads.css" />
+    <script src="../assets/site/theme.js"></script>
+    <link rel="stylesheet" href="../assets/site/tokens.css" />
+    <link rel="stylesheet" href="../assets/site/landing.css" />
+    <link rel="stylesheet" href="../assets/site/tutorial.css" />
+    <link rel="stylesheet" href="../assets/site/downloads.css" />
     <link
       rel="icon"
       type="image/svg+xml"
@@ -149,26 +149,14 @@
             <div class="dl" data-role="downloads">
               <div data-role="downloads-static">
                 <p class="note">
-                  Direct links to the newest tagged release. The installers carry their version
-                  in the filename and cannot be linked this way — take those from the
-                  <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>.
+                  This list is built from the GitHub releases API when the page loads. Without
+                  it — or before the first release exists — the
+                  <a href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">releases page</a>
+                  is the place to look; every file named on this page comes from there.
                 </p>
-                <div class="dl-group">
-                  <h4>pkgcache</h4>
-                  <table class="dl-table">
-                    <thead><tr><th>File</th><th>For</th></tr></thead>
-                    <tbody>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-amd64">pkgcache-linux-amd64</a></td><td class="dl-plat">Linux amd64</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-linux-arm64">pkgcache-linux-arm64</a></td><td class="dl-plat">Linux arm64</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-arm64">pkgcache-darwin-arm64</a></td><td class="dl-plat">macOS arm64</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-darwin-amd64">pkgcache-darwin-amd64</a></td><td class="dl-plat">macOS amd64</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/pkgcache-windows-amd64.exe">pkgcache-windows-amd64.exe</a></td><td class="dl-plat">Windows amd64</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/install.sh">install.sh</a></td><td class="dl-plat">Linux and macOS</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/install.ps1">install.ps1</a></td><td class="dl-plat">Windows</td></tr>
-                      <tr><td class="dl-file"><a href="https://github.com/aabdlwahab/PKGCache/releases/latest/download/SHA256SUMS">SHA256SUMS</a></td><td class="dl-plat">verify first</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+                <p class="note">
+                  <a class="btn btn-ghost" href="https://github.com/aabdlwahab/PKGCache/releases" data-role="releases-link">Open the releases page</a>
+                </p>
               </div>
             </div>
           </div>
@@ -206,7 +194,7 @@
           <div class="shots rv">
             <figure class="shot">
               <img
-                src="../assets/widget-fetching.png"
+                src="../assets/site/widget-fetching.png"
                 width="840" height="1320"
                 alt="The pkgcache window while a package is being fetched: 9.2 MiB of a 5.0 GiB limit, 100 percent served from here, 19 objects held, and a DOWNLOADING (1) section showing a matplotlib wheel at 1.1 MiB of 10.3 MiB with a progress bar."
                 loading="lazy" decoding="async"
@@ -217,7 +205,7 @@
             </figure>
             <figure class="shot">
               <img
-                src="../assets/widget-now.png"
+                src="../assets/site/widget-now.png"
                 width="840" height="1320"
                 alt="The pkgcache window a moment later: 2.2 MiB of a 5.0 GiB limit, 100 percent served from here, 15 objects held, and a list of six wheels each marked local hit with its size."
                 loading="lazy" decoding="async"
@@ -732,7 +720,7 @@ pkgcache docker-build-setup</code>
       </footer>
     </main>
 
-    <script src="../assets/tutorial.js"></script>
-    <script src="../assets/downloads.js"></script>
+    <script src="../assets/site/tutorial.js"></script>
+    <script src="../assets/site/downloads.js"></script>
   </body>
 </html>

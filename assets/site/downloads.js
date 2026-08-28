@@ -5,11 +5,12 @@
    installer-release.yml on a pkgcache-v* tag, and main-artifacts.yml on every merge to
    main. Those are the two channels shown, and they are the only two that exist.
 
-   Progressive enhancement, strictly. The mount already contains a table of links that
-   work with no JavaScript at all — GitHub resolves /releases/latest/download/<name> for
-   any asset whose filename does not carry a version — and that markup is only put away
-   once a real answer has arrived. A failed fetch, a rate limit or a reader with
-   scripting off all land on it rather than on an empty panel. */
+   Progressive enhancement, strictly. The mount already contains a link to the releases
+   page, and that markup is only put away once a real answer has arrived — a failed
+   fetch, a rate limit or a reader with scripting off all land on it rather than on an
+   empty panel. It is a link to the index rather than eight direct
+   /releases/latest/download/ links because those resolve only once a release exists,
+   and a page that promises a file and returns 404 is worse than one that points. */
 (function () {
   "use strict";
 
