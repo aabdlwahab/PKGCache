@@ -294,47 +294,42 @@ jobs:
       # prerelease, `main-latest`, whose asset URLs are stable and whose contents are
       # always the newest build of main.
       #
-      # The test suite's verdict is reported, not enforced.
+      # The test suite is linked, not waited for.
       #
-      # It began as a gate: a stable URL should not serve binaries from a red commit, so
-      # a failing go.yml would skip the publish. That was written on the assumption that
-      # go.yml is normally green, and it is not — it has never passed, on any branch, in
-      # 41 runs. A gate keyed to it is a gate that never opens, and the practical effect
-      # was that nothing would ever be downloadable while the one thing people need from
-      # this pipeline is a build they can install today.
+      # This began as a gate — a failing go.yml would skip the publish — on the
+      # assumption that go.yml is normally green, which it was not. Then it became a
+      # verdict in the release notes, which meant waiting for the suite to finish: the
+      # build jobs take about three and a half minutes and the wait took eleven and a
+      # half, so five sixths of the pipeline's wall clock was one sentence.
       #
-      # So the verdict rides in the release notes instead, where somebody deciding
-      # whether to install an unsigned build from main can read it. When go.yml goes
-      # green this line starts saying so, and turning it back into a gate is one `if:`.
-      - name: Ask whether the test suite passed for this commit
+      # The suite runs in parallel with this workflow and finishes after it, so there is
+      # nothing to wait for that would be worth the wait. One API call names the run for
+      # this exact commit and the notes carry a link to it, which is better than a
+      # verdict anyway: it is current when the reader clicks it, not when this ran.
+      - name: Find the test run for this commit
         id: tests
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          deadline=$((SECONDS + 900))
-          status=""; conclusion=""
-          while :; do
-            run="$(gh api \
-              "repos/$GITHUB_REPOSITORY/actions/workflows/go.yml/runs?head_sha=$GITHUB_SHA&per_page=1" \
-              --jq '.workflow_runs[0] // empty' 2>/dev/null || true)"
-            [ -n "$run" ] || run='{}'
-            status="$(printf '%s' "$run" | jq -r '.status // ""')"
-            conclusion="$(printf '%s' "$run" | jq -r '.conclusion // ""')"
-            [ "$status" = completed ] && break
-            [ "$SECONDS" -ge "$deadline" ] && break
-            sleep 30
-          done
-          if [ -z "$status" ]; then
+          run="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/go.yml/runs?head_sha=$GITHUB_SHA&per_page=1" \
+            --jq '.workflow_runs[0] // empty' 2>/dev/null || true)"
+          [ -n "$run" ] || run='{}'
+          status="$(printf '%s' "$run" | jq -r '.status // ""')"
+          conclusion="$(printf '%s' "$run" | jq -r '.conclusion // ""')"
+          id="$(printf '%s' "$run" | jq -r '.id // ""')"
+          url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$id"
+          if [ -z "$id" ]; then
             note="no test run was found for this commit"
           elif [ "$status" != completed ]; then
-            note="the test suite had not finished when this was published"
+            note="the test suite was still running when this published — [see it]($url)"
           elif [ "$conclusion" = success ]; then
-            note="the test suite was green"
+            note="the test suite passed — [see it]($url)"
           else
-            note="**the test suite failed on this commit** ($conclusion)"
-            echo "::warning::publishing main-latest from a commit whose tests failed"
+            note="**the test suite did not pass** ($conclusion) — [see it]($url)"
+            echo "::warning::publishing main-latest from a commit whose tests did not pass"
           fi
           echo "note=$note" >> "$GITHUB_OUTPUT"
           echo "$note"
@@ -364,7 +359,7 @@ jobs:
             echo
             echo "Verify a download against \`SHA256SUMS\` before running it."
             echo
-            echo "Tests: at publication, ${{ steps.tests.outputs.note }}."
+            echo "Tests: ${{ steps.tests.outputs.note }}."
             echo
             echo '```sh'
             echo "sudo apt install ./pkgcache_${V}_amd64.deb ./pkgcache-desktop_${V}_amd64.deb"
