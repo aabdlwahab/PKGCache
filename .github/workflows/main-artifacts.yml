@@ -343,8 +343,13 @@ jobs:
       # so a binary that stopped being built would stay downloadable from `main-latest`
       # forever, at whatever version it last had.
       - name: Replace the rolling prerelease
+        # GH_REPO, because this job has no checkout — it only downloads artefacts. gh
+        # resolves the repository from the git remote when nothing tells it otherwise, and
+        # with no working tree that is "failed to run git: fatal: not a git repository".
+        # `gh api` with a literal path is unaffected, which is why the step above passed.
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
