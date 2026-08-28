@@ -272,6 +272,7 @@ code { font-family: var(--mono); }
 }
 .fclient .fdot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--h); }
 .fup { color: var(--muted); background: color-mix(in oklab, var(--inset) 90%, transparent); font-size: 10.5px; }
+.fup .up-s { display: none; }   /* the narrow-screen label; see the 720px block */
 
 .fnode.served { border-color: var(--ok); color: var(--fg); box-shadow: 0 0 16px rgb(var(--glow-ok) / 0.35); }   /* [JS] */
 .fnode.busy   { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 16px rgb(var(--glow) / 0.35); }   /* [JS] */
@@ -699,20 +700,30 @@ code { font-family: var(--mono); }
   .stage .stage-scene .wall .cas { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 720px) {
-  /* the seam is the point of the last beat — keep it, drop the upstream chips */
+  /* the seam is the point of the last beat: pull it in, and the three columns —
+     clients, machine, upstreams — all stay */
   .stage .stage-scene .gapline, .stage .stage-scene .gaplabel { display: block; left: 66%; }
   .stage .stage-scene .upzone { left: 66%; }
-  .stage .stage-scene .rails-up, .stage .gitgraph { display: none; }
+  .stage .gitgraph { display: none; }
   .stage .stage-scene .wall { left: 40%; width: 54px; }
-  .stage .stage-scene .wall .cas { gap: 4px; }
+  .stage .stage-scene .wall .cas { gap: 3px; }
   /* the whole scene is ~230px tall here: shrink the store's grain so the
-     checkpoint label and the far host's clients keep their room */
-  .stage .stage-scene .cas-tile { width: 10px; height: 10px; }
+     checkpoint label and the far host's clients keep their room. 10px tiles at 4px
+     of gap made the store 108px of a 177px wall, which put "saved v12" through the
+     bottom border — eight rows of eight fit with room to spare. */
+  .stage .stage-scene .cas-tile { width: 8px; height: 8px; }
   .stage .host-off { left: 70%; top: 22px; bottom: 30px; gap: 7px; padding: 7px 6px 8px; }
   .stage .off-clients { gap: 5px; }
   .stage .cas-off { grid-template-columns: repeat(3, 1fr); }
   .stage .off-clients .fnode { font-size: 8.5px; padding: 3px 5px; }
-  .stage .stage-scene .ups { display: none; }
+  /* the upstreams are the right half of the picture, and every beat is about them:
+     beat 1 is a request reaching them, beat 2 is a request that stops at the wall
+     instead. A dashed rail running off to blank space says neither. They stay here —
+     on short labels, which is the only reason they did not fit. */
+  .stage .stage-scene .ups { right: 10px; }
+  .stage .stage-scene .ups .fup { font-size: 9px; padding: 3px 6px; }
+  .stage .stage-scene .fup .up-l { display: none; }
+  .stage .stage-scene .fup .up-s { display: inline; }
   .stage-pin { grid-template-rows: 38vh 1fr; }
   .stage-visual { padding: 12px 16px 0; }
   .act { padding: 16px 20px 20px; }
@@ -735,6 +746,10 @@ code { font-family: var(--mono); }
   .stage .stage-scene .upzone { left: 68%; }
   .stage .host-off { left: 72%; padding: 6px 4px 7px; }
   .stage .host-note { display: none; }
+  /* "machine" at 8.5px with 0.2em of tracking is wider than a 46px wall */
+  .stage .stage-scene .wall .wall-h { font-size: 7px; letter-spacing: 0.1em; }
+  .stage .stage-scene .clients { left: 10px; }
+  .stage .stage-scene .clients .fnode { font-size: 9.5px; padding: 4px 7px; gap: 6px; }
   /* two client chips make the point on a phone; the third has no room */
   .stage .off-clients .fnode:nth-child(3) { display: none; }
   /* the command blocks need a wide frame and a keyboard: the steps carry the
@@ -742,6 +757,23 @@ code { font-family: var(--mono); }
   .act .code { display: none; }
   .stage .scene-key .items { display: none; }
   .deck-title { display: none; }
+}
+/* the smallest phones still in the wild (320px): after the 460px block the scene is
+   still three columns, but the seam's ribbon and the upstream chips end up on the same
+   pixels, and the status line wraps up into the last client. Shift the machine left so
+   the seam owns a column of its own, and trim the two strips of small caps. Ordered
+   after 460px deliberately — same properties, same specificity. */
+@media (max-width: 380px) {
+  .stage .stage-scene .wall { left: 40%; width: 42px; }
+  .stage .stage-scene .wall .wall-h { font-size: 6.5px; }
+  .stage .stage-scene .gapline, .stage .stage-scene .gaplabel { left: 60%; }
+  .stage .stage-scene .upzone { left: 60%; }
+  .stage .host-off { left: 64%; }
+  .stage .stage-scene .ups .fup { font-size: 8.5px; padding: 3px 5px; }
+  .stage .stage-scene .clients .fnode { font-size: 9px; padding: 4px 6px; }
+  /* one line, or it grows upward into the "files" chip */
+  .stage .scene-key { font-size: 7.5px; letter-spacing: 0.04em; }
+  .stage .scene-status { white-space: nowrap; }
 }
 /* short viewports: the pinned frame has to hold a whole beat, so trim it */
 /* Short viewports last, deliberately: the width breakpoints above set the same
