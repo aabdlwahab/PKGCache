@@ -14,6 +14,15 @@ LDFLAGS := -X $(BUILDINFO).version=$(VERSION) \
            -X $(BUILDINFO).commit=$(COMMIT) \
            -X $(BUILDINFO).date=$(DATE)
 
+# sha256sum is GNU coreutils and is not on a Mac; macOS ships shasum instead. Three
+# release targets below write a sums file, and all three run on both platforms — the
+# macOS job builds pkgcache for five targets and then checksums them, which failed with
+# "sha256sum: command not found" the first time that job ever got as far as running.
+#
+# The two agree on output format — "<digest>  <name>" — so `sha256sum -c` still verifies
+# a file written by either, which is what internal/clientrelease parses.
+SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo shasum -a 256)
+
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
@@ -44,7 +53,7 @@ client-release: ## Build the client installer for Linux, macOS, and Windows
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgreg-client-darwin-arm64 ./cmd/pkgreg-client
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgreg-client-windows-amd64.exe ./cmd/pkgreg-client
-	cd bin && sha256sum pkgreg-client-linux-* pkgreg-client-darwin-* \
+	cd bin && $(SHA256SUM) pkgreg-client-linux-* pkgreg-client-darwin-* \
 		pkgreg-client-windows-*.exe > pkgreg-client-SHA256SUMS
 
 # pkgcache is the merged client. Published under its own names alongside the
@@ -77,7 +86,7 @@ bridge-release: ## Build the loopback bridge for Linux, macOS, and Windows
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgreg-bridge-darwin-arm64 ./cmd/pkgreg-bridge
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgreg-bridge-windows-amd64.exe ./cmd/pkgreg-bridge
-	cd bin && sha256sum pkgreg-bridge-linux-* pkgreg-bridge-darwin-* \
+	cd bin && $(SHA256SUM) pkgreg-bridge-linux-* pkgreg-bridge-darwin-* \
 		pkgreg-bridge-windows-*.exe > pkgreg-bridge-SHA256SUMS
 
 # pkgcache is the same engine composed for one machine: one loopback port, no
@@ -212,7 +221,7 @@ pkgcache-release: ## Build pkgcache for Linux, macOS, and Windows
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-darwin-arm64 ./cmd/pkgcache
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgcache-windows-amd64.exe ./cmd/pkgcache
-	cd bin && sha256sum pkgcache-linux-* pkgcache-darwin-* \
+	cd bin && $(SHA256SUM) pkgcache-linux-* pkgcache-darwin-* \
 		pkgcache-windows-*.exe > pkgcache-SHA256SUMS
 
 # Installers. The two scripts are copied rather than generated: they are the artefact a
