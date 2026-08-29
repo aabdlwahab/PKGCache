@@ -159,17 +159,32 @@ func run(background, onLogin, offLogin bool) error {
 				openWindow(ctx, core)
 			},
 		},
-		// The name the desktop matches this window to a launcher entry by.
+		// The name the desktop matches this window to a launcher entry by, on X11.
 		//
 		// Without it GLib takes the program name from argv[0] — "pkgcache-app" — while
-		// the launcher entry installed beside it is pkgcache.desktop with
-		// StartupWMClass=pkgcache. Nothing matches, and GNOME draws the icon it draws
-		// for an application it cannot identify: a gear. The embedded Icon above cannot
-		// help, because GTK4 removed gtk_window_set_icon and Wails' setIcon is a no-op
-		// there — on Linux the icon comes from the .desktop file or from nowhere.
+		// the launcher entry installed beside it is pkgcache.desktop. Nothing matches,
+		// and GNOME draws the icon it draws for an application it cannot identify: a
+		// gear. The embedded Icon above cannot help, because GTK4 removed
+		// gtk_window_set_icon and Wails' setIcon is a no-op there — on Linux the icon
+		// comes from the .desktop file or from nowhere.
 		//
-		// g_set_prgname is what this reaches, which is both the X11 WM_CLASS and the
-		// Wayland app_id, so one line covers both display servers and both toolkits.
+		// This reaches g_set_prgname, and the comment here used to claim that covered
+		// "both display servers". It does not, and Ubuntu defaults to the one it misses.
+		// Measured by running this binary under a headless X server and a headless
+		// compositor and reading the identifiers off the wire:
+		//
+		//	X11      WM_CLASS = "pkgcache", "pkgcache"
+		//	Wayland  xdg_toplevel.set_app_id("org.wails.pkgcache")
+		//
+		// GTK4 takes the Wayland app_id from the GApplication's id and falls back to the
+		// program name only when there is none. Wails always builds one, as
+		// "org.wails." + Options.Name below, and exposes no way to set it. So the
+		// packaging carries StartupWMClass=org.wails.pkgcache to catch the Wayland half
+		// — see packaging/deb/build.sh, which explains the whole matching chain.
+		//
+		// Which means Options.Name is load-bearing twice over: it names the app, and it
+		// decides the Wayland app_id that the .desktop file has to agree with. Changing
+		// it without changing that file puts the gear back.
 		Linux: application.LinuxOptions{ProgramName: "pkgcache"},
 		Mac: application.MacOptions{
 			// A real app with a Dock icon and a window, not a menu bar accessory. That is

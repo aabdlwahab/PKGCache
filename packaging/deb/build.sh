@@ -281,6 +281,34 @@ install -m 0755 "$APP" "$ROOT/usr/bin/pkgcache-app"
 # old package shipped a .desktop naming an icon it never installed.
 install -m 0644 "$ICON" "$ROOT/usr/share/icons/hicolor/scalable/apps/pkgcache.svg"
 
+# The launcher entry, and the name the desktop matches a window to it by.
+#
+# StartupWMClass says org.wails.pkgcache and the file is called pkgcache.desktop, which
+# looks inconsistent and is the only combination that works on both display servers.
+# Measured, by running the shipped binary under a headless X server and a headless
+# compositor and reading the identifiers off the wire:
+#
+#   X11      WM_CLASS = "pkgcache", "pkgcache"      from g_set_prgname, which the app sets
+#   Wayland  xdg_toplevel.set_app_id("org.wails.pkgcache")
+#
+# They differ because GTK4 takes the Wayland app_id from the GApplication's id and only
+# falls back to the program name when there is none — and Wails builds that id as
+# `fmt.Sprintf("org.wails.%s", name)` from Options.Name, with no way to override it. So
+# the program name reaches X11 and never reaches Wayland.
+#
+# GNOME matches a window by trying, in order, the GTK application id, then StartupWMClass
+# against the window's class, then the desktop file's own basename. This entry answers on
+# the second for Wayland and on the third for X11:
+#
+#   Wayland  app_id org.wails.pkgcache == StartupWMClass
+#   X11      WM_CLASS pkgcache         == pkgcache.desktop
+#
+# One file, not two. An `org.wails.pkgcache.desktop` alias would match earlier and was the
+# first thing tried — but a second entry the shell can match is a second dock icon beside
+# the pinned one, which is a worse bug than the one being fixed.
+#
+# Ubuntu has defaulted to Wayland since 22.04, so before this the icon was a gear on the
+# distribution most people install on, and correct everywhere it was tested by hand.
 cat > "$ROOT/usr/share/applications/pkgcache.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
@@ -293,7 +321,7 @@ Terminal=false
 Categories=Development;Utility;
 Keywords=cache;packages;docker;pip;npm;apt;
 StartupNotify=true
-StartupWMClass=pkgcache
+StartupWMClass=org.wails.pkgcache
 DESKTOP
 
 # Started for every user who logs in, because an app that has to be launched from a
