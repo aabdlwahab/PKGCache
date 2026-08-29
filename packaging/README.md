@@ -14,7 +14,10 @@ that as a step to remember.
 For a release, none of those are run by hand. Pushing a `pkgcache-v*` tag runs
 [`.github/workflows/installer-release.yml`](../.github/workflows/installer-release.yml),
 which builds all three, attests every artefact, and publishes them with checksums
-beside them.
+beside them. Publishing the release then runs
+[`.github/workflows/pages.yml`](../.github/workflows/pages.yml), which indexes the two
+`.deb` files into the public apt repository — see
+[Publishing the public repository](#publishing-the-public-repository).
 
 Signing depends on credentials being configured, and today they are not. With the Apple
 secrets it signs and notarizes the `.pkg`; with the Windows certificate it
@@ -71,10 +74,13 @@ apt install pkgcache-desktop      # pulls pkgcache in with it
 apt install pkgcache              # headless: no desktop stack
 ```
 
-That needs a repository, which `pkgreg publish-apt` serves from the instance the packages
-came from — and which `install.sh` configures for you. The version lock is deliberate: the
-app talks to the daemon over a local API, and two halves of one product drifting apart on
-a machine produces a bug report nobody can read.
+That needs a repository, and there are two. The public one at
+`https://aabdlwahab.github.io/PKGCache/apt` is what a stranger installs from; a `pkgreg`
+instance serves its own with `pkgreg publish-apt`, which is what `install.sh` configures
+when you point it at a team cache. Both are the same tree, built by the same code.
+
+The version lock is deliberate: the app talks to the daemon over a local API, and two
+halves of one product drifting apart on a machine produces a bug report nobody can read.
 
 ## macOS
 
@@ -104,11 +110,28 @@ Open, or `sudo installer -pkg pkgcache-1.0.0.pkg -target /`. To ship without tha
 
 ## Ubuntu and Debian
 
+From the public repository, which is what a person should be given:
+
+    curl -fsSL https://aabdlwahab.github.io/PKGCache/apt/pkgcache-archive-keyring.asc \
+      | sudo tee /usr/share/keyrings/pkgcache-archive-keyring.asc >/dev/null
+    sudo tee /etc/apt/sources.list.d/pkgcache.sources >/dev/null <<'EOF'
+    Types: deb
+    URIs: https://aabdlwahab.github.io/PKGCache/apt
+    Suites: stable
+    Components: main
+    Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc
+    EOF
+    sudo apt update && sudo apt install pkgcache-desktop
+
+Or from files you built yourself:
+
     make deb                      # from go/
     sudo apt install ./pkgcache_1.0.0_amd64.deb ./pkgcache-desktop_1.0.0_amd64.deb
 
 From a repository it is one name and apt finds the other; from local files both are named
-because apt cannot fetch a sibling that is not in a repository.
+because apt cannot fetch a sibling that is not in a repository. Only the repository gets
+upgrades: a file installed by hand stays the version it was until somebody downloads
+another one.
 
 `make deb` builds the desktop half only where a `bin/pkgcache-app-linux-<arch>` exists.
 The app needs cgo, so a host that cannot build it still produces a complete daemon package
@@ -118,6 +141,48 @@ not native to.
 Built with `ar` and `tar` rather than `dpkg-deb`, so it cross-builds from any host, and
 reproducibly: two builds of one binary are byte-identical, and that property is the reason
 this is still a shell script rather than nfpm.
+
+## Publishing the public repository
+
+[`.github/workflows/pages.yml`](../.github/workflows/pages.yml) builds it, on every push
+to `main` and on every published release. It downloads the `.deb` files from the newest
+`pkgcache-v*` release, runs `pkgreg publish-apt` over them, and deploys the result beside
+the site as `apt/`. No new code makes that work — it is the same publisher an instance
+runs, pointed at a different directory.
+
+Only the newest release is indexed, so the pool is about 45 MB and every deploy rebuilds
+it from scratch. Nothing accumulates, nothing can drift, and no `.deb` enters git history
+— which is what `.gitignore` has insisted on from the start. The trade is that
+`apt install pkgcache=1.2.2` stops working the day 1.2.3 ships; widening it is a change to
+how many releases that one step walks.
+
+Two things had to be arranged by hand, once:
+
+- **Pages is deployed from Actions**, not from the branch. Settings → Pages → Source →
+  *GitHub Actions*. The workflow assembles `index.html`, `assets/`, `tutorial/` and
+  `docs/` alongside the generated `apt/`, rather than the branch being served whole.
+- **The signing key exists as the `APT_SIGNING_KEY` secret.** It was generated once with
+
+      cd go && go run ./cmd/pkgreg publish-apt --data-dir /tmp/aptkey --print-key
+
+  which creates `/tmp/aptkey/apt/signing-key.asc`, prints its fingerprint, and needs no
+  packages to do it.
+
+That key is the trust root of every machine that installs this way, and the reason
+`loadOrCreateSigningKey` will never regenerate one: a new key means every machine that
+trusted the old one stops trusting the repository, which is a far worse day than a missing
+key. It is stored once, backed up offline, and not rotated. Anyone who can read it can
+publish a package the world installs without complaint.
+
+`scripts/verify-apt-repo.sh <base-url>` is what proves it works, and the workflow runs it
+twice: against the assembled tree before deploying, and against the live URL afterwards.
+The second run is the one that matters. It is the only thing that catches a failure living
+in the host rather than in the files — a `Content-Encoding` applied to `Packages.gz` hands
+apt decompressed bytes where it expected gzip, and the result is a hash mismatch on a
+stranger's laptop with every file on the server perfect.
+
+Until the first `pkgcache-v*` tag is pushed there is nothing to index, and the workflow
+says so and deploys the site alone rather than failing.
 
 ## macOS: the app bundle
 

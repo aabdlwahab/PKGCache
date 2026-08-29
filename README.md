@@ -20,23 +20,44 @@ macOS and Windows from a single host.
 
 ## Install pkgcache
 
-macOS, Ubuntu and Windows each have a real installer. They verify what they download
-before installing it, and can point the machine at your team cache as part of the install:
+On Debian and Ubuntu it is a package, from a signed repository. `apt upgrade` keeps it
+current from then on, which is the part no download page can do:
+
+```bash
+curl -fsSL https://aabdlwahab.github.io/PKGCache/apt/pkgcache-archive-keyring.asc \
+  | sudo tee /usr/share/keyrings/pkgcache-archive-keyring.asc >/dev/null
+sudo tee /etc/apt/sources.list.d/pkgcache.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://aabdlwahab.github.io/PKGCache/apt
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc
+EOF
+sudo apt update
+
+sudo apt install pkgcache-desktop    # a laptop: daemon, CLI, docker shim and the app
+sudo apt install pkgcache            # a server or CI runner: no desktop graphics stack
+```
+
+The key that signs it has fingerprint
+`1ECAC3BB65F1568F0F4F063E1C5782827618C926`;
+`gpg --show-keys /usr/share/keyrings/pkgcache-archive-keyring.asc` prints what your
+machine actually trusts.
+
+macOS and Windows have real installers, which verify what they download before installing
+it and can point the machine at your team cache as part of the install:
 
 ```bash
 # macOS — build the .pkg once, then anyone double-clicks it
 ./packaging/macos/build-pkg.sh --version 1.0.0 \
     --server https://cache.internal:8443 --ca-sha256 AA:BB:...
 
-# Ubuntu / Debian
-make -C go deb && sudo apt install ./go/bin/pkgcache_1.0.0_amd64.deb
-
 # any Unix, from a running cache
 sh packaging/install.sh --server https://cache.internal:8443 --ca-sha256 AA:BB:...
 ```
 
 See [packaging/README.md](packaging/README.md) for Windows and for what each installer
-does. The fingerprint comes from whoever runs the cache — it is what makes a cache
+does. The fingerprint there comes from whoever runs the cache — it is what makes a cache
 serving its own certificate verifiable.
 
 ## Use it
