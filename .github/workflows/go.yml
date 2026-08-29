@@ -36,8 +36,34 @@ jobs:
         run: |
           docker pull debian@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
           docker pull alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
-      - name: Unit, integration, and real-client acceptance
-        run: go test ./...
+      # Two steps, and the split is the acceptance package.
+      #
+      # Those tests compile pkgcache, run it as a real daemon and drive pip, npm, docker
+      # and git against it, and a client gives that daemon 30 seconds to come up before
+      # deciding it is dead. `go test ./...` runs packages at GOMAXPROCS — four here —
+      # so the daemon was competing with internal/app's 25 seconds, pki's 11, catalog's
+      # 10 and forty-odd more, plus a docker pull and an npm install. It lost, and the
+      # failure reads as "a full cache broke the install" with "the cache did not start
+      # within 30s" underneath: a startup budget missed, not a caching bug.
+      #
+      # This is the same starvation the -race step below already documents, in the same
+      # three tests. That step was given -p 2 and a larger budget under the race build
+      # tag; this one was left at the defaults and kept failing on main.
+      #
+      # Splitting rather than lowering -p everywhere: the other fifty-odd packages are
+      # cheap and parallel, and only these need the machine to themselves. Nothing here
+      # needs -parallel, because no test in that package calls t.Parallel.
+      #
+      # The budget itself is deliberately not raised. startBudgetFactor is compiled into
+      # the shipped binary, and 30 seconds is what a real user waits before being told
+      # the cache did not start; moving it to make CI green would change what a person
+      # experiences to fix a problem only CI has.
+      - name: Unit and integration
+        run: |
+          set -euo pipefail
+          go test $(go list ./... | grep -v '/test/acceptance$')
+      - name: Real-client acceptance
+        run: go test ./test/acceptance/
       # -p 2, because the failure this step produced was starvation rather than a race.
       # Race instrumentation costs several times the CPU, the default -p is GOMAXPROCS —
       # four on this runner — and with fifty packages competing, three tests failed on
