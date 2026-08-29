@@ -621,6 +621,11 @@ jobs:
       # "More info" — both look like a broken download to somebody who was not told.
       - name: Write the release notes
         shell: bash
+        env:
+          # The same URL pages.yml publishes to. Two files naming one origin is a risk
+          # worth taking over release notes that tell a reader to add a repository the
+          # workflow does not build.
+          APT_ORIGIN: https://aabdlwahab.github.io/PKGCache/apt
         run: |
           set -euo pipefail
           V="${{ needs.version.outputs.version }}"
@@ -645,8 +650,23 @@ jobs:
               echo "- **Windows** — **unsigned**. SmartScreen will warn: choose **More info**,"
               echo "  then **Run anyway**."
             fi
-            echo "- **Debian and Ubuntu** — the .deb files are not code-signed either way;"
-            echo "  apt verifies the repository signature, which \`pkgreg publish-apt\` makes."
+            echo "- **Debian and Ubuntu** — install by name instead, from the signed"
+            echo "  repository these packages are published into; \`apt upgrade\` then keeps"
+            echo "  the machine current. The .deb files are not code-signed either way, and"
+            echo "  apt verifies the repository signature rather than the file."
+            echo
+            echo '```sh'
+            echo "curl -fsSL $APT_ORIGIN/pkgcache-archive-keyring.asc \\"
+            echo "  | sudo tee /usr/share/keyrings/pkgcache-archive-keyring.asc >/dev/null"
+            echo "sudo tee /etc/apt/sources.list.d/pkgcache.sources >/dev/null <<'SOURCES'"
+            echo "Types: deb"
+            echo "URIs: $APT_ORIGIN"
+            echo "Suites: stable"
+            echo "Components: main"
+            echo "Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc"
+            echo "SOURCES"
+            echo "sudo apt update && sudo apt install pkgcache-desktop"
+            echo '```'
             echo
             echo "Verify what you downloaded before running it:"
             echo

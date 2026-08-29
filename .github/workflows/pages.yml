@@ -1,0 +1,222 @@
+name: site and apt repository
+
+# The site, and the apt repository beside it.
+#
+# Until now the only way onto a Debian or Ubuntu machine was to download two .deb files
+# and name both on an `apt install` line — a chore no `apt upgrade` ever refreshes — or to
+# have a pkgcache instance of your own publishing a repository with `pkgreg publish-apt`.
+# This publishes one at a public URL, so the install is a name:
+#
+#   sudo apt install pkgcache-desktop     # a laptop: daemon, CLI, shim, app
+#   sudo apt install pkgcache             # a server or a CI runner: no graphics stack
+#
+# No new code makes that work. `pkgreg publish-apt` already renders the pool, the indexes
+# and a signed Release; this workflow runs it against the packages from the latest release
+# and puts the result in the Pages artifact. Which is also why the site is deployed from
+# here rather than from the branch: the repository is generated, the .deb files are 45 MB
+# a release, and .gitignore has kept them out of this repository on purpose from the
+# start. Nothing built here is ever committed.
+#
+# The signing key is the trust root of every machine that installs this way, and it is not
+# created here. It is generated once by hand, stored as the APT_SIGNING_KEY secret and
+# never rotated — a new key means every machine that trusted the old one stops trusting
+# this repository, which is a much worse day than a missing key. See packaging/README.md.
+
+on:
+  push:
+    branches: [main]
+  # The other half of the schedule: a release publishes new packages, and the repository
+  # that indexes them has to be rebuilt or `apt upgrade` never sees the version.
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deployments are serialised, and in-flight ones are allowed to finish: cancelling a
+# half-finished Pages deploy is how a site ends up serving an index that names packages
+# the pool no longer has.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # What clients put in `URIs:`, and therefore what the documentation has to say. Written
+  # once here rather than derived from github.repository: a Pages URL lowercases the owner
+  # but not the repository name, and a URL that is subtly wrong produces a 404 for every
+  # machine and a green build here.
+  ORIGIN: https://aabdlwahab.github.io/PKGCache/apt
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      # Built from this commit rather than downloaded from the release, so a fix to the
+      # publisher takes effect on the next push instead of on the next tag.
+      - name: Build the publisher
+        working-directory: go
+        run: go build -o "$RUNNER_TEMP/pkgreg" ./cmd/pkgreg
+
+      # The packages to index: the newest pkgcache-v* release, and only that one. Drafts
+      # and pre-releases are excluded because this suite is called stable.
+      #
+      # Finding none is the expected state until the first release is cut, and it is not a
+      # failure: the site still deploys, without an apt/ directory. A hard failure here
+      # would mean no site could be published until a release existed.
+      - name: Fetch the packages from the latest release
+        id: packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="$(gh release list --limit 100 \
+            --json tagName,isDraft,isPrerelease \
+            --jq '[.[] | select(.isDraft | not) | select(.isPrerelease | not)
+                       | select(.tagName | startswith("pkgcache-v"))][0].tagName // ""')"
+          if [ -z "$tag" ]; then
+            echo "::notice::no pkgcache-v* release yet, so the site deploys without an apt repository"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "indexing $tag"
+          mkdir -p "$RUNNER_TEMP/debs"
+          gh release download "$tag" --pattern '*.deb' --dir "$RUNNER_TEMP/debs"
+          # Named one by one rather than counted: a release that quietly stopped building
+          # the arm64 desktop package should fail here, not ship a repository that is
+          # missing a package on one architecture.
+          missing=0
+          for name in pkgcache pkgcache-desktop; do
+            for arch in amd64 arm64; do
+              ls "$RUNNER_TEMP/debs/${name}_"*"_${arch}.deb" >/dev/null 2>&1 || {
+                echo "::error::$tag publishes no ${name} for ${arch}"; missing=1; }
+            done
+          done
+          [ "$missing" -eq 0 ]
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # 0700 and 0600, and outside the tree that gets served. Anybody who reads this file
+      # can publish a package every machine in the world installs without complaint.
+      - name: Restore the signing key
+        if: steps.packages.outputs.found == 'true'
+        env:
+          KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            echo "::error::APT_SIGNING_KEY is not set. Generate it once with"
+            echo "::error::\`go run ./cmd/pkgreg publish-apt --data-dir /tmp/aptkey --print-key\`"
+            exit 1
+          fi
+          install -d -m 0700 "$RUNNER_TEMP/state/apt"
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/state/apt/signing-key.asc"
+          chmod 0600 "$RUNNER_TEMP/state/apt/signing-key.asc"
+
+      - name: Publish the apt repository
+        if: steps.packages.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/pkgreg" publish-apt \
+            --data-dir "$RUNNER_TEMP/state" \
+            --suite stable --component main \
+            --origin "$ORIGIN" \
+            "$RUNNER_TEMP/debs"
+
+      # The site is the files a browser asks for; the repository is a directory the
+      # publisher wrote. Listed explicitly rather than copied wholesale, so that switching
+      # Pages from the branch to this workflow cannot start serving something that only
+      # ever happened to be in the repository.
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp index.html .nojekyll _site/
+          cp -r assets tutorial docs _site/
+          if [ "${{ steps.packages.outputs.found }}" = true ]; then
+            # `repo`, never `state/apt`: the signing key is a sibling of the served tree
+            # rather than inside it, which is the whole reason feed.RepoDir and
+            # feed.KeyPath are separate paths.
+            cp -r "$RUNNER_TEMP/state/apt/repo" _site/apt
+          fi
+          # Cheap, and the consequence of getting the line above wrong is total.
+          if find _site -name 'signing-key*' -print | grep -q .; then
+            echo "::error::a signing key reached the published site"
+            exit 1
+          fi
+
+      # Before the deploy, not after it. This catches an ordinary breakage — an index that
+      # does not match its hash, a pool path that is not there — while it is still a
+      # failed build rather than a repository the world is already fetching.
+      - name: Install from the tree that is about to be deployed
+        if: steps.packages.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8000 --directory _site >/dev/null 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          sh scripts/verify-apt-repo.sh http://127.0.0.1:8000/apt
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  # The same three commands again, against the live URL.
+  #
+  # This is the job that earns its keep, and the reason the check above is not enough: the
+  # failure it is looking for lives in the host rather than in the files. A host that
+  # applies Content-Encoding to Packages.gz hands apt decompressed bytes where it expected
+  # gzip, and the result is a hash mismatch on a stranger's laptop with every file on the
+  # server perfect. Nothing served from a local directory can tell you that.
+  verify:
+    needs: deploy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install from the published repository
+        run: |
+          set -euo pipefail
+          url="${{ needs.deploy.outputs.page_url }}"
+          keyring="${url%/}/apt/pkgcache-archive-keyring.asc"
+
+          # A deploy reports success before every edge is serving the new tree, so a
+          # single fetch here fails for a repository that is perfectly good and about to
+          # appear. Two minutes of asking, then believe the answer.
+          found=false
+          for _ in $(seq 1 24); do
+            if curl -fsS -o /dev/null "$keyring"; then found=true; break; fi
+            sleep 5
+          done
+          if [ "$found" != true ]; then
+            # Not a failure. Until the first pkgcache-v* release exists there is no
+            # repository to publish, and the build job said so when it skipped it.
+            echo "::notice::no apt repository at $keyring; nothing to verify"
+            exit 0
+          fi
+          sh scripts/verify-apt-repo.sh "${url%/}/apt"

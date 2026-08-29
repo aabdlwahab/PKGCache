@@ -430,14 +430,47 @@
           <p class="eyebrow rv">every platform, every binary</p>
           <h2 class="rv">Download it.</h2>
           <p class="lede rv">
-            Installers for macOS, Debian and Ubuntu, and Windows; static binaries for five targets;
-            the desktop app, the docker shim, the loopback bridge and the pkgreg server beside them.
+            On Debian and Ubuntu there is nothing to download: install it by name from the
+            signed apt repository below, and <code>apt upgrade</code> keeps it current.
+            Everywhere else it is a file — installers for macOS and Windows; static binaries for
+            five targets; the desktop app, the docker shim, the loopback bridge and the pkgreg
+            server beside them.
             Two channels: a tagged release with a fixed version, and the build of every
             merge to <code>main</code>. Both are unsigned — there is no Apple or Windows
             signing identity behind them — so the
             <a href="tutorial/#download">tutorial</a> has the one extra step macOS and
             Windows each ask for on first run.
           </p>
+          <!-- Debian and Ubuntu come first because they are the one platform where the
+               answer is not a download at all. Everything below this is a file to fetch
+               and verify by hand; this is a name, and apt keeps it current afterwards. -->
+          <div class="download-panel rv">
+            <div class="download-head">
+              <div>
+                <p class="download-k k">Debian and Ubuntu</p>
+                <h3>Install it by name</h3>
+              </div>
+            </div>
+            <div class="dl">
+              <p class="note">
+                A signed repository, so there is nothing to download here and nothing to
+                download again later — <code>apt upgrade</code> moves the machine to each
+                new release. <code>pkgcache-desktop</code> brings the daemon, the CLI, the
+                docker shim and the app; <code>pkgcache</code> on its own is what a server
+                or a CI runner wants, with no desktop graphics stack behind it.
+              </p>
+              <pre class="code">curl -fsSL https://aabdlwahab.github.io/PKGCache/apt/pkgcache-archive-keyring.asc \
+  | sudo tee /usr/share/keyrings/pkgcache-archive-keyring.asc &gt;/dev/null
+sudo tee /etc/apt/sources.list.d/pkgcache.sources &gt;/dev/null &lt;&lt;'EOF'
+Types: deb
+URIs: https://aabdlwahab.github.io/PKGCache/apt
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc
+EOF
+sudo apt update &amp;&amp; sudo apt install pkgcache-desktop</pre>
+            </div>
+          </div>
           <div class="download-panel rv">
             <div class="download-head">
               <div>
