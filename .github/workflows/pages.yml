@@ -27,6 +27,21 @@ on:
     branches: [main]
   # The other half of the schedule: a release publishes new packages, and the repository
   # that indexes them has to be rebuilt or `apt upgrade` never sees the version.
+  #
+  # Keyed on the installer workflow finishing rather than on `release: [published]`,
+  # which looks like the obvious trigger and never fires. installer-release.yml creates
+  # the release with `gh release create` using the job's own GITHUB_TOKEN, and GitHub
+  # deliberately raises no events for anything a GITHUB_TOKEN did — otherwise a workflow
+  # could trigger itself forever. So the release appeared, this never ran, and the
+  # repository stayed a 404 while every file that should have been in it existed.
+  #
+  # workflow_run is the event that does fire: it is about a *run* completing rather than
+  # about the release, and the run it watches was started by a human pushing a tag.
+  workflow_run:
+    workflows: ["pkgcache installers"]
+    types: [completed]
+  # Kept for a release published by hand through the web UI, which does raise the event
+  # because a person did it.
   release:
     types: [published]
   workflow_dispatch:
@@ -51,6 +66,12 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # A failed installer run has no packages to index, and a cancelled one may have half
+    # of them. Only a successful one is worth rebuilding the repository for; every other
+    # trigger has no workflow_run payload and passes this on the first clause.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
