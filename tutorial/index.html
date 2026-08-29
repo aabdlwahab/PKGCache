@@ -91,20 +91,32 @@
           <p class="eyebrow rv">step one, and often the only one</p>
           <h2 class="rv">Get it.</h2>
           <p class="lede rv">
-            One command per platform. Each installer sets a disk budget, starts the cache and
-            opens the app, so there is no second step.
+            One command per platform — or one paste on Debian and Ubuntu, where it comes from
+            a repository and keeps itself current afterwards. Each installer sets a disk
+            budget, starts the cache and opens the app, so there is no second step.
           </p>
 
           <div class="install-grid">
             <article class="install-card rv">
               <span class="card-step">Debian and Ubuntu</span>
-              <h3>Two packages, one command</h3>
+              <h3>Install it by name</h3>
               <div class="term term-multi">
-                <code class="term-cmd">sudo apt install ./pkgcache-desktop_*_amd64.deb ./pkgcache_*_amd64.deb</code>
+                <code class="term-cmd">curl -fsSL https://aabdlwahab.github.io/PKGCache/apt/pkgcache-archive-keyring.asc \
+  | sudo tee /usr/share/keyrings/pkgcache-archive-keyring.asc &gt;/dev/null
+sudo tee /etc/apt/sources.list.d/pkgcache.sources &gt;/dev/null &lt;&lt;'EOF'
+Types: deb
+URIs: https://aabdlwahab.github.io/PKGCache/apt
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/pkgcache-archive-keyring.asc
+EOF
+sudo apt update &amp;&amp; sudo apt install pkgcache-desktop</code>
                 <button class="cp" type="button">copy</button>
               </div>
               <p class="fp-note">
-                Naming the desktop package pulls the daemon in with it. On a server, install
+                One paste, once — a signed repository, so there is nothing to download and
+                <code>apt upgrade</code> keeps the machine current afterwards. Naming the
+                desktop package pulls the daemon in with it; on a server install
                 <code>pkgcache</code> alone — no graphics stack.
               </p>
             </article>
@@ -167,6 +179,8 @@
             with <code>sha256sum --ignore-missing -c SHA256SUMS</code>, or
             <code>shasum -a 256 --ignore-missing -c SHA256SUMS</code> on macOS — worth the ten
             seconds on an unsigned build, where nothing else vouches for the bytes.
+            The apt repository needs none of this: apt checks the repository's signature on
+            every fetch and refuses anything that does not match it.
           </div>
 
           <div class="info-strip rv">
