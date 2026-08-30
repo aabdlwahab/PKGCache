@@ -39,6 +39,11 @@ sudo apt install pkgcache-desktop    # a laptop: daemon, CLI, docker shim and th
 sudo apt install pkgcache            # a server or CI runner: no desktop graphics stack
 ```
 
+`pkgcache` itself is a static binary and runs on any of them. `pkgcache-desktop` adds the
+app, which links GTK and needs **Ubuntu 24.04 or newer**; on 22.04 apt will tell you the
+GTK it needs is not there, and `sudo apt install pkgcache` gives you everything except the
+window.
+
 The key that signs it has fingerprint
 `1ECAC3BB65F1568F0F4F063E1C5782827618C926`;
 `gpg --show-keys /usr/share/keyrings/pkgcache-archive-keyring.asc` prints what your

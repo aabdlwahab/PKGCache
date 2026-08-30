@@ -25,8 +25,9 @@
 #                   which is what a host with no GUI toolchain can honestly produce.
 #   PKGCACHE_ICON   the icon, an SVG. Defaults to assets/logo.svg beside this repo.
 #   PKGCACHE_GUI_DEPENDS
-#                   what the app links against. Defaults to the GTK4 stack Wails prefers;
-#                   set it to "libgtk-3-0, libwebkit2gtk-4.1-0" for a -tags gtk3 build.
+#                   what the app links against, with the versions it links against.
+#                   Defaults to the GTK4 stack Wails prefers; set it to
+#                   "libgtk-3-0, libwebkit2gtk-4.1-0" for a -tags gtk3 build.
 #   PKGCACHE_LIMIT_DEFAULT
 #                   the disk budget the daemon package sets for the installing user when
 #                   that user has none. Defaults to "none" — no cap, with the free-space
@@ -42,7 +43,20 @@ OUT="${4:-.}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="${PKGCACHE_APP:-}"
 ICON="${PKGCACHE_ICON:-$HERE/../../assets/logo.svg}"
-GUI_DEPENDS="${PKGCACHE_GUI_DEPENDS:-libgtk-4-1, libwebkitgtk-6.0-4}"
+# The version floors are the whole point of this line, and leaving them off produced a
+# package that installed cleanly on Ubuntu 22.04 and then died the moment it was run.
+#
+# 22.04 has both of the bare names: libgtk-4-1 is 4.6.9, and libwebkitgtk-6.0-4 arrived
+# there as a backport. So apt resolved the dependencies, reported success, and handed the
+# user a binary the dynamic linker could not finish loading — seventeen undefined symbols,
+# because the app is built on 24.04 against GTK 4.14 and calls into APIs that do not exist
+# in 4.6: the whole GtkFileDialog family (4.10), gtk_css_provider_load_from_string (4.12),
+# gdk_monitor_get_scale (4.14), and g_idle_add_once from GLib 2.74 against 22.04's 2.72.
+#
+# An unsatisfiable dependency is the honest answer: apt says what is missing and installs
+# nothing, instead of a crash with no explanation attached to it. The floors are the
+# versions 24.04 ships, which is what the binary is actually built and tested against.
+GUI_DEPENDS="${PKGCACHE_GUI_DEPENDS:-libgtk-4-1 (>= 4.14), libglib2.0-0 (>= 2.74), libwebkitgtk-6.0-4}"
 LIMIT_DEFAULT="${PKGCACHE_LIMIT_DEFAULT:-none}"
 LICENSE="$HERE/../../LICENSE"
 NOTICE="$HERE/../../NOTICE"
