@@ -26,7 +26,7 @@ SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || e
 # The console is checked-in source and is always embedded. There is no build tag,
 # no bundler and no Node: `go build` produces the whole shipped program.
 
-.PHONY: all build release client-build client-release client-install client-publish bridge-release app app-windows shim shim-linux shim-windows shim-darwin pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
+.PHONY: app-gtk3 all build release client-build client-release client-install client-publish bridge-release app app-windows shim shim-linux shim-windows shim-darwin pkgcache-linux pkgcache-windows windows-installer test race lint fmt tidy clean help
 
 all: build
 
@@ -132,8 +132,7 @@ app: ## Build the desktop app for this platform
 	    pkg-config --exists gtk4 webkitgtk-6.0 || { \
 	      echo "the app needs GTK4 and WebKitGTK 6.0:"; \
 	      echo "  sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev"; \
-	      echo "For a GTK3 build instead, add -tags gtk3 and install"; \
-	      echo "  libgtk-3-dev libwebkit2gtk-4.1-dev"; \
+	      echo "For the 22.04 build instead, run: make app-gtk3"; \
 	      exit 1; }; \
 	    cd cmd/pkgcache-app && go build -trimpath -ldflags '-s -w $(LDFLAGS)' \
 	      -o ../../bin/pkgcache-app-linux-$(GOARCH) . ;; \
@@ -144,6 +143,32 @@ app: ## Build the desktop app for this platform
 	      -o ../../bin/pkgcache-app-darwin-$(GOARCH) . ;; \
 	  *) echo "build the app on the platform it is for; see docs/client-app-plan.md"; \
 	     exit 1 ;; \
+	esac
+
+# The same app for Ubuntu 22.04, which cannot run the one above.
+#
+# 22.04 has GTK 4.6 and the GTK4 build is compiled against 4.14, so it installs there and
+# then will not start: eighteen symbols the older GTK does not define. Wails keeps a GTK3
+# backend for exactly this, and against 22.04's GTK 3.24 and webkit2gtk-4.1 the resulting
+# binary resolves every symbol it needs.
+#
+# Built on the old release rather than the new one, and that is the whole point: linking
+# against 24.04's GTK3 would reintroduce the same version skew one toolkit down. CI runs
+# this on an ubuntu-22.04 runner.
+#
+# The name carries the toolkit because both binaries exist at once — `make deb` packages
+# them as pkgcache-desktop-gtk4 and pkgcache-desktop-gtk3, and apt picks between them.
+app-gtk3: ## Build the desktop app against GTK3, for Ubuntu 22.04
+	@case "$$(uname)" in \
+	  Linux) \
+	    pkg-config --exists gtk+-3.0 webkit2gtk-4.1 || { \
+	      echo "the gtk3 app needs GTK3 and webkit2gtk 4.1:"; \
+	      echo "  sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev"; \
+	      exit 1; }; \
+	    cd cmd/pkgcache-app && go build -trimpath -tags gtk3 \
+	      -ldflags '-s -w $(LDFLAGS)' \
+	      -o ../../bin/pkgcache-app-gtk3-linux-$(GOARCH) . ;; \
+	  *) echo "the gtk3 build is for Linux only"; exit 1 ;; \
 	esac
 
 # Windows cross-compiles, and this is the one platform where it can.
@@ -263,7 +288,7 @@ windows-installer: pkgcache-windows app-windows shim-windows ## Build the Window
 	mv ../packaging/windows/pkgcache-*-setup.exe bin/
 	@echo "built bin/pkgcache-$(VERSION)-setup.exe"
 
-deb: pkgcache-linux shim-linux ## Build Debian packages (pkgcache and pkgcache-desktop) for amd64 and arm64
+deb: pkgcache-linux shim-linux ## Build Debian packages (daemon, and both app toolkits) for amd64 and arm64
 	@for arch in amd64 arm64; do \
 		app="bin/pkgcache-app-linux-$$arch"; \
 		if test -f "$$app"; then \
@@ -273,12 +298,21 @@ deb: pkgcache-linux shim-linux ## Build Debian packages (pkgcache and pkgcache-d
 			echo "note: no $$app, so only the daemon package for $$arch"; \
 			app=""; \
 		fi; \
+		gtk3="bin/pkgcache-app-gtk3-linux-$$arch"; \
+		if test -f "$$gtk3"; then \
+			echo "note: packaging the 22.04 app from $$gtk3"; \
+		else \
+			echo "note: no $$gtk3, so this build gives Ubuntu 22.04 no app"; \
+			echo "      run \`make app-gtk3\` on a 22.04 host to produce one"; \
+			gtk3=""; \
+		fi; \
 		shim="bin/pkgcache-docker-linux-$$arch"; \
 		if test ! -f "$$shim"; then \
 			echo "note: no $$shim, so the package has no docker shim"; \
 			shim=""; \
 		fi; \
-		PKGCACHE_APP="$$app" PKGCACHE_SHIM="$$shim" sh ../packaging/deb/build.sh \
+		PKGCACHE_APP="$$app" PKGCACHE_APP_GTK3="$$gtk3" PKGCACHE_SHIM="$$shim" \
+			sh ../packaging/deb/build.sh \
 			"bin/pkgcache-linux-$$arch" "$$arch" "$(VERSION)" bin; \
 	done
 

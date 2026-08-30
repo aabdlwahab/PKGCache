@@ -6,28 +6,59 @@
 # machine that already cross-compiles every other target, rather than requiring a Debian
 # host to package a static binary that has no Debian dependencies anyway.
 #
-# Two packages, not one, and the reason is the app:
+# Four packages, and the reason for each split is different:
 #
-#   pkgcache          the daemon and the CLI. One static binary, no dependencies, and the
-#                     only thing a CI runner, a build box or a container should install.
-#   pkgcache-desktop  the app, its icon, its launcher entry and its login item. Needs GTK
-#                     and a WebKit, which is a desktop graphics stack no headless machine
-#                     should be made to carry.
+#   pkgcache               the daemon and the CLI. One static binary, no dependencies, and
+#                          the only thing a CI runner, a build box or a container should
+#                          install.
+#   pkgcache-desktop       a metapackage. Depends on one of the two below, whichever this
+#                          release can actually run, and carries nothing itself.
+#   pkgcache-desktop-gtk4  the app against GTK4 and WebKitGTK 6.0, which is what Wails
+#                          prefers and what Ubuntu 24.04 and newer have.
+#   pkgcache-desktop-gtk3  the same app against GTK3 and webkit2gtk-4.1, which is what
+#                          Ubuntu 22.04 has.
 #
-# Split so that `apt install pkgcache-desktop` pulls both — one command on a laptop — while
-# `apt install pkgcache` stays the small thing a server wants. That only works from a
-# repository, which is what `pkgreg publish-apt` serves.
+# The first split is the graphics stack: `apt install pkgcache-desktop` pulls the app and
+# the daemon — one command on a laptop — while `apt install pkgcache` stays the small thing
+# a server wants, with no GTK anywhere near it.
+#
+# The second split is the toolkit, and it exists because one binary cannot serve both
+# releases. The app is built against GTK 4.14; 22.04 has 4.6, and the symbols the newer one
+# provides are simply not there. Publishing only the GTK4 build meant 22.04 installed it and
+# then could not start it.
+#
+# The metapackage is what keeps that invisible. Its dependency is an alternative —
+#
+#   Depends: pkgcache-desktop-gtk4 (= V) | pkgcache-desktop-gtk3 (= V)
+#
+# — and apt takes the first alternative it can satisfy: GTK4 on 24.04, and on 22.04, where
+# that one is unsatisfiable, the GTK3 build instead. Nobody has to know which toolkit their
+# release has, the install instructions say `pkgcache-desktop` everywhere as they always
+# did, and a 22.04 machine that had the old broken package upgrades straight into a working
+# one.
+#
+# The two builds own the same paths, so each Conflicts with the other and only one is ever
+# installed. Both Replace the pre-split pkgcache-desktop, which owned those paths itself.
+#
+# All of this only works from a repository, which is what `pkgreg publish-apt` serves.
 #
 # usage: build.sh <daemon-binary> <arch> <version> [outdir]
 #
 # environment:
-#   PKGCACHE_APP    the desktop app binary. Without it only the daemon package is built,
+#   PKGCACHE_APP    the GTK4 app binary. Without it only the daemon package is built,
 #                   which is what a host with no GUI toolchain can honestly produce.
+#   PKGCACHE_APP_GTK3
+#                   the GTK3 app binary, from a `-tags gtk3` build. Optional: without it
+#                   the gtk4 package and the metapackage are still built, and the
+#                   metapackage's alternative simply has one branch that no repository
+#                   carries — which resolves fine on 24.04 and leaves 22.04 exactly where
+#                   it was. Supplying it is what makes 22.04 work.
 #   PKGCACHE_ICON   the icon, an SVG. Defaults to assets/logo.svg beside this repo.
 #   PKGCACHE_GUI_DEPENDS
-#                   what the app links against, with the versions it links against.
-#                   Defaults to the GTK4 stack Wails prefers; set it to
-#                   "libgtk-3-0, libwebkit2gtk-4.1-0" for a -tags gtk3 build.
+#                   what the GTK4 build links against, with the versions it links against.
+#   PKGCACHE_GUI_DEPENDS_GTK3
+#                   the same for the GTK3 build. Both default to the stack their toolkit
+#                   needs and neither normally wants setting.
 #   PKGCACHE_LIMIT_DEFAULT
 #                   the disk budget the daemon package sets for the installing user when
 #                   that user has none. Defaults to "none" — no cap, with the free-space
@@ -42,13 +73,14 @@ OUT="${4:-.}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP="${PKGCACHE_APP:-}"
+APP_GTK3="${PKGCACHE_APP_GTK3:-}"
 ICON="${PKGCACHE_ICON:-$HERE/../../assets/logo.svg}"
 # The version floors are the whole point of this line, and leaving them off produced a
 # package that installed cleanly on Ubuntu 22.04 and then died the moment it was run.
 #
 # 22.04 has both of the bare names: libgtk-4-1 is 4.6.9, and libwebkitgtk-6.0-4 arrived
 # there as a backport. So apt resolved the dependencies, reported success, and handed the
-# user a binary the dynamic linker could not finish loading — seventeen undefined symbols,
+# user a binary the dynamic linker could not finish loading — eighteen undefined symbols,
 # because the app is built on 24.04 against GTK 4.14 and calls into APIs that do not exist
 # in 4.6: the whole GtkFileDialog family (4.10), gtk_css_provider_load_from_string (4.12),
 # gdk_monitor_get_scale (4.14), and g_idle_add_once from GLib 2.74 against 22.04's 2.72.
@@ -56,7 +88,16 @@ ICON="${PKGCACHE_ICON:-$HERE/../../assets/logo.svg}"
 # An unsatisfiable dependency is the honest answer: apt says what is missing and installs
 # nothing, instead of a crash with no explanation attached to it. The floors are the
 # versions 24.04 ships, which is what the binary is actually built and tested against.
+#
+# They are also what makes the metapackage's alternative decide correctly. apt takes the
+# first branch it can satisfy, so these floors are the whole mechanism by which a 22.04
+# machine passes over the GTK4 build and lands on the GTK3 one.
 GUI_DEPENDS="${PKGCACHE_GUI_DEPENDS:-libgtk-4-1 (>= 4.14), libglib2.0-0 (>= 2.74), libwebkitgtk-6.0-4}"
+# No floors here, and that is not an oversight. This build exists for the older release, so
+# the useful constraint is the opposite one — it must stay installable on 22.04, whose GTK3
+# is 3.24.33 and whose webkit2gtk-4.1 is present. Both are old enough that a floor naming
+# what the binary uses would exclude nothing.
+GUI_DEPENDS_GTK3="${PKGCACHE_GUI_DEPENDS_GTK3:-libgtk-3-0, libwebkit2gtk-4.1-0}"
 LIMIT_DEFAULT="${PKGCACHE_LIMIT_DEFAULT:-none}"
 LICENSE="$HERE/../../LICENSE"
 NOTICE="$HERE/../../NOTICE"
@@ -277,19 +318,37 @@ chmod 0755 "$CTRL/postinst"
 # to remove: installing is the install.
 assemble pkgcache "$ROOT" "$CTRL"
 
-# ---- pkgcache-desktop: the app ---------------------------------------------------
+# ---- pkgcache-desktop-gtk4 / -gtk3: the app ---------------------------------------
 if [ -z "$APP" ]; then
 	echo "note: PKGCACHE_APP is unset, so only the daemon package was built." >&2
 	exit 0
 fi
 [ -f "$ICON" ] || { echo "no such icon: $ICON" >&2; exit 1; }
 
-ROOT="$WORK/root-desktop"
-CTRL="$WORK/ctrl-desktop"
-mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/etc/xdg/autostart" \
-	"$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/usr/share/doc/pkgcache-desktop" "$CTRL"
+# One function, called once per toolkit. The two packages differ in exactly three things —
+# their name, their binary and what they link against — and everything else about them is
+# the same icon, the same launcher entry, the same login item and the same maintainer
+# scripts. Writing that twice is how the two would quietly drift apart.
+#
+#   $1  toolkit: gtk4 or gtk3
+#   $2  the app binary
+#   $3  the Depends clause for its graphics stack
+desktop_package() {
+	toolkit="$1"
+	app_binary="$2"
+	gui_depends="$3"
+	pkg="pkgcache-desktop-$toolkit"
+	case "$toolkit" in
+	gtk4) other="pkgcache-desktop-gtk3"; stack="GTK4 and WebKitGTK 6.0" ;;
+	gtk3) other="pkgcache-desktop-gtk4"; stack="GTK3 and webkit2gtk-4.1" ;;
+	esac
 
-install -m 0755 "$APP" "$ROOT/usr/bin/pkgcache-app"
+	ROOT="$WORK/root-$toolkit"
+	CTRL="$WORK/ctrl-$toolkit"
+	mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/etc/xdg/autostart" \
+		"$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/usr/share/doc/$pkg" "$CTRL"
+
+	install -m 0755 "$app_binary" "$ROOT/usr/bin/pkgcache-app"
 # Scalable, so one file covers every panel size and no rasteriser is needed at build
 # time. Its absence is why the launcher entry has shown a blank square until now: the
 # old package shipped a .desktop naming an icon it never installed.
@@ -359,12 +418,20 @@ AUTOSTART
 # what conffiles is for: dpkg then asks before replacing an edited copy on upgrade.
 echo "/etc/xdg/autostart/pkgcache.desktop" > "$CTRL/conffiles"
 
-write_copyright "$ROOT/usr/share/doc/pkgcache-desktop/copyright"
-install -m 0644 "$NOTICE" "$ROOT/usr/share/doc/pkgcache-desktop/NOTICE"
-printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/pkgcache-desktop/changelog.Debian.gz"
+write_copyright "$ROOT/usr/share/doc/$pkg/copyright"
+install -m 0644 "$NOTICE" "$ROOT/usr/share/doc/$pkg/NOTICE"
+printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/$pkg/changelog.Debian.gz"
 
+# Conflicts and Replaces, both naming the other build, because the two own identical
+# paths — /usr/bin/pkgcache-app and one launcher entry. Conflicts is what stops apt from
+# ever choosing both; Replaces is what lets one take those paths over from the other on a
+# machine switching between them, which is what a release upgrade is.
+#
+# The pair also Replaces and Breaks the pre-split pkgcache-desktop, which owned those same
+# paths before it became a metapackage. Without that, dpkg refuses the upgrade with a file
+# conflict against a package that is still installed.
 cat > "$CTRL/control" <<CONTROL
-Package: pkgcache-desktop
+Package: $pkg
 Source: pkgcache
 Version: $DEBVER
 Section: devel
@@ -372,11 +439,19 @@ Priority: optional
 Architecture: $ARCH
 Maintainer: pkgreg <root@localhost>
 Installed-Size: $(du -sk "$ROOT" | cut -f1)
-Depends: pkgcache (= $DEBVER), $GUI_DEPENDS
-Description: Desktop app for pkgcache
+Depends: pkgcache (= $DEBVER), $gui_depends
+Conflicts: $other, pkgcache-desktop (<< $DEBVER)
+Replaces: $other, pkgcache-desktop (<< $DEBVER)
+Breaks: pkgcache-desktop (<< $DEBVER)
+Provides: pkgcache-desktop-app
+Description: Desktop app for pkgcache ($stack)
  A window and a status bar item for the cache pkgcache keeps on this machine: what is
  downloading, how much of the disk budget is used, how much is being served from here,
  and a notification when the cache fills up and stops storing.
+ .
+ This is the build against $stack. It is one of two, and the toolkit is the
+ only difference between them: install pkgcache-desktop instead and apt picks whichever
+ one this release of the distribution can run.
  .
  It depends on the exact same version of pkgcache, because the app talks to the daemon
  over a local API and two halves of one product drifting apart on a machine produces a
@@ -416,5 +491,58 @@ esac
 exit 0
 PRERM
 chmod 0755 "$CTRL/prerm"
+
+assemble "$pkg" "$ROOT" "$CTRL"
+}
+
+desktop_package gtk4 "$APP" "$GUI_DEPENDS"
+if [ -n "$APP_GTK3" ]; then
+	[ -f "$APP_GTK3" ] || { echo "no such gtk3 app binary: $APP_GTK3" >&2; exit 1; }
+	desktop_package gtk3 "$APP_GTK3" "$GUI_DEPENDS_GTK3"
+else
+	echo "note: PKGCACHE_APP_GTK3 is unset, so Ubuntu 22.04 gets no app from this build." >&2
+fi
+
+# ---- pkgcache-desktop: the metapackage --------------------------------------------
+#
+# Carries no program. Its whole content is one dependency line, and that line is the
+# mechanism: apt walks the alternatives left to right and installs the first it can
+# satisfy. On 24.04 that is the GTK4 build. On 22.04 the GTK4 build's floors cannot be
+# met, so apt passes over it and takes the GTK3 one — no user choice, no release
+# detection, and the same `apt install pkgcache-desktop` everywhere.
+#
+# The versions are pinned to this build for the same reason the app pins the daemon: a
+# metapackage that would accept an older app is a machine where `apt upgrade` can leave
+# two halves of one product at different versions.
+#
+# Architecture is the build's own rather than `all`, because the packages it depends on
+# are architecture-specific and this repository publishes one set of files per arch.
+ROOT="$WORK/root-meta"
+CTRL="$WORK/ctrl-meta"
+mkdir -p "$ROOT/usr/share/doc/pkgcache-desktop" "$CTRL"
+
+write_copyright "$ROOT/usr/share/doc/pkgcache-desktop/copyright"
+install -m 0644 "$NOTICE" "$ROOT/usr/share/doc/pkgcache-desktop/NOTICE"
+printf "$CHANGELOG" | gzip -9n > "$ROOT/usr/share/doc/pkgcache-desktop/changelog.Debian.gz"
+
+cat > "$CTRL/control" <<CONTROL
+Package: pkgcache-desktop
+Source: pkgcache
+Version: $DEBVER
+Section: devel
+Priority: optional
+Architecture: $ARCH
+Maintainer: pkgreg <root@localhost>
+Installed-Size: $(du -sk "$ROOT" | cut -f1)
+Depends: pkgcache-desktop-gtk4 (= $DEBVER) | pkgcache-desktop-gtk3 (= $DEBVER)
+Description: Desktop app for pkgcache
+ A window and a status bar item for the cache pkgcache keeps on this machine: what is
+ downloading, how much of the disk budget is used, how much is being served from here,
+ and a notification when the cache fills up and stops storing.
+ .
+ This package installs whichever build of the app this release can run: the GTK4 one on
+ Ubuntu 24.04 and newer, and the GTK3 one on 22.04, whose GTK is too old for the other.
+ Installing this rather than either by name is what makes that somebody else's problem.
+CONTROL
 
 assemble pkgcache-desktop "$ROOT" "$CTRL"

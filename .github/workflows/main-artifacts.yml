@@ -108,6 +108,55 @@ jobs:
           path: go/bin/pkgcache-app-linux-${{ matrix.arch }}
           if-no-files-found: error
 
+  # The 22.04 app. See installer-release.yml for why this is a container and not a
+  # 22.04 runner: cgo links against the headers that are present, so the build has to
+  # happen on the old release, and a container pins that without depending on which
+  # hosted images exist this month.
+  linux-app-gtk3:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
+    steps:
+      - name: Install the toolchain and the GTK3 headers
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git build-essential pkg-config \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build the app against GTK3
+        working-directory: go
+        run: make app-gtk3 VERSION=${{ needs.version.outputs.version }}
+      - name: Every symbol must resolve on 22.04
+        working-directory: go
+        run: |
+          missing=$(ldd -r bin/pkgcache-app-gtk3-linux-${{ matrix.arch }} 2>&1 \
+            | grep -c "undefined symbol" || true)
+          echo "unresolved symbols: $missing"
+          if [ "$missing" != "0" ]; then
+            ldd -r bin/pkgcache-app-gtk3-linux-${{ matrix.arch }} 2>&1 \
+              | grep "undefined symbol" | head -20
+            echo "::error::the 22.04 app is missing $missing symbols on 22.04"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-gtk3-${{ matrix.arch }}
+          path: go/bin/pkgcache-app-gtk3-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
   macos-app-amd64:
     needs: version
     # macos-15-intel, not macos-13. The Intel image this job needs was macos-13, which
@@ -140,7 +189,7 @@ jobs:
   # Linux and the three Windows binaries are pure Go, so the setup.exe needs no Windows
   # machine until somebody wants to run it.
   linux:
-    needs: [version, linux-app]
+    needs: [version, linux-app, linux-app-gtk3]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -165,7 +214,7 @@ jobs:
         run: |
           set -euo pipefail
           V=${{ needs.version.outputs.version }}
-          chmod +x bin/pkgcache-app-linux-* || true
+          chmod +x bin/pkgcache-app-linux-* bin/pkgcache-app-gtk3-linux-* || true
           # The .debs, and the Linux/macOS/Windows binaries the other installers and the
           # install scripts are assembled from.
           make deb VERSION="$V"

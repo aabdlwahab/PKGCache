@@ -40,9 +40,9 @@ sudo apt install pkgcache            # a server or CI runner: no desktop graphic
 ```
 
 `pkgcache` itself is a static binary and runs on any of them. `pkgcache-desktop` adds the
-app, which links GTK and needs **Ubuntu 24.04 or newer**; on 22.04 apt will tell you the
-GTK it needs is not there, and `sudo apt install pkgcache` gives you everything except the
-window.
+app, and there are two builds of it — GTK4 for 24.04 and newer, GTK3 for 22.04, whose GTK
+is too old for the other. You never name one: `pkgcache-desktop` depends on whichever your
+release can actually run, and apt picks it.
 
 The key that signs it has fingerprint
 `1ECAC3BB65F1568F0F4F063E1C5782827618C926`;
