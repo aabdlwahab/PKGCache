@@ -136,6 +136,7 @@ checkpoint current again.
 | [Client bridge](docs/client-bridge.md) | reaching the cache from inside a container |
 | [Running and testing](docs/running-and-testing.md) | the test suite and what it covers |
 | [Architecture](docs/go-architecture.md) | the design, in detail |
+| [AGENTS.md](AGENTS.md) | for AI agents and new contributors: the model, the invariants, and adding an ecosystem |
 
 ## Layout
 
@@ -146,6 +147,7 @@ go/          the implementation: both binaries, one module
 packaging/   installers for macOS, Ubuntu and Windows
 docs/        documentation
 examples/    Dockerfiles that build through the cache
+AGENTS.md    the architecture, and how to add an ecosystem
 ```
 
 ## Development
@@ -160,6 +162,12 @@ make lint
 The acceptance tests drive real `pip`, `uv`, `npm` and `docker` clients against a live
 instance, so they need Docker and a Python toolchain. Everything is one Go module:
 `github.com/aabdlwahab/PKGCache`.
+
+Adding an ecosystem — Maven, crates.io, Go modules, NuGet — is one package under
+`go/internal/eco/` and one line in the registry: the router, the API, the console's setup
+instructions, snapshot inclusion and the inventory all derive from the adapter's
+descriptor. [AGENTS.md](AGENTS.md) walks that through end to end, and is the file to hand
+an AI agent before it touches this repo.
 
 ## License
 
