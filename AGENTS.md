@@ -8,9 +8,11 @@ Deeper background lives in [docs/system-overview.md](docs/system-overview.md) (w
 does and why) and [docs/go-architecture.md](docs/go-architecture.md) (the design in
 detail). This file is the operational version of both: what to touch, in what order.
 
-Coding conventions for this project are a separate, enforced document —
-[engineering-conventions/references/guidelines.md](engineering-conventions/references/guidelines.md).
-Read it before any non-trivial code work. Nothing here overrides it.
+This repo has no separate style guide, and does not want one: the six existing
+adapters are the convention. Before writing anything, read the neighbour closest to
+what you are building — [npm.go](go/internal/eco/npm/npm.go) is the shortest complete
+one — and match how it assigns ownership, names things, and explains *why* in comments
+rather than restating *what* the code already says.
 
 ---
 
@@ -361,9 +363,8 @@ make lint
 ```
 
 The acceptance suite drives real clients against a live instance and needs Docker and a
-Python toolchain; see [docs/running-and-testing.md](docs/running-and-testing.md). To
-drive the services by hand outside Docker, the repo ships a `verify` skill at
-[.claude/skills/verify](.claude/skills/verify).
+Python toolchain; [docs/running-and-testing.md](docs/running-and-testing.md) covers what
+it starts, and how to drive the services by hand outside Docker.
 
 Then confirm the descriptor actually propagated — this is the payoff for keeping the
 invariant:
