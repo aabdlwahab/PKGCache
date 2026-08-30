@@ -110,8 +110,71 @@ jobs:
           path: go/bin/pkgcache-app-linux-${{ matrix.arch }}
           if-no-files-found: error
 
+  # The same app for Ubuntu 22.04, which cannot run the one above.
+  #
+  # 22.04 has GTK 4.6; the job above compiles against 24.04's 4.14, and the difference is
+  # eighteen symbols the older GTK does not define. That package installed on 22.04 and
+  # then would not start. Wails keeps a GTK3 backend, and against 22.04's GTK 3.24 and
+  # webkit2gtk-4.1 the binary resolves everything it needs.
+  #
+  # Built inside an ubuntu:22.04 container rather than on a 22.04 runner. cgo links against
+  # whatever headers and libraries are present, so the build has to happen on the old
+  # release or it inherits the same skew one toolkit down — and a container pins that
+  # regardless of which hosted runner images GitHub currently offers, which is not
+  # something a release pipeline should depend on. The host runner still supplies the
+  # architecture, so arm64 is native here exactly as it is above.
+  linux-app-gtk3:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
+    steps:
+      # The container is bare, so everything the hosted image would have provided has to
+      # be installed: git for checkout, and the GTK3 stack the app links against.
+      - name: Install the toolchain and the GTK3 headers
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git build-essential pkg-config \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build the app against GTK3
+        working-directory: go
+        run: make app-gtk3 VERSION=${{ needs.version.outputs.version }}
+      # Verified rather than assumed: the whole point of this job is a binary that starts
+      # on 22.04, and `ldd -r` inside the same container is what says whether it does.
+      # A single undefined symbol here is the bug this job exists to prevent, shipping.
+      - name: Every symbol must resolve on 22.04
+        working-directory: go
+        run: |
+          missing=$(ldd -r bin/pkgcache-app-gtk3-linux-${{ matrix.arch }} 2>&1 \
+            | grep -c "undefined symbol" || true)
+          echo "unresolved symbols: $missing"
+          if [ "$missing" != "0" ]; then
+            ldd -r bin/pkgcache-app-gtk3-linux-${{ matrix.arch }} 2>&1 \
+              | grep "undefined symbol" | head -20
+            echo "::error::the 22.04 app is missing $missing symbols on 22.04"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-linux-gtk3-${{ matrix.arch }}
+          path: go/bin/pkgcache-app-gtk3-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
   linux:
-    needs: [version, linux-app]
+    needs: [version, linux-app, linux-app-gtk3]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -136,7 +199,7 @@ jobs:
         run: |
           set -euo pipefail
           V=${{ needs.version.outputs.version }}
-          chmod +x bin/pkgcache-app-linux-* 2>/dev/null || true
+          chmod +x bin/pkgcache-app-linux-* bin/pkgcache-app-gtk3-linux-* 2>/dev/null || true
           # `make deb` builds pkgcache and the shim for both architectures on its way.
           make deb VERSION="$V"
           # The server, and the bridge. bridge-release builds all five targets; only the
@@ -147,13 +210,18 @@ jobs:
           make bridge-release VERSION="$V"
           install -m 0755 ../packaging/install.sh bin/install.sh
           install -m 0644 ../packaging/install.ps1 bin/install.ps1
-      - name: Require all four packages and every Linux binary
+      # Both app toolkits are required, not just the one this runner could build. A
+      # release missing pkgcache-desktop-gtk3 is one where the metapackage's alternative
+      # has nothing to fall back to and 22.04 silently gets no app again — the failure
+      # this whole arrangement exists to prevent, invisible until somebody on 22.04 runs
+      # apt.
+      - name: Require every package and every Linux binary
         working-directory: go/bin
         shell: bash
         run: |
           set -euo pipefail
           missing=0
-          for name in pkgcache pkgcache-desktop; do
+          for name in pkgcache pkgcache-desktop pkgcache-desktop-gtk4 pkgcache-desktop-gtk3; do
             for arch in amd64 arm64; do
               ls "${name}"_*_"${arch}".deb >/dev/null 2>&1 || {
                 echo "::error::no ${name} package for ${arch}"; missing=1; }
@@ -165,6 +233,10 @@ jobs:
                 echo "::error::no ${name} for linux/${arch}"; missing=1; }
             done
           done
+          for arch in amd64 arm64; do
+            test -f "pkgcache-app-gtk3-linux-${arch}" || {
+              echo "::error::no 22.04 app for linux/${arch}"; missing=1; }
+          done
           [ "$missing" -eq 0 ]
       - uses: actions/attest@v4
         with:
@@ -173,6 +245,7 @@ jobs:
             go/bin/pkgcache-linux-*
             go/bin/pkgcache-docker-linux-*
             go/bin/pkgcache-app-linux-*
+            go/bin/pkgcache-app-gtk3-linux-*
             go/bin/pkgreg-bridge-linux-*
             go/bin/pkgreg-linux-*
       - uses: actions/upload-artifact@v4
@@ -183,6 +256,7 @@ jobs:
             go/bin/pkgcache-linux-*
             go/bin/pkgcache-docker-linux-*
             go/bin/pkgcache-app-linux-*
+            go/bin/pkgcache-app-gtk3-linux-*
             go/bin/pkgreg-bridge-linux-*
             go/bin/pkgreg-linux-*
             go/bin/install.sh

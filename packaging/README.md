@@ -123,12 +123,30 @@ From the public repository, which is what a person should be given:
     EOF
     sudo apt update && sudo apt install pkgcache-desktop
 
-`pkgcache-desktop` needs Ubuntu 24.04 or newer. The app is built against GTK 4.14 and
-GLib 2.74, and 22.04 has 4.6 and 2.72 — the package declares those floors, so apt on an
-older release refuses it by name rather than installing an app that cannot start. The
-daemon package is static and has no such floor: `sudo apt install pkgcache` works
-anywhere. For the app on 22.04, build it with `-tags gtk3` and pass
-`PKGCACHE_GUI_DEPENDS="libgtk-3-0, libwebkit2gtk-4.1-0"`.
+`pkgcache-desktop` is a metapackage, and installing it is the whole interface. There are
+two builds of the app and it depends on whichever this release can run:
+
+    pkgcache-desktop-gtk4    GTK4 and WebKitGTK 6.0     Ubuntu 24.04 and newer
+    pkgcache-desktop-gtk3    GTK3 and webkit2gtk-4.1    Ubuntu 22.04
+
+One binary cannot serve both. The GTK4 build is compiled against GTK 4.14 and 22.04 has
+4.6, so it installs there and then will not start — eighteen symbols the older GTK does
+not define. The GTK4 package therefore declares `libgtk-4-1 (>= 4.14)`, which is what
+makes apt pass over it on 22.04 and take the GTK3 build instead.
+
+So `sudo apt install pkgcache-desktop` is correct on every release and nobody has to know
+which toolkit theirs has. The daemon package is static and has no floor at all:
+`sudo apt install pkgcache` works anywhere.
+
+Building both by hand needs a host of each release, because cgo links against the headers
+that are there:
+
+    make app          # on 24.04 — bin/pkgcache-app-linux-<arch>
+    make app-gtk3     # on 22.04 — bin/pkgcache-app-gtk3-linux-<arch>
+    make deb          # packages whichever of the two it finds
+
+`make deb` with only one of them still produces a working repository; it says which
+release will end up with no app.
 
 Or from files you built yourself:
 
