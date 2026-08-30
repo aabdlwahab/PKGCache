@@ -123,6 +123,13 @@ From the public repository, which is what a person should be given:
     EOF
     sudo apt update && sudo apt install pkgcache-desktop
 
+`pkgcache-desktop` needs Ubuntu 24.04 or newer. The app is built against GTK 4.14 and
+GLib 2.74, and 22.04 has 4.6 and 2.72 — the package declares those floors, so apt on an
+older release refuses it by name rather than installing an app that cannot start. The
+daemon package is static and has no such floor: `sudo apt install pkgcache` works
+anywhere. For the app on 22.04, build it with `-tags gtk3` and pass
+`PKGCACHE_GUI_DEPENDS="libgtk-3-0, libwebkit2gtk-4.1-0"`.
+
 Or from files you built yourself:
 
     make deb                      # from go/
