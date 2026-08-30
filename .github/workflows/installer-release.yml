@@ -145,6 +145,15 @@ jobs:
             ca-certificates git build-essential pkg-config \
             libgtk-3-dev libwebkit2gtk-4.1-dev
       - uses: actions/checkout@v4
+      # actions/checkout marks the workspace safe, but it does that under a HOME it
+      # overrides for the duration of its own step and then discards — so the setting is
+      # gone by the time anything else runs. Outside a container that costs nothing,
+      # because the workspace belongs to the user doing the building. Here the job is root
+      # and the files belong to the runner, so git refuses the repository as dubiously
+      # owned, `go build` cannot stamp a VCS revision, and it fails the build with an
+      # unexplained "exit status 128".
+      - name: Trust the workspace this container did not create
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go/go.mod
