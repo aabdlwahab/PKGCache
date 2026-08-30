@@ -41,6 +41,27 @@ function wordmark() {
 
 /* ---- shell ---------------------------------------------------------------- */
 
+/** Re-arm Wails' WML scan.
+ *
+ * WML binds its listeners once, when the document becomes ready, by querying the DOM for
+ * its attributes — and this window builds its DOM in JS after that moment, so the console
+ * link does not exist yet to be found and would never be bound. Rescanning after a render
+ * is what makes the attribute do anything at all here.
+ *
+ * A no-op in a browser, where there is no wails global and the plain link already works. */
+function rebindWML() {
+  globalThis.wails?.WML?.Reload?.();
+}
+
+/** The console's address, absolute.
+ *
+ * The widget and the console are two paths on one origin — the daemon serves both — so
+ * this is the same URL the app's own "Open the console" resolves to, arrived at from the
+ * page rather than from Go. */
+function consoleURL() {
+  return new URL("/console", location.href).href;
+}
+
 function shell() {
   const projectRegion = region("div", { class: "wg-project" });
   const noticeRegion = region("div", {});
@@ -66,11 +87,23 @@ function shell() {
       wordmark(),
       el("span", { class: "wg-head-spacer" }),
       projectRegion.node,
+      // data-wml-openurl, and not only target=_blank, because this page has two very
+      // different readers. In a browser the attribute means nothing and the link opens a
+      // tab, as it always has. Inside the desktop app the link alone does nothing at all:
+      // a _blank link asks WebKit to create a second web view, Wails' Linux backend
+      // connects no handler for that request — load-changed, permission-request and
+      // script-message-received are the only signals it takes — and so the click is
+      // swallowed in silence. The attribute is Wails' own declarative hook for the case,
+      // and it routes to the same system browser the tray's "Open the console" reaches.
+      //
+      // Absolute, because OpenURL is handed the string as written and a relative path
+      // would not survive the trip out to another process.
       el("a", {
         class: "wg-head-link",
         href: "/console",
         target: "_blank",
         rel: "noopener",
+        "data-wml-openurl": consoleURL(),
         text: "console",
         title: "Open the full console",
       }),
@@ -91,6 +124,7 @@ function shell() {
   );
   root.classList.remove("booting");
   root.classList.add("wg-shell");
+  rebindWML();
   return {
     projectRegion, noticeRegion, stateRegion, diskRegion, figuresRegion, liveRegion,
     footRegion, tabsRegion, panelRegion, live,
@@ -608,9 +642,20 @@ async function boot() {
       el("main", { class: "wg-main" },
         el("div", { class: "wg-state", text: "Sign in required" }),
         el("div", { class: "wg-quiet", text: "This cache asks for an account. Open the console instead." }),
-        el("a", { href: "/console", text: "console" }),
+        // Same reason as the header link, and one more: without this the click would
+        // navigate this window to the console rather than doing nothing, which is worse.
+        // The console is an operator UI with a nav rail and tabs, and this window is
+        // 420 points wide.
+        el("a", {
+          href: "/console",
+          target: "_blank",
+          rel: "noopener",
+          "data-wml-openurl": consoleURL(),
+          text: "console",
+        }),
       ),
     );
+    rebindWML();
     root.classList.remove("booting");
     return;
   }
