@@ -205,7 +205,7 @@ func (s *Service) exportJob(
 	// which is why this is remembered rather than recomputed from the string.
 	defaulted := name == ""
 	if defaulted {
-		name = fmt.Sprintf("pkgreg-%s-%s.tar", record.Project, shortID(pack.Target))
+		name = defaultPackName(record.Project, pack, s.clock())
 	}
 	if filepath.Base(name) != name || !strings.HasSuffix(name, ".tar") {
 		return errors.New("export: file must be a .tar basename")
@@ -213,17 +213,19 @@ func (s *Service) exportJob(
 	finalPath := filepath.Join(outDir, name)
 	if err := os.Link(tempPath, finalPath); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			// A name this job chose encodes the checkpoint it packed, so a file already
-			// there is the pack for this checkpoint — exporting it again asks for
-			// something that exists. Saying "remove or rename it first" about a file
-			// identical to the one being written is a refusal with nothing behind it.
+			// A generated name carries the kind, both checkpoints and the second it was
+			// made in, so a file already at that path is this exact pack, written inside
+			// the same second. Refusing would fail a scripted export loop over a file
+			// identical to the one it was about to write.
 			//
-			// Only for a full pack, and only for a name nobody supplied. The default name
-			// carries the target but not the base, so a delta could collide with a full
-			// pack of the same checkpoint while differing entirely in content; and a name
-			// somebody typed is a place they chose, where being told it is taken is the
-			// answer they want.
-			if defaulted && stringParam(record.Params, "base") == "" {
+			// This used to be narrowed to full packs, because the old name carried the
+			// target and nothing else, so a delta and a full pack of the same checkpoint
+			// were the same name for different content. The name distinguishes them now,
+			// so the narrowing is gone with the ambiguity that forced it.
+			//
+			// A name somebody typed stays a refusal: it is a place they chose, and being
+			// told it is taken is the answer they want.
+			if defaulted {
 				logf(fmt.Sprintf("wrote %s (already exported; %d blobs, %d bytes)",
 					finalPath, pack.Blobs, pack.Bytes))
 				return nil
@@ -423,6 +425,50 @@ func (s *Service) importPath(name string) (string, error) {
 func stringParam(params map[string]any, name string) string {
 	value, _ := params[name].(string)
 	return strings.TrimSpace(value)
+}
+
+// packNameTime is the timestamp in a generated pack name: ISO 8601 basic, UTC.
+//
+// Basic rather than extended because a colon is a path separator on Windows and a
+// separator in half the tools that would carry one of these files. Sorting a directory by
+// name then sorts by project, then kind, then time — the order somebody hunting for "the
+// last full pack of work" reads them in.
+const packNameTime = "20060102T150405Z"
+
+// defaultPackName names a pack after what is in it.
+//
+// The old name was pkgreg-<project>-<target>.tar, which said which checkpoint and nothing
+// else. A full pack and a delta ending at the same checkpoint got the same name for
+// entirely different content, and nothing anywhere recorded when either was made — so a
+// drawer of these files could not be told apart without opening them. The kind is named,
+// the base is named where there is one, and the time is stamped, because none of that is
+// something a person should have to add by hand to a file they are about to carry
+// somewhere and read back weeks later.
+//
+//	pkgreg-work-full-20260906T153045Z-241f47c5ec0f.tar
+//	pkgreg-work-delta-20260906T153045Z-7b69cf291a04-241f47c5ec0f.tar
+//
+// Project names are [a-z0-9._-] and the rest is hex and digits, so the result is always a
+// safe basename; the caller checks that anyway, because a name it did not generate is not
+// covered by that argument.
+func defaultPackName(project string, pack snapshot.Pack, now time.Time) string {
+	kind, ids := "full", shortID(pack.Target)
+	if pack.Base != "" {
+		kind, ids = "delta", shortID(pack.Base)+"-"+shortID(pack.Target)
+	}
+	return fmt.Sprintf("pkgreg-%s-%s-%s-%s.tar",
+		project, kind, now.UTC().Format(packNameTime), ids)
+}
+
+// clock reads the service's time source without installing one.
+//
+// checkpointJob sets s.Now when it finds it nil, which is fine there and would be a data
+// race here: exports and checkpoints run as separate jobs.
+func (s *Service) clock() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 func shortID(id string) string {

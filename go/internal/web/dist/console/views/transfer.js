@@ -92,8 +92,9 @@ function renderActions() {
     // this asked for one, so every export here has quietly been named by the server
     // instead. A browser cannot move a file off the machine anyway; naming it is the
     // most this form can honestly offer.
-    field("File name", input("file", { placeholder: "leave empty to name it after the checkpoint" }),
-      "written into shuttle/out on the server, not to this machine"),
+    field("File name", input("file", { placeholder: "leave empty for the standard name" }),
+      "written into shuttle/out on the server, not to this machine — " +
+        "named pkgreg-<project>-full-<time>-<checkpoint>.tar unless you say otherwise"),
     field("Since checkpoint", input("base", { placeholder: "leave empty for a full pack" }),
       "a delta pack carries only what changed"),
     el("button", { class: "btn", type: "submit", text: "Export pack" }),

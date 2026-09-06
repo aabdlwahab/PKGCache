@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +80,35 @@ func TestRepeatedDefaultExportSucceedsAndAddsNoCheckpoint(t *testing.T) {
 		t.Fatalf("exporting created %d checkpoint(s); it must create none",
 			len(after)-len(before))
 	}
+
+	// And every pack it wrote is named by the convention, through the real job rather
+	// than the naming function on its own.
+	entries, err := os.ReadDir(
+		filepath.Join(instance.Config.Current().DataDir, "shuttle", "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs := 0
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".tar") {
+			continue
+		}
+		packs++
+		if !packNamePattern.MatchString(entry.Name()) {
+			t.Fatalf("pack %q does not follow the naming convention", entry.Name())
+		}
+	}
+	if packs == 0 {
+		t.Fatal("three exports wrote no pack")
+	}
 }
+
+// pkgreg-<project>-<full|delta>-<timestamp>-<ids>.tar
+var packNamePattern = regexp.MustCompile(
+	`^pkgreg-[a-z0-9._-]+-` +
+		`(full-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}` +
+		`|delta-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}-[0-9a-f]{12})` +
+		`\.tar$`)
 
 // The escape hatch stays shut. A name somebody typed is a place they chose, and being
 // told it is taken is the answer they want — the silence is only for a name this job

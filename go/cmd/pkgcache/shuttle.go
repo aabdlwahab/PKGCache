@@ -130,6 +130,14 @@ instead and takes no new one.
 receiving it can say which checkpoint it is on, so there is no default. A pack whose base
 the far side does not have is refused there, not merely slower.
 
+Without -file a pack names itself, so a drawer of them can be told apart without being
+opened:
+
+  pkgreg-work-full-20260906T153045Z-241f47c5ec0f.tar
+  pkgreg-work-delta-20260906T153045Z-7b69cf291a04-241f47c5ec0f.tar
+
+The time is UTC, and it sorts.
+
 flags:
 `, func(fs *flag.FlagSet) {
 			fs.StringVar(&file, "file", "",
