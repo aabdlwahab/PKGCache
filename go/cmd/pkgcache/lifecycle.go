@@ -178,6 +178,15 @@ func reportTiers(ctx context.Context, dataDir, project string) error {
 	} else {
 		fmt.Printf("team       %s  UNREACHABLE\n", team.Server)
 	}
+	// Which project on the far side, because it need not be this one's name and nothing
+	// else ever says: a laptop working in "work" can be pointed at the team's "research",
+	// and the only visible consequence of getting it wrong is a cache that fetches
+	// everything from upstream while appearing to be configured.
+	far := team.Project
+	if far == "" {
+		far = "global"
+	}
+	fmt.Printf("their      %s (project on the team's side)\n", far)
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {
