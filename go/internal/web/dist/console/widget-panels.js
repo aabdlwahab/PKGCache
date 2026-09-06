@@ -213,10 +213,35 @@ export function transferPanel({ notice, reload, settle }) {
 
   async function exportPack() {
     await guard(async () => {
-      await settle(await api.checkpoint(store.state.project, "widget export"));
+      // Reads the head; it does not make one. This used to take a checkpoint before every
+      // export, which guaranteed there was something to export and that it was current —
+      // and left a row labelled "widget export" behind every single time, identical in
+      // content to the checkpoint before it and distinguishable only by the timestamp
+      // baked into its manifest, which is what gives two identical checkpoints two ids.
+      // A list of checkpoints somebody chose is worth reading; one mostly composed of
+      // exports is not, and exporting is a read that has no business writing history.
+      //
+      // Read fresh rather than trusted from the last refresh, because the answer decides
+      // whether a job is submitted at all.
+      const answer = await api.snapshots(store.state.project);
+      const target = answer.head ?? "";
+      if (!target) {
+        // Reachable now, and it was not before — the checkpoint above always made one.
+        // The server's own words for this are "project has no checkpoint to export",
+        // which is true and does not say what to do about it.
+        throw new Error(
+          "No checkpoint to export. Take one first: a pack is built from a checkpoint " +
+            "and carries what that checkpoint captured.",
+        );
+      }
       const job = await settle(await api.exportPack(store.state.project, {}));
       const wrote = /wrote (\S+)/.exec(job.log ?? "");
-      return wrote ? ["The pack is at ", el("code", { text: wrote[1] })] : "Pack written.";
+      // Names the checkpoint it packed. What a pack contains is now a question with an
+      // answer the person can check, rather than "everything, probably".
+      const from = `, from checkpoint ${target.slice(0, 12)}`;
+      return wrote
+        ? ["The pack is at ", el("code", { text: wrote[1] }), from]
+        : `Pack written${from}.`;
     });
   }
 
@@ -254,7 +279,7 @@ export function transferPanel({ notice, reload, settle }) {
       ),
       el("div", {
         class: "wg-panel-note",
-        text: "A pack is applied as it is read, and refused unless it continues from this project's checkpoint — so importing one cannot lose what is here.",
+        text: "A pack carries the latest checkpoint, so take one to include what has been cached since the last. It is applied as it is read, and refused unless it continues from this project's checkpoint — so importing one cannot lose what is here.",
       }),
     ),
     refresh,

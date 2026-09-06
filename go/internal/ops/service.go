@@ -201,7 +201,10 @@ func (s *Service) exportJob(
 		return err
 	}
 	name := stringParam(record.Params, "file")
-	if name == "" {
+	// Whether the name was chosen here decides what an existing file at that path means,
+	// which is why this is remembered rather than recomputed from the string.
+	defaulted := name == ""
+	if defaulted {
 		name = fmt.Sprintf("pkgreg-%s-%s.tar", record.Project, shortID(pack.Target))
 	}
 	if filepath.Base(name) != name || !strings.HasSuffix(name, ".tar") {
@@ -210,6 +213,21 @@ func (s *Service) exportJob(
 	finalPath := filepath.Join(outDir, name)
 	if err := os.Link(tempPath, finalPath); err != nil {
 		if errors.Is(err, os.ErrExist) {
+			// A name this job chose encodes the checkpoint it packed, so a file already
+			// there is the pack for this checkpoint — exporting it again asks for
+			// something that exists. Saying "remove or rename it first" about a file
+			// identical to the one being written is a refusal with nothing behind it.
+			//
+			// Only for a full pack, and only for a name nobody supplied. The default name
+			// carries the target but not the base, so a delta could collide with a full
+			// pack of the same checkpoint while differing entirely in content; and a name
+			// somebody typed is a place they chose, where being told it is taken is the
+			// answer they want.
+			if defaulted && stringParam(record.Params, "base") == "" {
+				logf(fmt.Sprintf("wrote %s (already exported; %d blobs, %d bytes)",
+					finalPath, pack.Blobs, pack.Bytes))
+				return nil
+			}
 			return fmt.Errorf("export: %s already exists; remove or rename it first", finalPath)
 		}
 		return fmt.Errorf("export: publish pack: %w", err)
