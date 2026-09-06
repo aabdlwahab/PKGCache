@@ -15,6 +15,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 // Prefixes namespace each program's own variables. A session always clears both, so a
@@ -92,7 +94,12 @@ func Environment(base []string, o Options) []string {
 		{prefix + "DOCKER_REGISTRY", o.DockerRegistry},
 		{prefix + "GIT_URL", projectBase + "/git"},
 		{prefix + "FILES_URL", projectBase + "/files/"},
-		{prefix + "APT_PROXY", o.AptProxy},
+		// Scoped like the index URLs beside it. apt and apk read no index variable, so
+		// the project has nowhere to go but the proxy username; without it every
+		// apt-get in a pkgcache shell filled the global project while pip and npm two
+		// lines below filled the right one. ProxyURLFor is idempotent, so a build run
+		// inside this shell reading the variable back does not scope it twice.
+		{prefix + "APT_PROXY", router.ProxyURLFor(o.AptProxy, o.Project)},
 		{"PIP_INDEX_URL", projectBase + "/pypi/root/pypi/+simple/"},
 		{"UV_DEFAULT_INDEX", projectBase + "/pypi/root/pypi/+simple/"},
 		{"NPM_CONFIG_REGISTRY", projectBase + "/npm/"},

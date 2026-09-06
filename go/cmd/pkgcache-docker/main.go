@@ -134,7 +134,7 @@ func run(ctx context.Context, args []string) int {
 	case "build":
 		return runBuild(ctx, snapshot, state, docker, args, gateway)
 	default:
-		return runPull(ctx, registry, docker, args)
+		return runPull(ctx, registry, local.CurrentProject(snapshot.DataDir), docker, args)
 	}
 }
 
@@ -189,7 +189,7 @@ func runBuild(
 }
 
 // runPull fetches each image through the cache, leaving docker's own flags alone.
-func runPull(ctx context.Context, registry, docker string, args []string) int {
+func runPull(ctx context.Context, registry, project, docker string, args []string) int {
 	rest := without(args, "pull")
 	var images, flags []string
 	for _, argument := range rest {
@@ -209,7 +209,7 @@ func runPull(ctx context.Context, registry, docker string, args []string) int {
 		return passthrough(ctx, docker, args)
 	}
 	if err := clientbuild.Pull(ctx, images[0], clientbuild.PullOptions{
-		Registry: registry, Docker: docker, Notes: os.Stderr,
+		Registry: registry, Project: project, Docker: docker, Notes: os.Stderr,
 	}); err != nil {
 		return fail(err)
 	}

@@ -23,6 +23,14 @@ import (
 type PullOptions struct {
 	// Registry is the cache's authority — host:port — that images are fetched through.
 	Registry string
+	// Project scopes the pull, riding the image name the way it does in a build. Empty
+	// means the global project.
+	//
+	// It was missing entirely, so `pkgcache-docker pull` filled the global project no
+	// matter which one the machine was working in — the one path where an image arrives
+	// by hand rather than through a Dockerfile, and so the one most likely to be somebody
+	// checking whether projects work at all.
+	Project string
 	// Keep leaves the cache-addressed tag in place beside the original name.
 	Keep bool
 	// Docker is the container command to drive. Empty means "docker".
@@ -38,7 +46,7 @@ type PullOptions struct {
 // An image from a registry the cache does not serve is pulled directly and said so:
 // somebody expecting the cache to be involved should not be quietly sent to the internet.
 func Pull(ctx context.Context, image string, o PullOptions) error {
-	mapped := dockerfile.MapImage(image, o.Registry)
+	mapped := dockerfile.MapImage(image, o.Registry, o.Project)
 	if mapped == "" {
 		if o.Notes != nil {
 			_, _ = fmt.Fprintf(o.Notes,

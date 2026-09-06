@@ -38,6 +38,8 @@ func runPull(ctx context.Context, args []string) error {
 	keep := fs.Bool("keep-cache-tag", false,
 		"leave the cache-addressed tag in place as well as the original name")
 	dryRun := fs.Bool("print", false, "print what would be pulled, and pull nothing")
+	project := fs.String("project", "",
+		"pull into this project instead of the one this cache is working in")
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(fs.Output(), `pkgcache pull — docker pull through the cache
 
@@ -97,9 +99,17 @@ flags:
 		}
 	}
 
+	// The project rides the image name, so a pull that did not resolve one filled the
+	// global project whatever `pkgcache project use` said. Resolved here rather than left
+	// to FromEnvironment, which knows the environment but not the stored choice — the
+	// same reasoning as build.
+	scope := *project
+	if scope == "" {
+		scope = local.CurrentProject(snap.DataDir)
+	}
 	for _, image := range fs.Args() {
 		if *dryRun {
-			mapped := dockerfile.MapImage(image, registry)
+			mapped := dockerfile.MapImage(image, registry, scope)
 			if mapped == "" {
 				fmt.Fprintf(os.Stderr,
 					"pkgcache: %s is not served by this cache; pulling it directly\n", image)
@@ -109,7 +119,7 @@ flags:
 			continue
 		}
 		if err := clientbuild.Pull(ctx, image, clientbuild.PullOptions{
-			Registry: registry, Keep: *keep, Notes: os.Stderr,
+			Registry: registry, Project: scope, Keep: *keep, Notes: os.Stderr,
 		}); err != nil {
 			return err
 		}

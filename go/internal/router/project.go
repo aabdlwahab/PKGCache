@@ -125,6 +125,44 @@ func ResolveProxy(r *http.Request, ecoID string, knownProject KnownProject) Targ
 	}
 }
 
+// ProxyURLFor points a forward-proxy address at one project.
+//
+// The project rides the username, which is the only place a forward proxy has to put it:
+// the URL belongs to the upstream being fetched, so nothing in the request line can say
+// which tenant asked. ResolveProxy reads it back out.
+//
+// Idempotent, and it has to be: a shell exports PKGCACHE_APT_PROXY already scoped, and
+// `pkgcache build` running inside that shell reads the variable back and would otherwise
+// scope it twice. A URL that already names a user is returned untouched.
+//
+// The global project is the absence of a label rather than the name of one — ResolveProxy
+// ignores a username of "global" — so it is left alone too.
+func ProxyURLFor(proxy, project string) string {
+	if proxy == "" || project == "" || project == GlobalProject {
+		return proxy
+	}
+	scheme, rest, ok := strings.Cut(proxy, "://")
+	if !ok || strings.Contains(rest, "@") {
+		return proxy
+	}
+	return scheme + "://" + project + "@" + rest
+}
+
+// OCIProjectPrefix is the path segment a docker pull carries to name its project.
+//
+// Empty for the global project, because ResolveOCI reads a leading "global" as part of
+// the image name rather than as a tenant — a prefix there would ask for a repository
+// nobody has.
+//
+// Docker cannot be given a base path, so this goes into the image name itself:
+// <registry>/<project>/dockerhub/library/alpine. See ResolveOCI, which takes it apart.
+func OCIProjectPrefix(project string) string {
+	if project == "" || project == GlobalProject {
+		return ""
+	}
+	return project + "/"
+}
+
 // ProxyProject returns the project label carried in Basic proxy authentication.
 // The listener uses it to reject an explicitly requested unknown tenant instead of
 // silently serving global content. The password is intentionally ignored.

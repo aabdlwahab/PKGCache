@@ -39,6 +39,15 @@ With -mirror, `+"`docker pull python:3.12`"+` is served from the cache with no r
 no wrapper. That is off by default: it reroutes every pull on this machine, which is
 not something a setup command should do to you quietly.
 
+A mirrored pull always lands in the global project. Docker's registry-mirrors setting
+takes a host and nothing else, so there is no room in it for a project — everywhere else
+the project rides the image name, and a mirror never sees one it did not construct
+itself. To pull into a project, name the cache in the image:
+
+  docker pull ADDRESS/PROJECT/dockerhub/library/python:3.12
+
+or let `+"`pkgcache pull`"+` and `+"`pkgcache build`"+` do it, which is what they are for.
+
 flags:
 `)
 		fs.PrintDefaults()

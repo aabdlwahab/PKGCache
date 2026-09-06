@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/ociname"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 )
 
 // Mode selects how the build reaches the cache.
@@ -504,8 +505,12 @@ func buildArgs(o Options) []string {
 		// for Bridge and wrong for HostGateway: pip and npm would have been sent to the
 		// cache through the cache's own apt proxy, which relays http:// and is not what
 		// either of them is talking to.
+		// The project rides the proxy username — there is nowhere else to put it, since
+		// the URL a proxied request carries belongs to the upstream. Without it every
+		// apt-get and apk add in a build landed in the global project while the pip and
+		// npm lines two rows above went to the right one.
 		args = append(args,
-			"ARG http_proxy="+o.AptProxy,
+			"ARG http_proxy="+router.ProxyURLFor(o.AptProxy, o.Project),
 			"ARG no_proxy="+noProxyFor(o))
 	}
 	if o.Mode == CacheAddress {
@@ -597,7 +602,7 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 	if o.LocalImage != nil && o.LocalImage(ref) {
 		return line, nil
 	}
-	mapped := mapImage(ref, o.Registry)
+	mapped := mapImage(ref, o.Registry, o.Project)
 	if mapped == "" {
 		return line, nil
 	}
@@ -625,7 +630,7 @@ func rewriteSyntax(line string, o Options) (string, *Change) {
 	if o.LocalImage != nil && o.LocalImage(ref) {
 		return line, nil
 	}
-	mapped := mapImage(ref, o.Registry)
+	mapped := mapImage(ref, o.Registry, o.Project)
 	if mapped == "" {
 		return line, nil
 	}
@@ -657,7 +662,7 @@ func rewriteBorrowedImages(line string, stages map[string]bool, o Options) (stri
 		if o.LocalImage != nil && o.LocalImage(ref) {
 			return match
 		}
-		mapped := mapImage(ref, o.Registry)
+		mapped := mapImage(ref, o.Registry, o.Project)
 		if mapped == "" {
 			return match
 		}
@@ -686,9 +691,16 @@ func isStageIndex(ref string) bool {
 // Exported for `pkgcache pull`, which needs exactly the rewrite a FROM line gets — an
 // image pulled by hand and an image pulled by a build should resolve to the same bytes,
 // and two implementations of this would eventually disagree about which.
-func MapImage(ref, registry string) string { return mapImage(ref, registry) }
+func MapImage(ref, registry, project string) string { return mapImage(ref, registry, project) }
 
-func mapImage(ref, registry string) string {
+// mapImage rewrites one image reference to the cache, inside the given project.
+//
+// The project is a segment of the image name, because Docker cannot be given a base path
+// — every pull starts at /v2/. It used to be left out entirely, so a build in project
+// "work" fetched its pip wheels from /work/pypi and its base images from the global
+// project, and nothing said so: the router reads a first segment that is not a registered
+// project as part of the repository name and falls back to global without complaining.
+func mapImage(ref, registry, project string) string {
 	switch {
 	case registry == "", ref == "", ref == "scratch":
 		return ""
@@ -724,13 +736,13 @@ func mapImage(ref, registry string) string {
 			// discovers a registry from the path the same way this reads it from a FROM.
 			return ""
 		}
-		return registry + "/" + reg.Segment + "/" + rest + tag
+		return registry + "/" + router.OCIProjectPrefix(project) + reg.Segment + "/" + rest + tag
 	}
 	if !hasSlash {
 		// Docker Hub's official images live under library/.
 		name = "library/" + name
 	}
-	return registry + "/dockerhub/" + name + tag
+	return registry + "/" + router.OCIProjectPrefix(project) + "dockerhub/" + name + tag
 }
 
 // splitTag separates a reference from its tag or digest.

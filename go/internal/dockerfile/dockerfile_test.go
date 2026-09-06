@@ -359,12 +359,12 @@ func TestMapImageForPull(t *testing.T) {
 		{"scratch", ""},
 		{"$BASE_IMAGE", ""},
 	} {
-		if got := MapImage(testCase.ref, registry); got != testCase.want {
+		if got := MapImage(testCase.ref, registry, "global"); got != testCase.want {
 			t.Errorf("MapImage(%q) = %q, want %q", testCase.ref, got, testCase.want)
 		}
 	}
 	// No cache address means no rewrite, rather than a reference beginning with a slash.
-	if got := MapImage("alpine:3.20", ""); got != "" {
+	if got := MapImage("alpine:3.20", "", "global"); got != "" {
 		t.Errorf("with no registry, MapImage = %q, want empty", got)
 	}
 }
@@ -566,7 +566,7 @@ func TestVariableInTheTagStillGoesThroughTheCache(t *testing.T) {
 		// A digest is carried through the same way.
 		{"alpine@sha256:abc", registry + "/dockerhub/library/alpine@sha256:abc"},
 	} {
-		if got := MapImage(testCase.ref, registry); got != testCase.want {
+		if got := MapImage(testCase.ref, registry, "global"); got != testCase.want {
 			t.Errorf("MapImage(%q) = %q, want %q", testCase.ref, got, testCase.want)
 		}
 	}
@@ -580,7 +580,7 @@ func TestVariableInTheNameIsStillLeftAlone(t *testing.T) {
 		"${REGISTRY}/app:1",
 		"myorg/${APP}:1",
 	} {
-		if got := MapImage(ref, "127.0.0.1:41780"); got != "" {
+		if got := MapImage(ref, "127.0.0.1:41780", "global"); got != "" {
 			t.Errorf("MapImage(%q) = %q, want it left alone", ref, got)
 		}
 	}

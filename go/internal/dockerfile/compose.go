@@ -65,7 +65,7 @@ func RewriteCompose(
 		// to pull. Rewriting it would rename the image the developer just built, and
 		// they would find out when a later `docker run` could not find it.
 		if image, ok := service["image"].(string); ok && !hasBuild && !options.SkipFrom {
-			if mapped := mapImage(image, options.Registry); mapped != "" {
+			if mapped := mapImage(image, options.Registry, options.Project); mapped != "" {
 				service["image"] = mapped
 				result.Changes = append(result.Changes, Change{From: image, To: mapped})
 			}
