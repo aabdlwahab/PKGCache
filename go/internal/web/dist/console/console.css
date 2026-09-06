@@ -145,6 +145,10 @@ textarea { resize: vertical; }
 .field-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: var(--tspace); }
 .field-hint { color: var(--muted); font-size: 12px; }
 .form { max-width: 46rem; }
+/* A checkbox and its label read left to right, which is the one control .field cannot
+   lay out — it stacks a label above its input. */
+.field-check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.field-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 14px; align-items: end; }
 .row-form button { margin-bottom: 10px; }
 .form-error, .secret {

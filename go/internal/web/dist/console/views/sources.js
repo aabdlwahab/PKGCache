@@ -14,6 +14,11 @@ export default {
     const offline = region("div");
     const list = region("div");
     const health = region("div");
+    // Its own slot rather than a panel in the grid, because whether this instance has
+    // one at all is a question only the server can answer: a pkgreg has no local sources
+    // and the endpoint 404s there. An empty "Team cache" panel on a server would be a
+    // permanent piece of furniture explaining something that does not apply.
+    const team = region("div");
 
     fill(
       node,
@@ -23,6 +28,7 @@ export default {
       el("div", { class: "panel-grid" },
         panel("Offline", { note: "serve from cache only" }, offline.node),
         panel("Upstream health", { note: "hourly, last 24h — mean and max only", wide: true }, health.node)),
+      team.node,
       panel("Upstreams and peers", { note: "tried in priority order", wide: true }, list.node),
     );
 
@@ -30,8 +36,16 @@ export default {
       offline.set(renderOffline());
       list.set(renderUpstreams());
     };
-    const unsubscribe = [store.on(["upstreams", "projects", "project", "ecosystems"], draw)];
+    const drawTeam = () => renderTeam(team);
+    const unsubscribe = [
+      store.on(["upstreams", "projects", "project", "ecosystems"], draw),
+      // Redrawn on a project switch like everything else here: the team cache is
+      // configured per project, and showing one project's while another is selected is
+      // the same class of lie the switcher has caused everywhere else.
+      store.on(["project"], drawTeam),
+    ];
     draw();
+    void drawTeam();
     health.set(loading("Reading upstream health"));
 
     let cancelled = false;
@@ -86,6 +100,121 @@ function renderOffline() {
           },
           { kind: isOffline ? "primary" : "danger" })
       : el("p", { class: "note", text: "Only the project owner or a superuser can change this." }),
+  );
+}
+
+/* The team cache: which pkgreg this project's misses go through, and which project on
+ * the far side they land in.
+ *
+ * The widget has had this form since local sources existed; the console never did, so the
+ * whole operator UI could show you the chain a team cache had written and gave you no way
+ * to write one — and no way at all to see, let alone change, which of the team's projects
+ * you were pointed at. That last field is the one worth having here: it need not match
+ * this project's name, and a laptop pointed at a team project that does not exist fetches
+ * everything from upstream while looking configured.
+ */
+async function renderTeam(slot) {
+  const project = store.state.project;
+  let states;
+  try {
+    states = (await api.sources()).sources ?? [];
+  } catch {
+    // A pkgreg server, or a daemon older than this page. Neither has a team cache to
+    // show, and neither is an error worth a panel.
+    slot.set();
+    return;
+  }
+  if (store.state.project !== project) return; // switched while we were asking
+  const state = states.find((row) => row.project === project);
+  slot.set(panel("Team cache", { note: "the pkgreg this project's misses go through" },
+    teamBody(project, state, () => void renderTeam(slot))));
+}
+
+function teamBody(project, state, again) {
+  // A project always has a state; having a source of its own is a different question.
+  const configured = Boolean(state?.server);
+  if (!store.canOperate()) {
+    return el("div", { class: "stack" },
+      teamSummary(state),
+      el("p", { class: "note", text: "Only the project owner or a superuser can change this." }));
+  }
+
+  const server = input("server", {
+    placeholder: "https://cache.internal:8443", value: state?.server ?? "",
+    autocomplete: "off", spellcheck: "false",
+  });
+  const fingerprint = input("ca_sha256", {
+    // Never prefilled. It is the whole of the trust decision, and a value already in the
+    // box invites Update to re-verify against what this page last read rather than
+    // against what the person was told out of band.
+    placeholder: "the CA fingerprint you were given", autocomplete: "off", spellcheck: "false",
+  });
+  const teamProject = input("team_project", {
+    placeholder: "global", value: state?.team_project ?? "", autocomplete: "off",
+  });
+  const direct = el("input", { type: "checkbox", checked: state ? state.direct : true });
+
+  const form = el(
+    "form",
+    { class: "form" },
+    teamSummary(state),
+    field("Team cache", server, "the pkgreg address"),
+    field("CA fingerprint", fingerprint, "from your colleague, not from this network"),
+    field("Project on their side", teamProject, "empty means their global project"),
+    // field() is for a labelled control above its input; a checkbox reads the other way
+    // round, so it is built here rather than bent into that shape.
+    el("label", { class: "field-check" }, direct,
+      el("span", { text: "fall back to the public registry when the team cache is unreachable" })),
+    el("div", { class: "field-actions" },
+      el("button", { class: "btn primary", type: "submit",
+        text: configured ? "Update" : "Use this cache" }),
+      // Only where there is something of this project's own to remove. An inherited
+      // source belongs to another project, and forgetting it from here would either do
+      // nothing or take it from everyone.
+      configured && !state.inherited
+        ? button("Forget", async () => {
+            if (!confirm(`Stop sending ${project} through ${state.server}?\n\n` +
+              "Its misses go to the public registries instead, or fail if this project is offline.")) return;
+            await store.mutate(() => api.deleteSource(project), `${project} no longer uses a team cache`);
+            await store.loadProject();
+            again();
+          }, { kind: "danger" })
+        : null,
+    ),
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const applied = await store.mutate(
+      () => api.putSource(project, {
+        server: server.value.trim(),
+        ca_sha256: fingerprint.value.trim(),
+        team_project: teamProject.value.trim(),
+        direct: direct.checked,
+      }),
+      `${project} now goes through the team cache`);
+    if (applied) {
+      // The chain rows the daemon just rewrote are what the panel below draws.
+      await store.loadProject();
+      again();
+    }
+  });
+  return form;
+}
+
+// What this project resolves through today, in the two words that matter: whose cache,
+// and whose project on it.
+function teamSummary(state) {
+  if (!state?.server) {
+    return el("p", { class: "note", text: "This project goes straight to the public registries." });
+  }
+  const far = state.team_project || "global";
+  return el("div", { class: "status-line" },
+    el("span", { class: `pill ${state.reachable === false ? "warning" : "good"}`,
+      text: state.reachable === false ? "unreachable" : "reachable" }),
+    el("span", { class: "note", text: `${state.server} → ${far}` }),
+    state.inherited
+      ? el("span", { class: "note", text: "(inherited from another project)" })
+      : null,
   );
 }
 
