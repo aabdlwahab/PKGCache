@@ -114,9 +114,21 @@ func FromEnvironment(o Options) Options {
 // pytorch build for a CUDA version this project has never heard of, a private wheelhouse
 // — and a build should pick that up without a new release of this program.
 //
+// Two sources, and needing both is the point. The ecosystem's own defaults — pypi.org and
+// the three pytorch channels — are compiled into the adapter and served by every project
+// without a row anywhere, so a build that asked only for this project's upstreams saw
+// nothing and rewrote nothing. That looked like it worked, because the one machine where
+// somebody had added a pytorch row by hand did rewrite it; every other project on that
+// same cache pulled several gigabytes of torch straight from the internet, past a cache
+// that would have served it.
+//
+// The project's own rows are layered on top, so an operator who points the same URL at a
+// different index still wins.
+//
 // Best effort: a cache that cannot be asked is not a reason to fail a build, it only
 // means the directly named indexes go upstream as they always did.
 func DiscoverIndexes(ctx context.Context, base, project string) map[string]string {
+	out := builtinIndexes(ctx, base)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		strings.TrimRight(base, "/")+"/api/v1/projects/"+project+"/upstreams", http.NoBody)
 	if err != nil {
@@ -124,11 +136,11 @@ func DiscoverIndexes(ctx context.Context, base, project string) map[string]strin
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil
+		return out
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return nil
+		return out
 	}
 	var body struct {
 		Upstreams []struct {
@@ -139,9 +151,8 @@ func DiscoverIndexes(ctx context.Context, base, project string) map[string]strin
 		} `json:"upstreams"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
-		return nil
+		return out
 	}
-	out := make(map[string]string)
 	for _, upstream := range body.Upstreams {
 		// pypi only: this exists for index URLs, and an npm registry or an OCI origin
 		// written into a Dockerfile is a different rewrite with a different path shape.
@@ -149,6 +160,50 @@ func DiscoverIndexes(ctx context.Context, base, project string) map[string]strin
 			continue
 		}
 		out[upstream.URL] = upstream.Name
+	}
+	return out
+}
+
+// builtinIndexes are the ones every project serves without anything being configured.
+//
+// They come from the ecosystems endpoint rather than a copy here for the same reason the
+// project's rows do: the set is the adapter's, and a new pytorch channel should not need a
+// new build of this program to be rewritten.
+func builtinIndexes(ctx context.Context, base string) map[string]string {
+	out := make(map[string]string)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(base, "/")+"/api/v1/ecosystems", http.NoBody)
+	if err != nil {
+		return out
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return out
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return out
+	}
+	var body struct {
+		Ecosystems []struct {
+			ID       string            `json:"id"`
+			Defaults map[string]string `json:"default_upstreams"`
+		} `json:"ecosystems"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
+		return out
+	}
+	for _, ecosystem := range body.Ecosystems {
+		// pypi only, for the reason the caller gives: this exists for index URLs, and an
+		// npm registry or an OCI origin is a different rewrite with a different shape.
+		if ecosystem.ID != "pypi" {
+			continue
+		}
+		for name, origin := range ecosystem.Defaults {
+			if origin != "" {
+				out[origin] = name
+			}
+		}
 	}
 	return out
 }
