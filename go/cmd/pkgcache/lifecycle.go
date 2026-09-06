@@ -171,22 +171,21 @@ func reportTiers(ctx context.Context, dataDir, project string) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	started := time.Now()
-	reachable := local.ReachableTeam(ctx, dataDir, team)
-	if reachable {
-		fmt.Printf("team       %s  reachable, %s\n",
-			team.Server, time.Since(started).Round(time.Millisecond))
-	} else {
-		fmt.Printf("team       %s  UNREACHABLE\n", team.Server)
-	}
-	// Which project on the far side, because it need not be this one's name and nothing
-	// else ever says: a laptop working in "work" can be pointed at the team's "research",
-	// and the only visible consequence of getting it wrong is a cache that fetches
-	// everything from upstream while appearing to be configured.
+	// The far-side project rides the same line as the server, because it is part of the
+	// same answer: this address, that project. It need not be this cache's project name
+	// and nothing else ever says which it is — a laptop pointed at a team project that
+	// does not exist fetches everything from upstream while appearing configured.
 	far := team.Project
 	if far == "" {
 		far = "global"
 	}
-	fmt.Printf("their      %s (project on the team's side)\n", far)
+	reachable := local.ReachableTeam(ctx, dataDir, team)
+	if reachable {
+		fmt.Printf("team       %s/%s  reachable, %s\n",
+			team.Server, far, time.Since(started).Round(time.Millisecond))
+	} else {
+		fmt.Printf("team       %s/%s  UNREACHABLE\n", team.Server, far)
+	}
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {
