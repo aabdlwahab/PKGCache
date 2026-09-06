@@ -14,6 +14,10 @@ const RECENT_LIMIT = 30;
 export const state = {
   me: null,
   project: localStorage.getItem("pkgreg-project") || "global",
+  /* What `pkgcache persist` wrote into ~/.npmrc and friends, or null where it never ran.
+     Carried in the store because it is the second half of a fact the first half of which
+     is `project`: the two disagreeing is the whole thing worth showing. */
+  persisted: null,
   theme: localStorage.getItem("pcc_theme") || "dark",
 
   ecosystems: [],
@@ -110,14 +114,30 @@ export async function adoptMachineProject() {
   try {
     const answer = await api.machineProject();
     machineSelection = true;
+    set({ persisted: answer?.persisted || null });
     if (answer?.project) {
       localStorage.setItem("pkgreg-project", answer.project);
       set({ project: answer.project });
     }
   } catch {
-    // A server, or an older daemon than this page. Neither is an error: the switcher
-    // stays what it was, a preference belonging to this browser.
+    // A server, or a daemon older than this page. The switcher stays what it was, a
+    // preference belonging to this browser — and `machineSelection` stays false, which
+    // is what lets the widget say so rather than looking like it worked. A silent
+    // fallback here is indistinguishable from the bug it was meant to fix.
   }
+}
+
+/** Whether this cache keeps a machine-wide working project. False on a server, and false
+ *  against a daemon too old to have the endpoint — the widget tells those apart, since
+ *  it is only ever pointed at a local cache. */
+export function hasMachineSelection() {
+  return machineSelection;
+}
+
+/** Re-point the persisted tool settings at the machine's project. */
+export async function repointTools() {
+  const answer = await api.repointTools();
+  set({ persisted: answer?.persisted || null });
 }
 
 export function setProject(name) {

@@ -19,6 +19,8 @@ package appcore
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
@@ -155,11 +157,69 @@ func WindowPath(action tray.Action) string {
 // the cache. Every other path in this package passes NoStart.
 func (c *Core) WindowURL(ctx context.Context, action tray.Action) (string, error) {
 	path := WindowPath(action)
+	c.replaceStaleDaemon(ctx)
 	daemon, err := c.ensure(ctx, true)
 	if err != nil {
 		return "", err
 	}
 	return daemon.BaseURL() + path, nil
+}
+
+// replaceStaleDaemon stops a daemon running a different build from the pkgcache binary
+// this app would start, so the next Ensure starts the installed one.
+//
+// local.Ensure does this for pkgcache itself and deliberately not for the app, whose
+// DifferentBinary flag turns the version check off — the reasoning being that any
+// pkgcache command will notice a stale daemon, so an app that is only watching should not
+// police it. That reasoning has one hole, and it is the desktop case exactly: somebody who
+// drives this from the app runs no pkgcache command, ever. `apt upgrade` replaced the
+// binaries and left the old daemon serving, which meant the window kept showing the
+// previous version's page — with the previous version's bugs — indefinitely, and nothing
+// on screen could say so.
+//
+// Here rather than in ensure, and so on the window path only: it is a process spawn and a
+// stop, at a moment somebody has just asked to look at the cache. On the polling path it
+// would be both wasteful and wrong — stopping a daemon nobody asked about, possibly
+// mid-fetch, is the thrash DifferentBinary was added to prevent.
+//
+// The version is read fresh every time rather than cached at launch, because the case
+// this exists for is the binary changing underneath a running app.
+func (c *Core) replaceStaleDaemon(ctx context.Context) {
+	if c.daemon == "" {
+		return
+	}
+	state, err := c.ensure(ctx, false)
+	if err != nil {
+		// Nothing running, so nothing stale; the start below brings up the installed one.
+		return
+	}
+	installed := c.installedVersion(ctx)
+	if installed == "" || installed == state.Version {
+		return
+	}
+	// Best effort throughout. A cache that will not stop is not a reason to refuse to
+	// show somebody their window — they get the running one, which is what they had
+	// before this existed.
+	_, _ = local.Stop(ctx, c.snap.DataDir, 15*time.Second)
+}
+
+// installedVersion asks the pkgcache binary on disk what build it is, or returns empty
+// when it cannot be asked.
+func (c *Core) installedVersion(ctx context.Context) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// #nosec G204 -- c.daemon is the path this app was told to start as its daemon.
+	out, err := exec.CommandContext(ctx, c.daemon, "version").Output()
+	if err != nil {
+		return ""
+	}
+	// `pkgreg 1.0.5 (commit, date, go, platform)` — the second field, and nothing else
+	// here depends on the rest of it.
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
 }
 
 // FallbackURL is the address to show when the daemon cannot be reached at all.

@@ -65,6 +65,7 @@ function consoleURL() {
 function shell() {
   const projectRegion = region("div", { class: "wg-project" });
   const noticeRegion = region("div", {});
+  const alignRegion = region("div", {});
   const stateRegion = region("div", { class: "wg-section" });
   const diskRegion = region("div", { class: "wg-section" });
   const figuresRegion = region("div", { class: "wg-section" });
@@ -114,6 +115,7 @@ function shell() {
       "main",
       { class: "wg-main" },
       noticeRegion.node,
+      alignRegion.node,
       stateRegion.node,
       diskRegion.node,
       figuresRegion.node,
@@ -126,8 +128,8 @@ function shell() {
   root.classList.add("wg-shell");
   rebindWML();
   return {
-    projectRegion, noticeRegion, stateRegion, diskRegion, figuresRegion, liveRegion,
-    footRegion, tabsRegion, panelRegion, live,
+    projectRegion, noticeRegion, alignRegion, stateRegion, diskRegion, figuresRegion,
+    liveRegion, footRegion, tabsRegion, panelRegion, live,
   };
 }
 
@@ -523,6 +525,73 @@ function renderProject(regions) {
   regions.projectRegion.set(el("div", { class: "wg-project-row" }, [select, add]));
 }
 
+/** What the switcher above cannot do on its own.
+ *
+ * Two ways this window can be telling the truth about the project while the machine
+ * disagrees with it, and both used to be invisible:
+ *
+ *   1. The daemon is older than this page and has no idea a machine-wide project exists.
+ *      Only reachable when the app is older too, since opening the window now replaces a
+ *      stale daemon — but if it happens, switching here moves nothing and saying nothing
+ *      would be exactly the bug this window is supposed to have stopped having.
+ *   2. `pkgcache persist` wrote ~/.npmrc, pip.conf, uv.toml and .gitconfig naming one
+ *      project literally, and they do not follow a switch. That is deliberate — an editor
+ *      already open would be redirected under it — but a person looking at a window that
+ *      says "work" while every `npm install` goes to global deserves to be told which of
+ *      those two facts is doing the work.
+ */
+function renderAlignment(regions) {
+  const project = store.state.project;
+  const persisted = store.state.persisted;
+
+  if (!store.hasMachineSelection()) {
+    regions.alignRegion.set(
+      el(
+        "div",
+        { class: "wg-warn", role: "status" },
+        el("div", { class: "wg-warn-title", text: "This cache is running an older version" }),
+        el("div", {
+          class: "wg-warn-body",
+          text:
+            "Switching project here changes this window only. Run pkgcache stop in a " +
+            "terminal, or quit and reopen the app, to pick up the installed version.",
+        }),
+      ),
+    );
+    return;
+  }
+  if (!persisted || persisted.project === project) {
+    regions.alignRegion.set();
+    return;
+  }
+  regions.alignRegion.set(
+    el(
+      "div",
+      { class: "wg-warn", role: "status" },
+      el("div", {
+        class: "wg-warn-title",
+        text: `npm, pip and uv are pointed at ${persisted.project}`,
+      }),
+      el("div", {
+        class: "wg-warn-body",
+        // Says what it will change, because it rewrites files in a home directory and
+        // the person clicking it should not have to find out afterwards which ones.
+        text:
+          `pkgcache persist wrote ${persisted.files} files naming ${persisted.project}, ` +
+          "and they do not follow this switcher. Re-pointing rewrites them; a shell or " +
+          "editor already open keeps the old setting until it is restarted.",
+      }),
+      el(
+        "div",
+        { class: "wg-warn-actions" },
+        button(`Point them at ${project}`, () =>
+          run(() => store.repointTools(), `npm, pip and uv now use ${project}.`),
+        ),
+      ),
+    ),
+  );
+}
+
 /** Create a project on this cache and switch to it.
  *
  * A project here is a separate catalog over shared bytes: two projects needing the same
@@ -677,6 +746,7 @@ async function boot() {
   store.on(["live"], () => renderLive());
   store.on(["recent"], () => renderRecent());
   store.on(["projects", "project"], () => renderProject(regions));
+  store.on(["project", "persisted"], () => renderAlignment(regions));
   store.on(["project"], () => {
     // A panel showing another project's packages, checkpoints or sources is worse than a
     // blank one: every row would look like it belonged to the project now selected.
@@ -690,6 +760,7 @@ async function boot() {
   renderLive();
   renderRecent();
   renderProject(regions);
+  renderAlignment(regions);
   renderFoot(regions);
   renderConnection();
   renderTabs(regions);

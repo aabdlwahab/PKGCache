@@ -72,6 +72,7 @@ func (a *API) v1Routes() {
 	a.route("DELETE /api/v1/local/sources/{project}", a.deleteSource)
 	a.route("GET /api/v1/local/project", a.getSelection)
 	a.route("PUT /api/v1/local/project", a.putSelection)
+	a.route("POST /api/v1/local/project/repoint", a.repointSettings)
 }
 
 func (a *API) gcJob(w http.ResponseWriter, r *http.Request) error {

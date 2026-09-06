@@ -135,8 +135,15 @@ func reportBudget(ctx context.Context, dataDir, blobRoot, project string) error 
 	if record, found := local.ReadPersisted(dataDir); found {
 		// Which project the persisted files name, because they outlive the shell that
 		// wrote them and a `project use` afterwards does not move them.
-		fmt.Printf("persisted  %s, %d files (%s)\n",
-			record.Project, len(record.Files), record.BaseURL)
+		// Flagged when it disagrees with the project above. Both lines were already
+		// here, next to each other, and a person still had to notice that two words
+		// differed to understand why every install was going somewhere else.
+		mismatch := ""
+		if record.Project != project {
+			mismatch = "  <- npm, pip and uv use this, not " + project
+		}
+		fmt.Printf("persisted  %s, %d files (%s)%s\n",
+			record.Project, len(record.Files), record.BaseURL, mismatch)
 	}
 	usage, sampled, found := local.ReadUsage(dataDir)
 	if found && usage.Full {

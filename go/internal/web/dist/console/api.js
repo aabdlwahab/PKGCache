@@ -168,6 +168,10 @@ export const api = {
   machineProject: () => request("/local/project"),
   setMachineProject: (project) =>
     request("/local/project", { method: "PUT", body: body({ project }) }),
+  // Re-point ~/.npmrc, pip.conf, uv.toml and .gitconfig at the machine's project. Its own
+  // call, never folded into the switch: rewriting files in somebody's home directory is a
+  // second decision, and an unasked one redirects an editor that is already open.
+  repointTools: () => request("/local/project/repoint", { method: "POST" }),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

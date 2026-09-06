@@ -2,6 +2,8 @@ package local
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"strings"
 
@@ -18,6 +20,10 @@ import (
 type Selection struct {
 	// DataDir is where project.json lives.
 	DataDir string
+	// Home overrides the home directory the persisted settings live in. Empty means the
+	// user running the daemon, which is the only correct answer in production and the one
+	// a test must never be allowed to reach.
+	Home string
 }
 
 // Selected reports the stored choice, and whether one was ever made.
@@ -28,6 +34,45 @@ func (s *Selection) Selected() (string, bool) {
 // Select records the project later commands default to.
 func (s *Selection) Select(project string) error {
 	return SetCurrentProject(s.DataDir, project)
+}
+
+// Persisted reports what `pkgcache persist` installed for this user.
+func (s *Selection) Persisted() (controlapi.PersistedSettings, bool) {
+	record, found := ReadPersisted(s.DataDir)
+	if !found {
+		return controlapi.PersistedSettings{}, false
+	}
+	return controlapi.PersistedSettings{
+		Project: record.Project, Files: len(record.Files),
+	}, true
+}
+
+// Repoint rewrites the persisted tool settings to name a different project.
+//
+// The address comes from the record rather than from the running daemon, because that is
+// what the files themselves say and re-pointing is meant to change one thing. Rewriting
+// the port at the same time would quietly repair — or quietly break — an installation
+// somebody had made against a different configuration.
+func (s *Selection) Repoint(project string) error {
+	record, found := ReadPersisted(s.DataDir)
+	if !found {
+		return errors.New("local: nothing to re-point; `pkgcache persist` has not run here")
+	}
+	return ApplyPersist(PersistOptions{
+		BaseURL: record.BaseURL,
+		Project: project,
+		DataDir: s.DataDir,
+		// Recovered from the file rather than remembered, so an installation made before
+		// this existed re-points with the same hosts it was installed with. An empty
+		// result means git was left alone, which is the same choice made again.
+		GitHosts: PersistedGitHosts(record),
+		// Availability was settled when these files were installed and is not in
+		// question here: this rewrites URLs in files that already exist, and refusing
+		// over a question already answered would leave them naming the wrong project.
+		Available: AvailabilityAccepted,
+		Home:      s.Home,
+		Out:       io.Discard,
+	})
 }
 
 // StoredProject is CurrentProject without the environment override.

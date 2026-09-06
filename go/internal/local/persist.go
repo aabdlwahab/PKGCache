@@ -202,6 +202,56 @@ func ApplyPersist(o PersistOptions) error {
 	return nil
 }
 
+// PersistedGitHosts recovers the git hosts an installation was made with.
+//
+// Not recorded in persist.json, because until re-pointing existed nothing ever needed to
+// reproduce the options a previous run was given. Reading them back out of the block this
+// package wrote is exact — the lines are this file's own format, two functions up — and it
+// works for installations made before anything thought to record them.
+//
+// An installation that left git alone has no such file and no such lines, and returns
+// nothing, which re-points as the same choice.
+func PersistedGitHosts(record Persisted) []string {
+	var path string
+	for _, file := range record.Files {
+		if filepath.Base(file) == ".gitconfig" {
+			path = file
+		}
+	}
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- a path this package wrote and recorded.
+	if err != nil {
+		return nil
+	}
+	var hosts []string
+	inside := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == beginMarker:
+			inside = true
+		case trimmed == endMarker:
+			inside = false
+		case !inside:
+		default:
+			// `insteadOf = https://github.com/` — the host is what the block redirects,
+			// and it is the half that survives a change of project or of port.
+			_, value, found := strings.Cut(trimmed, "insteadOf")
+			if !found {
+				continue
+			}
+			value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "="))
+			value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+			if host := strings.Trim(value, "/"); host != "" {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
+}
+
 // persistFiles is every file persist owns, and is the single place the layout is
 // described.
 func persistFiles(home string, o PersistOptions) []managedFile {

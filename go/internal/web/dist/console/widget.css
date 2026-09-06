@@ -203,6 +203,23 @@
 .wg-banner-reason { font-size: 12px; color: var(--fg2); }
 .wg-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* The alignment warning: the window and the machine disagreeing about which project the
+   work goes into. Deliberately quieter than .wg-banner — nothing is broken and nothing
+   has stopped, one setting is behind another — but it carries the action that fixes it,
+   because a warning a person cannot act on from where they are reading it is a warning
+   they learn to scroll past. Same sRGB mix as the banner, for the same hue reason. */
+.wg-warn {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--panel));
+  border-radius: var(--radius);
+}
+.wg-warn-title { font-weight: 600; color: var(--warn); }
+.wg-warn-body { font-size: 12px; color: var(--fg2); }
+.wg-warn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 .wg-notice {
   padding: 8px 10px;
   font-size: 12px;

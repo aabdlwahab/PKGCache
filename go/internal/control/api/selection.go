@@ -29,6 +29,22 @@ type LocalSelection interface {
 	Selected() (string, bool)
 	// Select records the project later commands default to.
 	Select(project string) error
+	// Persisted reports the settings `pkgcache persist` installed, if any.
+	Persisted() (PersistedSettings, bool)
+	// Repoint rewrites those settings to name a different project.
+	Repoint(project string) error
+}
+
+// PersistedSettings is what `pkgcache persist` wrote into this user's tool configuration.
+//
+// It names one project literally — `registry=http://…/global/npm/` — and deliberately
+// does not follow a later switch, so that an editor nobody has reopened is not silently
+// redirected mid-session. That decision is right and it is also invisible: the window
+// said "work" while every `npm install` on the machine went to global, and no surface
+// anywhere put those two facts next to each other. This is how it does.
+type PersistedSettings struct {
+	Project string `json:"project"`
+	Files   int    `json:"files"`
 }
 
 // requireSelection refuses where nothing implements the surface, which is every server.
@@ -52,8 +68,42 @@ func (a *API) getSelection(w http.ResponseWriter, r *http.Request) error {
 	if _, err := a.guard.RequireAuthed(r); err != nil {
 		return err
 	}
+	writeJSON(w, http.StatusOK, a.selectionState())
+	return nil
+}
+
+// selectionState is the whole answer: what the machine works in, and what the persisted
+// tool settings name. Both, always, because the interesting case is them disagreeing and
+// a client that had to ask twice could render the disagreement as a flicker.
+func (a *API) selectionState() map[string]any {
 	project, chosen := a.Selection.Selected()
-	writeJSON(w, http.StatusOK, map[string]any{"project": project, "chosen": chosen})
+	state := map[string]any{"project": project, "chosen": chosen}
+	if settings, found := a.Selection.Persisted(); found {
+		state["persisted"] = settings
+	}
+	return state
+}
+
+// repointSettings rewrites the persisted tool configuration to the machine's project.
+//
+// Its own route, and not a side effect of selecting: rewriting files in somebody's home
+// directory is a second decision, and the whole reason the settings do not follow a
+// switch on their own is that doing it unasked redirects a running editor. Asked for, it
+// is exactly what somebody wants.
+func (a *API) repointSettings(w http.ResponseWriter, r *http.Request) error {
+	if err := a.requireSelection(); err != nil {
+		return err
+	}
+	selected, _ := a.Selection.Selected()
+	project, actor, err := a.requireOperate(r, selected)
+	if err != nil {
+		return err
+	}
+	if err := a.Selection.Repoint(project.Name); err != nil {
+		return err
+	}
+	a.audit(r, actor, "project.repoint", project.Name, nil)
+	writeJSON(w, http.StatusOK, a.selectionState())
 	return nil
 }
 
@@ -81,7 +131,6 @@ func (a *API) putSelection(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	a.audit(r, actor, "project.select", project.Name, nil)
-	selected, chosen := a.Selection.Selected()
-	writeJSON(w, http.StatusOK, map[string]any{"project": selected, "chosen": chosen})
+	writeJSON(w, http.StatusOK, a.selectionState())
 	return nil
 }

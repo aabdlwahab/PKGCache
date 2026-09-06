@@ -351,6 +351,15 @@ func projectUse(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("pkgcache: working in %s\n", name)
+	// The persisted settings name a project literally and do not follow this — see
+	// persistFiles. That is deliberate, and it is also the difference between "I switched
+	// project" and "my next npm install went where I expected", so it is said here rather
+	// than left for somebody to discover in a lockfile a week later.
+	if record, found := local.ReadPersisted(snap.DataDir); found && record.Project != name {
+		fmt.Printf("  npm, pip and uv are still pointed at %s by `pkgcache persist`\n",
+			record.Project)
+		fmt.Printf("  `pkgcache persist -project %s` re-points them\n", name)
+	}
 	if name == config.GlobalProject {
 		fmt.Println("  which is the default, so nothing is stored to remember it")
 	}
