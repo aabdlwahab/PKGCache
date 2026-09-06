@@ -35,17 +35,47 @@ const (
 	simpleTTL     = 5 * time.Minute
 )
 
+// The indexes every project serves without anything being configured.
+//
+// These are not a convenience. A build that names one of them directly —
+// `--extra-index-url https://download.pytorch.org/whl/cu130` — has that URL rewritten to
+// the cache only if the URL is known here or configured as an upstream row, and a torch
+// wheel is several hundred megabytes. An index missing from this map is not an error
+// anywhere: the build succeeds, having fetched gigabytes from the internet past a cache
+// that was sitting right there.
+//
+// Which is why the CUDA channels are kept current rather than added when somebody asks.
+// The list was cu124, cu128 and cpu, and by then pytorch was shipping cu126, cu129 and
+// cu130 — so a Hopper image pinned to cu130 missed the cache entirely while a CPU image
+// beside it hit it, with nothing to explain the difference.
+//
+// FlashInfer is here for the same reason and on the same evidence: a vLLM stack pulls
+// flashinfer-jit-cache from that index and nowhere else, the wheel is about 1.4 GiB, and
+// it is not on PyPI. cu124 and cu126 are absent because that index does not publish
+// them — verified, rather than assumed from pytorch's list.
+//
+// Anything else is an upstream row on the project, which is the general answer; this map
+// is for the handful of indexes a Python build is likely to name without anyone having
+// configured a thing.
 var defaultIndexes = map[string]string{
-	"root/pypi":          "https://pypi.org/simple",
-	"root/pytorch-cu124": "https://download.pytorch.org/whl/cu124",
-	"root/pytorch-cu128": "https://download.pytorch.org/whl/cu128",
-	"root/pytorch-cpu":   "https://download.pytorch.org/whl/cpu",
+	"root/pypi":             "https://pypi.org/simple",
+	"root/pytorch-cpu":      "https://download.pytorch.org/whl/cpu",
+	"root/pytorch-cu118":    "https://download.pytorch.org/whl/cu118",
+	"root/pytorch-cu124":    "https://download.pytorch.org/whl/cu124",
+	"root/pytorch-cu126":    "https://download.pytorch.org/whl/cu126",
+	"root/pytorch-cu128":    "https://download.pytorch.org/whl/cu128",
+	"root/pytorch-cu129":    "https://download.pytorch.org/whl/cu129",
+	"root/pytorch-cu130":    "https://download.pytorch.org/whl/cu130",
+	"root/flashinfer-cu128": "https://flashinfer.ai/whl/cu128",
+	"root/flashinfer-cu129": "https://flashinfer.ai/whl/cu129",
+	"root/flashinfer-cu130": "https://flashinfer.ai/whl/cu130",
 }
 
 // Repo is the PyPI ecosystem.
 type Repo struct {
-	indexes map[string]string
-	ttl     time.Duration
+	indexes   map[string]string
+	ttl       time.Duration
+	maxUpload int64
 }
 
 // New builds an adapter with the public PyPI and PyTorch indexes.
