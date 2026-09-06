@@ -70,6 +70,8 @@ func (a *API) v1Routes() {
 	a.route("GET /api/v1/local/sources", a.listSources)
 	a.route("PUT /api/v1/local/sources/{project}", a.putSource)
 	a.route("DELETE /api/v1/local/sources/{project}", a.deleteSource)
+	a.route("GET /api/v1/local/project", a.getSelection)
+	a.route("PUT /api/v1/local/project", a.putSelection)
 }
 
 func (a *API) gcJob(w http.ResponseWriter, r *http.Request) error {
@@ -324,6 +326,18 @@ func (a *API) deleteProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err := a.Projects.Delete(name); err != nil {
 		return err
+	}
+	// The machine's working project must never name something that is gone: the next
+	// `pkgcache run` would fail with a 404 from the router, which is correct and
+	// unhelpful. `pkgcache project remove` has always done this; deleting the same
+	// project from the console has to do it too, or which of the two you used decides
+	// whether the machine is left pointing at nothing.
+	if a.Selection != nil {
+		if selected, _ := a.Selection.Selected(); selected == name {
+			if err := a.Selection.Select(config.GlobalProject); err != nil {
+				return err
+			}
+		}
 	}
 	a.audit(r, actor, "project.delete", name, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})

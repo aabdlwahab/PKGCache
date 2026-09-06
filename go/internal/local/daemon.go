@@ -120,6 +120,11 @@ func Run(ctx context.Context, o RunOptions) error {
 	a.API.Sources = &Sources{
 		DataDir: snap.DataDir, Store: a.Projects, Ecos: a.Ecos, Pool: a.Pool, Snapshot: snap,
 	}
+	// And the choice the switcher in that window is making. It writes the same file
+	// `pkgcache project use` writes, because a project switched in the app that only the
+	// app knows about is the bug this fixes: the window changed and every build on the
+	// machine carried on filling the project it had left.
+	a.API.Selection = &Selection{DataDir: snap.DataDir}
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}

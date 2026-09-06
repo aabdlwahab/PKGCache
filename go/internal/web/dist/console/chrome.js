@@ -46,7 +46,9 @@ export function wordmark() {
 export function buildChrome(root) {
   const projectSelect = el("select", { class: "project-select", "aria-label": "Project" });
   projectSelect.addEventListener("change", () => {
-    store.setProject(projectSelect.value);
+    // Not awaited: the page has already moved, and the write to the machine's own
+    // choice reports its own failure through the store's notice.
+    void store.setProject(projectSelect.value);
   });
 
   const live = region("span", { class: "live" });

@@ -24,6 +24,11 @@ define("admin", admin);
 async function boot() {
   document.documentElement.dataset.theme = store.state.theme;
 
+  // Started here and awaited below, so a server — where the endpoint does not exist —
+  // pays nothing for it: the 404 arrives alongside the identity check rather than after
+  // it. See store.adoptMachineProject.
+  const machine = store.adoptMachineProject();
+
   let me;
   try {
     me = await api.me();
@@ -44,6 +49,9 @@ async function boot() {
 
   // Order matters here, and getting it wrong is not a subtle failure.
   //
+  //   0. Settle which project this is, before anything subscribes to it. Adopting the
+  //      machine's choice later would wake the project subscriber, which remounts the
+  //      current view, at a moment when (3) has not yet given it anywhere to mount.
   //   1. Build the chrome, which registers every subscriber.
   //   2. Set `me` — after (1), or the identity subscriber has nobody to notify and the
   //      sign-out button never appears.
@@ -52,6 +60,7 @@ async function boot() {
   //      anywhere to mount it.
   //   4. Only then load. Views mount against empty state and fill in as data lands;
   //      that is what the region model is for.
+  await machine;
   const { main } = buildChrome(root);
   store.set({ me });
   // After `me`, before start(): the router has to know which views this session may

@@ -94,6 +94,32 @@ export function notify(notice) {
   set({ notice, error: "" });
 }
 
+/* Whether this instance keeps a machine-wide working project — a cache on somebody's
+ * laptop does, a server does not. Learned once, from whether adoptMachineProject() found
+ * the endpoint, so an ordinary server never fires a write that can only 404. */
+let machineSelection = false;
+
+/** Adopt the project this machine's commands are working in, if it has one.
+ *
+ * Called at boot, before the first render. The stored browser preference is the fallback
+ * and not the answer: `pkgcache project use work` in a terminal moves the machine, and a
+ * window that opened on `global` because that is what this browser last remembered would
+ * be describing somebody else's cache.
+ */
+export async function adoptMachineProject() {
+  try {
+    const answer = await api.machineProject();
+    machineSelection = true;
+    if (answer?.project) {
+      localStorage.setItem("pkgreg-project", answer.project);
+      set({ project: answer.project });
+    }
+  } catch {
+    // A server, or an older daemon than this page. Neither is an error: the switcher
+    // stays what it was, a preference belonging to this browser.
+  }
+}
+
 export function setProject(name) {
   localStorage.setItem("pkgreg-project", name);
   // The project-scoped slices now describe the wrong project, so they stop counting as
@@ -103,6 +129,16 @@ export function setProject(name) {
     loaded.delete(key);
   }
   set({ project: name });
+  if (!machineSelection) return Promise.resolve();
+  // The half that was missing. Switching project here used to move this page and nothing
+  // else, so `pkgcache build`, `pkgcache run` and pkgcache-docker went on working in the
+  // project they had been left in — global, for anyone who had never run
+  // `pkgcache project use` — while the window said otherwise and no error was raised
+  // anywhere. A failure to write it is reported for the same reason: the page and the
+  // machine disagreeing is exactly the state this must never enter silently.
+  return api.setMachineProject(name).catch((cause) => {
+    fail(new Error(`switched this window to ${name}, but not the machine: ${cause.message}`));
+  });
 }
 
 export function setTheme(theme) {

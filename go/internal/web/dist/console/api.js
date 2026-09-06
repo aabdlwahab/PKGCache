@@ -157,6 +157,17 @@ export const api = {
     request(`/local/sources/${encodeURIComponent(project)}`, { method: "PUT", body: body(value) }),
   deleteSource: (project) =>
     request(`/local/sources/${encodeURIComponent(project)}`, { method: "DELETE" }),
+
+  // ---- the machine's working project: present only on a cache that belongs to one
+  //
+  // The project switcher used to be a browser preference and nothing more, so switching
+  // it moved this page and left `pkgcache build`, `pkgcache run` and pkgcache-docker
+  // working in whichever project they had been working in before — usually global,
+  // silently, with every artifact landing in the wrong catalog. These two are how the
+  // page reads and writes the file those commands actually consult.
+  machineProject: () => request("/local/project"),
+  setMachineProject: (project) =>
+    request("/local/project", { method: "PUT", body: body({ project }) }),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

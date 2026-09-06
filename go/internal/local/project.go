@@ -62,18 +62,7 @@ func CurrentProject(dataDir string) string {
 	if name := strings.TrimSpace(os.Getenv(ProjectEnvVar)); name != "" {
 		return name
 	}
-	data, err := os.ReadFile(projectPath(dataDir))
-	if err != nil {
-		return config.GlobalProject
-	}
-	var stored currentProject
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return config.GlobalProject
-	}
-	if name := strings.TrimSpace(stored.Current); name != "" {
-		return name
-	}
-	return config.GlobalProject
+	return StoredProject(dataDir)
 }
 
 // SetCurrentProject records the project later commands default to.
@@ -107,8 +96,7 @@ func HasCurrentProject(dataDir string) bool {
 	if strings.TrimSpace(os.Getenv(ProjectEnvVar)) != "" {
 		return true
 	}
-	_, err := os.Stat(projectPath(dataDir))
-	return err == nil
+	return HasStoredProject(dataDir)
 }
 
 // Project is what the control API reports about one project.

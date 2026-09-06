@@ -125,6 +125,12 @@ it is. Content is stored once by digest, which is the point: two projects that n
 same 2.5 GB wheel hold one copy. Deleting a project drops its catalog entries and leaves
 the bytes for `pkgcache prune` to reclaim once nothing references them.
 
+The app's project switcher is the same choice, not a second one: switching project in
+the window writes what `pkgcache project use` writes, so a build started from a terminal
+afterwards lands where the window says it will. `PKGCACHE_PROJECT` still overrides both
+for one command, and is deliberately not what the window reports — it belongs to the
+environment of the shell that runs the command, not to the machine.
+
 The URL carries the project, exactly as on a server:
 `http://127.0.0.1:41780/<project>/npm/…`. An unregistered name is a 404 rather than
 somebody else's content.

@@ -625,7 +625,7 @@ function renderLifecycle() {
     const created = await store.mutate(() => api.createProject(name), `Created ${name}`);
     if (created) {
       await store.loadInstance();
-      store.setProject(name);
+      await store.setProject(name);
     }
     form.reset();
   });
@@ -640,6 +640,10 @@ function renderLifecycle() {
           if (!confirm(`Delete the project ${current}?\n\nIts cached entries stop being served. Blobs shared with other projects are untouched.`)) return;
           await store.mutate(() => api.deleteProject(current), `Deleted ${current}`);
           await store.loadInstance();
+          // The page must not go on naming a project that is gone — every panel would
+          // ask for it and be told 404. The daemon has already moved the machine's own
+          // choice off it for the same reason; this is the same move, here.
+          await store.setProject("global");
         }, { kind: "danger" })
       : el("p", { class: "note", text: current === "global" ? "The global project cannot be deleted." : "Only a superuser can delete a project." }),
   );

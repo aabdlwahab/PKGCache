@@ -505,7 +505,7 @@ function renderProject(regions) {
     {
       "aria-label": "Project",
       onchange: (event) => {
-        store.setProject(event.target.value);
+        void store.setProject(event.target.value);
         void reload();
       },
     },
@@ -540,14 +540,14 @@ async function addProject(existing) {
   if (existing.includes(name)) {
     // Already here: switching to it is what was meant, and is what creating it would
     // have failed to do.
-    store.setProject(name);
+    await store.setProject(name);
     await reload();
     notice(`Switched to ${name}.`);
     return;
   }
   await run(async () => {
     await api.createProject(name);
-    store.setProject(name);
+    await store.setProject(name);
   }, `Created ${name}.`);
 }
 
@@ -659,6 +659,11 @@ async function boot() {
     root.classList.remove("booting");
     return;
   }
+
+  // Which project this machine is working in, before anything is drawn. The switcher
+  // below writes this, so opening on the browser's last remembered value would show a
+  // project that `pkgcache project use` may have moved in a terminal since.
+  await store.adoptMachineProject();
 
   regions = shell();
   buildSections(regions);
