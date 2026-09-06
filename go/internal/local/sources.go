@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -178,16 +179,65 @@ func (s *Sources) Forget(ctx context.Context, project string) error {
 // the operation that makes every project's chain match the configuration — and a project
 // that has just appeared is exactly the case it handles. Applying it twice is harmless:
 // ConfigureChains replaces the rows it wrote before rather than adding to them.
-func (s *Sources) Adopt(ctx context.Context, _ string) error {
+func (s *Sources) Adopt(ctx context.Context, project string) error {
 	set, err := ReadTeams(s.DataDir)
 	if err != nil {
 		return err
 	}
-	if !set.Any() {
-		// Nothing is configured, so there is nothing to inherit and no rows to write.
+	// A team chain is written for every project at once, so this is skipped only when
+	// there is no team cache anywhere — not when this project has no entry of its own.
+	if set.Any() {
+		if err := s.apply(ctx, set); err != nil {
+			return err
+		}
+	}
+	return s.inheritSources(project)
+}
+
+// inheritSources copies the global project's own upstreams onto a project that has just
+// been created.
+//
+// The global project is the template, because on a laptop it is the one every cache
+// starts with and the one everything is configured in before anybody thinks about a
+// second. Somebody who adds a private wheelhouse or a CUDA channel there has said what
+// this machine fetches from; a project made afterwards inheriting none of it is the shape
+// of a bug people hit twice — once when the new project's build is slow, and again a week
+// later when they have forgotten why.
+//
+// Team-chain rows are excluded because ConfigureChainsOn has just written this project's
+// own, and copying them would leave two. Peers are excluded because a peer is a machine
+// rather than a source of packages. Credentials are instance-wide, not per project, so a
+// copied row's credential is still one this project can use.
+//
+// Rows already present win: this only fills gaps, so it cannot overwrite a project that
+// was configured before it was adopted.
+func (s *Sources) inheritSources(project string) error {
+	if project == "" || project == config.GlobalProject {
 		return nil
 	}
-	return s.apply(ctx, set)
+	template, err := s.Store.Upstreams(config.GlobalProject)
+	if err != nil {
+		return err
+	}
+	existing, err := s.Store.Upstreams(project)
+	if err != nil {
+		return err
+	}
+	have := make(map[string]bool, len(existing))
+	for _, row := range existing {
+		have[row.Eco+"\x00"+row.Name] = true
+	}
+	for _, row := range template {
+		if row.Kind != "origin" || managedRow(row) || have[row.Eco+"\x00"+row.Name] {
+			continue
+		}
+		row.ID, row.Project = 0, project
+		if _, err := s.Store.AddUpstream(project, row); err != nil {
+			return fmt.Errorf("local: give %s the %s upstream %s: %w",
+				project, row.Eco, row.Name, err)
+		}
+	}
+	return nil
 }
 
 // apply writes the record, rewrites every chain, and reloads outbound trust.
