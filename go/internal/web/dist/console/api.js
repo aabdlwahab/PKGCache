@@ -166,6 +166,10 @@ export const api = {
   // silently, with every artifact landing in the wrong catalog. These two are how the
   // page reads and writes the file those commands actually consult.
   // ---- siblings: other machines' caches, present only on a local cache
+  // Ask a machine what projects it has, before pointing anything at one of them.
+  reach: (project, probe) =>
+    request(`/local/reach?project=${encodeURIComponent(project)}`,
+      { method: "POST", body: body(probe) }),
   peers: (project) => request(`/local/peers/${encodeURIComponent(project)}`),
   addPeer: (project, spec) =>
     request(`/local/peers/${encodeURIComponent(project)}`, { method: "POST", body: body(spec) }),

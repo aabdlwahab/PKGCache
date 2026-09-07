@@ -158,14 +158,22 @@ third-party witness, not integrity. Leave it on and the toolchain reaches
 Another machine's pkgcache, as a source for this one:
 
 ```sh
-pkgcache peer add laptop-b                              # borrow from that machine
-pkgcache peer add -their-project research laptop-b      # from that project on it
+pkgcache peer projects laptop-b                         # what it has
+pkgcache peer add -their-project research laptop-b      # borrow from that project on it
 pkgcache peer ls
 pkgcache peer rm laptop-b
 ```
 
-Also in the console, under Sources, and in the window's sources panel — the same three
-fields either way.
+The machine is asked before anything is written, and a project it does not have is
+refused with the list of ones it does — a name typed blind writes a chain that resolves
+to nothing, and the first sign of that is a build failing much later with nothing
+pointing back at the address somebody typed. Where a cache will not list its projects,
+which one with accounts does not to a stranger, the name is taken as given rather than
+refused: not listing is not the same as not having.
+
+Also in the console, under Sources, and in the window's sources panel. Both check the
+address first and then offer the projects that machine actually has, as a menu rather
+than a box to type into.
 
 **Projects between two machines are independent.** `-their-project` names the project on
 their side, defaulting to their global one, for the same reason `-team-project` does on a

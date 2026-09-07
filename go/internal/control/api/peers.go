@@ -16,8 +16,41 @@ import (
 // upstream rows — one per ecosystem it fronts, plus the digest rows — and a console that
 // wrote them individually would be reimplementing a decision that belongs in one place.
 
+// Probe asks a machine what projects it has, before anything is written.
+//
+// Typing a project name blind is the failure this removes, and it is the one this whole
+// area keeps producing: a name that does not exist over there writes a chain that
+// resolves to nothing, and the first sign of it is a 404 from a build twenty minutes
+// later with no visible connection to the address somebody typed.
+type Probe struct {
+	// Address is the machine to ask. A bare host is given the default port.
+	Address string `json:"address"`
+	// Fingerprint pins a pkgreg's CA. Empty is a plain-HTTP sibling.
+	//
+	// Where it is given, it is verified before the project list is asked for, and the
+	// list is fetched over the connection that verification produced. A list taken from
+	// an unverified stranger is a list of names somebody else chose.
+	Fingerprint string `json:"ca_sha256"`
+}
+
+// Reachable is what one machine answered about itself.
+type Reachable struct {
+	// URL is the address as it was resolved.
+	URL string `json:"url"`
+	// Projects are the ones it will serve, in the order it listed them.
+	Projects []string `json:"projects"`
+	// Fingerprint is the CA it presented, where one was pinned.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// Reason says why Projects is empty when the machine itself answered: a cache with
+	// accounts refuses the list to a stranger, which is not a failure to reach it and
+	// must not be reported as one. The caller offers a text box instead of a menu.
+	Reason string `json:"reason,omitempty"`
+}
+
 // LocalPeers is the sibling caches a local cache borrows from.
 type LocalPeers interface {
+	// Reach asks a machine what it is and what projects it has.
+	Reach(ctx context.Context, probe Probe) (Reachable, error)
 	// Peers reports the siblings one project borrows from.
 	Peers(ctx context.Context, project string) ([]PeerState, error)
 	// AddPeer points a project at a sibling, replacing whatever it had for that one.
@@ -38,6 +71,9 @@ type PeerSpec struct {
 	TheirProject string `json:"their_project"`
 	// Name is what to call it here. Empty takes the host.
 	Name string `json:"name"`
+	// Fingerprint pins a CA where the sibling is a pkgreg rather than a laptop. Empty
+	// is plain HTTP, which is what one pkgcache serves another.
+	Fingerprint string `json:"ca_sha256"`
 	// Token authenticates the digest half. Empty asks the sibling for one, which works
 	// where it has no accounts; where that fails the chain half is still written.
 	Token string `json:"token"`
@@ -61,6 +97,31 @@ func (a *API) requireLocalPeers() error {
 		return control.NewError(http.StatusNotFound, "no_local_peers",
 			"this instance does not borrow from other machines' caches")
 	}
+	return nil
+}
+
+func (a *API) reachLocalPeer(w http.ResponseWriter, r *http.Request) error {
+	if err := a.requireLocalPeers(); err != nil {
+		return err
+	}
+	// requireOperate rather than a read: reaching out is this machine making a request
+	// to an address somebody supplied, which is not a thing a reader of one project
+	// should be able to make it do.
+	if _, _, err := a.requireOperate(r, projectName(r)); err != nil {
+		return err
+	}
+	var probe Probe
+	if err := a.decode(r, &probe); err != nil {
+		return err
+	}
+	reachable, err := a.Peers.Reach(r.Context(), probe)
+	if err != nil {
+		return err
+	}
+	if reachable.Projects == nil {
+		reachable.Projects = []string{}
+	}
+	writeJSON(w, http.StatusOK, reachable)
 	return nil
 }
 

@@ -288,11 +288,45 @@ function peersBody(project, peers, again) {
   }
 
   const address = input("address", { placeholder: "sams-laptop or 192.168.1.4:41780", autocomplete: "off" });
-  const theirProject = input("their_project", { placeholder: "global", autocomplete: "off" });
   const token = input("token", { placeholder: "only if that cache has accounts", autocomplete: "off" });
+  // A text box until that machine has been asked, a menu afterwards. Typing a project
+  // name blind is what writes a chain resolving to nothing, and the first sign of it is
+  // a build failing later with nothing pointing back here.
+  const projectRegion = region("div", {});
+  let theirProjects = null;
+  function drawTheirProject() {
+    projectRegion.set(
+      theirProjects && theirProjects.length
+        ? field("Project on their side",
+            select("their_project", theirProjects, theirProjects[0]),
+            "the projects that machine says it has")
+        : field("Project on their side",
+            input("their_project", { placeholder: "global", autocomplete: "off" }),
+            theirProjects
+              ? "that machine did not list its projects; name one yourself"
+              : "check the address to list what it has, or leave empty for their global"),
+    );
+  }
+  drawTheirProject();
+
+  const check = button("Check", async () => {
+    theirProjects = null;
+    drawTheirProject();
+    const reached = await store.mutate(
+      () => api.reach(project, { address: address.value.trim() }),
+      "");
+    if (!reached) return;
+    theirProjects = reached.projects || [];
+    drawTheirProject();
+    store.notify(theirProjects.length
+      ? `${reached.url} has ${theirProjects.length} project(s)`
+      : reached.reason || `${reached.url} listed no projects`);
+  });
+
   const form = el("form", { class: "form" },
     field("Their address", address, "a cache listens on loopback unless it was told otherwise"),
-    field("Project on their side", theirProject, "empty means their global project"),
+    el("div", { class: "field-actions" }, check),
+    projectRegion.node,
     field("Peer token", token, "leave empty and that cache is asked for one"),
     el("button", { class: "btn primary", type: "submit", text: "Borrow from it" }));
   form.addEventListener("submit", async (event) => {
@@ -300,7 +334,9 @@ function peersBody(project, peers, again) {
     const added = await store.mutate(
       () => api.addPeer(project, {
         address: address.value.trim(),
-        their_project: theirProject.value.trim(),
+        // Whichever control is showing — the menu once the machine has been asked, the
+        // text box until then.
+        their_project: (form.elements.their_project?.value || "").trim(),
         token: token.value.trim(),
       }),
       `${project} now fetches through that machine`);

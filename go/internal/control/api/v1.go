@@ -75,6 +75,7 @@ func (a *API) v1Routes() {
 	a.route("PUT /api/v1/local/project", a.putSelection)
 	a.route("POST /api/v1/local/project/repoint", a.repointSettings)
 	a.route("GET /api/v1/local/files", a.browseFiles)
+	a.route("POST /api/v1/local/reach", a.reachLocalPeer)
 	a.route("GET /api/v1/local/peers/{project}", a.listLocalPeers)
 	a.route("POST /api/v1/local/peers/{project}", a.addLocalPeer)
 	a.route("DELETE /api/v1/local/peers/{project}/{peer}", a.forgetLocalPeer)

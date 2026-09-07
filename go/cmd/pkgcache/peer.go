@@ -45,6 +45,8 @@ func runPeer(ctx context.Context, args []string) error {
 		return peerRemove(ctx, args)
 	case "token":
 		return peerToken(ctx, args)
+	case "projects":
+		return peerProjects(ctx, args)
 	case "-h", "--help", "help":
 		peerUsage(os.Stderr)
 		return nil
@@ -61,6 +63,7 @@ usage:
   pkgcache peer ls                    the siblings this project borrows from
   pkgcache peer add <address>         borrow from that cache
   pkgcache peer rm <address|name>     stop borrowing from it
+  pkgcache peer projects <address>    what projects that cache has
   pkgcache peer token                 issue a token for a sibling that cannot ask
 
 A peer is another pkgcache. It is asked for content by digest and answers with bytes
@@ -239,6 +242,32 @@ func peerRemove(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("pkgcache: %s no longer borrows from %s\n", project, target)
+	return nil
+}
+
+func peerProjects(ctx context.Context, args []string) error {
+	snap, project, target, err := peerFlags("projects", args, true)
+	if err != nil {
+		return err
+	}
+	state, err := reachRegistry(ctx, snap)
+	if err != nil {
+		return err
+	}
+	reachable, err := local.ReachPeerFor(ctx, state, project,
+		controlapi.Probe{Address: target})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", reachable.URL)
+	if len(reachable.Projects) == 0 {
+		fmt.Printf("  %s\n", reachable.Reason)
+		return nil
+	}
+	for _, name := range reachable.Projects {
+		fmt.Printf("  %s\n", name)
+	}
+	fmt.Printf("\n  pkgcache peer add -their-project <one of those> %s\n", target)
 	return nil
 }
 

@@ -56,6 +56,20 @@ func ListPeers(ctx context.Context, state State, project string) ([]Sibling, err
 	return body.Peers, err
 }
 
+// ReachPeerFor asks a machine what projects it has, through the daemon.
+//
+// Through the daemon rather than from here, so the terminal, the console and the window
+// all get the same answer — including the CA verification a pkgreg needs, which is not a
+// thing worth having two implementations of.
+func ReachPeerFor(
+	ctx context.Context, state State, project string, probe controlapi.Probe,
+) (controlapi.Reachable, error) {
+	var reachable controlapi.Reachable
+	err := newProjectAPI(state).do(ctx, http.MethodPost,
+		"/api/v1/local/reach?project="+url.QueryEscape(project), probe, &reachable)
+	return reachable, err
+}
+
 // AddPeer points one project at a sibling.
 func AddPeer(
 	ctx context.Context, state State, project string, spec controlapi.PeerSpec,

@@ -122,6 +122,31 @@ export function askText({
   });
 }
 
+/** Ask which of a list. Resolves to the chosen value, or null if cancelled.
+ *
+ * A menu of names the far machine actually has, rather than a box to type one into: a
+ * project that does not exist over there writes a chain that resolves to nothing, and
+ * nothing says so until a build fails much later. */
+export function askChoice({ title, label, choices, confirmLabel = "Choose" } = {}) {
+  return new Promise((resolve) => {
+    const list = el("select", { class: "dlg-input" },
+      choices.map((choice) => el("option", { value: choice, text: choice })));
+    let close = () => {};
+    const form = el("form", { class: "dlg-body" },
+      label ? el("label", { class: "dlg-label", text: label }) : null, list);
+    const done = () => { close(); resolve(list.value); };
+    form.addEventListener("submit", (event) => { event.preventDefault(); done(); });
+    close = openModal({
+      title, body: form, onCancel: () => resolve(null),
+      actions: [
+        button("Cancel", () => { close(); resolve(null); }),
+        button(confirmLabel, done, { kind: "primary" }),
+      ],
+    });
+    list.focus();
+  });
+}
+
 /** Ask a yes-or-no question. Resolves true only if the reader said yes.
  *
  * The replacement for window.confirm, which on a Mac answers false without asking —

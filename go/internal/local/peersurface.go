@@ -3,6 +3,8 @@ package local
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 	"github.com/aabdlwahab/PKGCache/internal/control/credential"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
 // Borrowing from the machine next to you, as the daemon does it.
@@ -53,6 +56,75 @@ type Peers struct {
 }
 
 var _ controlapi.LocalPeers = (*Peers)(nil)
+
+// Reach asks a machine what it is and what projects it has, before anything is written.
+//
+// Two shapes, one answer. A sibling is a pkgcache on plain HTTP and is simply asked. A
+// pkgreg is asked only after its CA has been fetched and matched against the fingerprint
+// somebody was given out of band, and then over the connection that verification
+// produced — taking a list of project names from a server whose identity has not been
+// established would be letting a stranger choose what this cache is pointed at.
+//
+// A machine that answers but withholds the list is not a machine that failed. A pkgreg
+// with accounts refuses it to somebody with no session, which is correct; the caller is
+// told why and offers a text box instead of a menu.
+func (p *Peers) Reach(ctx context.Context, probe controlapi.Probe) (controlapi.Reachable, error) {
+	base, err := NormalizePeerURL(probe.Address)
+	if err != nil {
+		return controlapi.Reachable{}, err
+	}
+	client := peerClient()
+	answer := controlapi.Reachable{URL: base}
+	if strings.TrimSpace(probe.Fingerprint) != "" {
+		verified, err := trust.Fetch(ctx, trust.Options{
+			Server: base, ExpectedSHA256: probe.Fingerprint,
+		})
+		if err != nil {
+			// The most important sentence this can produce — "the cache at that address
+			// is not the one you were told about" — carried through as a refusal rather
+			// than reduced to an internal error.
+			return answer, control.NewError(http.StatusBadRequest,
+				"untrusted_server", "%s", err.Error())
+		}
+		base = strings.TrimRight(verified.Base.String(), "/")
+		answer.URL, answer.Fingerprint = base, verified.Fingerprint
+		client = verified.Client
+	}
+
+	var body struct {
+		Projects []struct {
+			Name string `json:"name"`
+		} `json:"projects"`
+	}
+	api := projectAPI{base: base, client: client}
+	if err := api.do(ctx, http.MethodGet, "/api/v1/projects", nil, &body); err != nil {
+		if answer.Fingerprint == "" {
+			// No fingerprint means nothing has been verified, so a machine that will not
+			// answer at all is a machine this cannot report on.
+			// A client error, message intact. As a bare error it reaches the caller as
+			// "internal server error", which reads as a bug in this cache rather than
+			// as the one useful sentence available: that machine is not answering, and
+			// here is the usual reason.
+			return answer, control.NewError(http.StatusBadRequest, "unreachable",
+				"%s did not answer: %s\n"+
+					"  a cache listens on loopback unless it was told otherwise, so one on\n"+
+					"  another machine has to be started with PKGCACHE_ADDR=0.0.0.0:%d",
+				base, err.Error(), config.LocalPort)
+		}
+		// It is there and it is who it said it was; it just will not list its projects.
+		answer.Reason = "that cache did not list its projects: " + err.Error()
+		return answer, nil
+	}
+	for _, project := range body.Projects {
+		if project.Name != "" {
+			answer.Projects = append(answer.Projects, project.Name)
+		}
+	}
+	if len(answer.Projects) == 0 {
+		answer.Reason = "that cache listed no projects"
+	}
+	return answer, nil
+}
 
 // Peers reports the siblings one project borrows from.
 //
@@ -126,6 +198,21 @@ func (p *Peers) AddPeer(
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
 		name = PeerName(base)
+	}
+	// Checked against what that machine says it has, before a single row is written.
+	// A project that does not exist over there produces a chain resolving to nothing,
+	// and the first sign of it is a build failing much later with no visible connection
+	// to the name somebody typed. Where the machine will not say, this is skipped rather
+	// than refused: not listing is not the same as not having.
+	if reachable, err := p.Reach(ctx, controlapi.Probe{
+		Address: base, Fingerprint: spec.Fingerprint,
+	}); err != nil {
+		return controlapi.PeerState{}, err
+	} else if len(reachable.Projects) > 0 && !slices.Contains(reachable.Projects, theirProject) {
+		return controlapi.PeerState{}, control.NewError(http.StatusBadRequest,
+			"unknown_far_project",
+			"%s has no project %q; it has %s",
+			base, theirProject, strings.Join(reachable.Projects, ", "))
 	}
 	if err := p.ForgetPeer(ctx, project, base); err != nil &&
 		!strings.Contains(err.Error(), "no peer here") {

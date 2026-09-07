@@ -11,7 +11,7 @@
  */
 
 import { api } from "./api.js";
-import { askConfirm, askText } from "./dialog.js";
+import { askChoice, askConfirm, askText } from "./dialog.js";
 import { canBrowse, pickDirectory, pickPack } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
@@ -430,20 +430,43 @@ export function sourcesPanel({ notice, reload }) {
       confirmLabel: "Next",
     });
     if (address === null) return;
-    // Asked separately rather than assumed: two machines number their projects
-    // independently, and taking theirs to be ours is how somebody ends up pointed at a
-    // project that does not exist over there.
-    const theirProject = await askText({
-      title: "Which project on their side?",
-      label: "Their project",
-      placeholder: "global",
-      value: "global",
-      confirmLabel: "Borrow from it",
-      validate: () => "",
-    });
-    if (theirProject === null) return;
+
+    // That machine is asked what it has before anybody is asked to name one. Two
+    // machines number their projects independently, so this is a real question — and a
+    // menu of names it actually has cannot be answered with a typo.
+    let theirProject = "global";
     try {
       notice("Reaching that machine…");
+      const reached = await api.reach(project, { address });
+      const choices = reached.projects || [];
+      if (choices.length > 1) {
+        const picked = await askChoice({
+          title: "Which of their projects?",
+          label: `${reached.url} has these`,
+          choices,
+          confirmLabel: "Borrow from it",
+        });
+        if (picked === null) return;
+        theirProject = picked;
+      } else if (choices.length === 1) {
+        theirProject = choices[0];
+      } else {
+        // It answered but would not list them, which a cache with accounts does. Fall
+        // back to asking, rather than assuming a name it may not have.
+        const typed = await askText({
+          title: "Which project on their side?",
+          label: reached.reason || "That machine did not list its projects",
+          placeholder: "global", value: "global", confirmLabel: "Borrow from it",
+        });
+        if (typed === null) return;
+        theirProject = typed;
+      }
+    } catch (cause) {
+      notice(cause?.message || String(cause), true);
+      return;
+    }
+
+    try {
       const added = await api.addPeer(project, {
         address, their_project: theirProject,
       });
