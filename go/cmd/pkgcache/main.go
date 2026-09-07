@@ -24,6 +24,7 @@ var commands = map[string]struct {
 }{
 	"setup":              {"point this machine at a cache, once", runSetup},
 	"project":            {"the projects this cache serves", runProject},
+	"peer":               {"other machines' caches, as a source for this one", runPeer},
 	"run":                {"run one command with its tools pointed at the cache", runRun},
 	"shell":              {"open a shell whose tools use the cache", runShell},
 	"env":                {"print the settings that point tools at the cache", runEnv},

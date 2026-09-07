@@ -153,6 +153,35 @@ checked against every zip — so `GOSUMDB=off` against this cache gives up the l
 third-party witness, not integrity. Leave it on and the toolchain reaches
 `sum.golang.org` directly, which needs the network this cache exists to avoid.
 
+## Peers
+
+Another machine's pkgcache, as a source for this one:
+
+```sh
+pkgcache peer add laptop-b            # on the machine that wants to borrow
+pkgcache peer ls
+pkgcache peer rm laptop-b
+```
+
+One command, on one side. `add` asks the sibling for its own token, which works because a
+cache with no accounts allows the control plane to whoever can reach it — the same fact
+`pkgcache project create` relies on. Where that is not true, `pkgcache peer token` on the
+other machine prints one to pass with `-token`.
+
+A peer is asked for content **by digest** and answers with bytes that hash to it, so
+neither machine has to trust what the other calls anything. That is why this needs no
+certificate while `pkgcache setup` needs a pinned CA, and it is also the limit: a peer
+fills in a *file*, never tells you which file to want. The index has to have been fetched
+here already, which means pypi and oci — the rest either do not hash their content up
+front, or derive their upstream from the request and have no row for a peer to sit in.
+
+It is asked before this cache gives up offline and before it reaches the internet, so two
+machines on a plane fill each other in.
+
+A cache listens on loopback unless it was told otherwise, so a sibling is reachable only
+if it was started with `PKGCACHE_ADDR=0.0.0.0:41780`. `pkgcache peer add` says so when
+nothing answers, rather than storing rows that point at nothing.
+
 ## Three tiers
 
 With a team cache configured, a lookup goes local, then the team's cache, then the
