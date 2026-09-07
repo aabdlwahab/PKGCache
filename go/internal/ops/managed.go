@@ -326,10 +326,37 @@ func (s *Service) applyCatalogManifest(
 		})
 		return err
 	}
+	head := ""
 	if expectedHead != nil {
-		return s.Catalog.ApplySnapshotFrom(project, *expectedHead, target.ID, source)
+		head = *expectedHead
 	}
-	return s.Catalog.ApplySnapshot(project, target.ID, source)
+	return s.Catalog.ApplySnapshotIndexed(
+		project, head, target.ID, expectedHead != nil, source, s.artifactIndex)
+}
+
+// artifactIndex turns a restored entry back into an inventory row.
+//
+// The ecosystem that owns the key is the only thing that can read a name and a version
+// out of it, which is why this lives here rather than in the catalog: ops has the
+// registry and the catalog cannot import it.
+//
+// Origin is left empty on purpose. It records where a fetch went, and a restored entry
+// was not fetched — it arrived in a pack, and naming an upstream it never touched would
+// be a worse answer than saying nothing.
+func (s *Service) artifactIndex(entry catalog.Entry) (catalog.Artifact, bool) {
+	descriptor, ok := s.Ecos.Get(entry.Eco)
+	if !ok {
+		return catalog.Artifact{}, false
+	}
+	name, version, arch, ok := descriptor.Descriptor().Artifact(entry.Key)
+	if !ok {
+		return catalog.Artifact{}, false
+	}
+	return catalog.Artifact{
+		Project: entry.Project, Eco: entry.Eco,
+		Name: name, Version: version, Arch: arch,
+		Digest: entry.Digest, Size: entry.Size, CachedAt: entry.CachedAt,
+	}, true
 }
 
 func (s *Service) managedEco(id string) bool {

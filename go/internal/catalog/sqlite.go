@@ -712,18 +712,45 @@ func (d *DB) walkEntries(query string, args []any, fn func(Entry) error) error {
 // Refs and artifacts are derived views whose source data is not in the compact
 // manifest, so they are cleared rather than left pointing at rolled-back content.
 func (d *DB) ApplySnapshot(project, snapshotID string, source EntrySource) error {
-	return d.applySnapshot(project, "", snapshotID, false, source)
+	return d.applySnapshot(project, "", snapshotID, false, source, nil)
 }
 
 // ApplySnapshotFrom is ApplySnapshot with a transactional fast-forward guard.
 func (d *DB) ApplySnapshotFrom(
 	project, expectedHead, snapshotID string, source EntrySource,
 ) error {
-	return d.applySnapshot(project, expectedHead, snapshotID, true, source)
+	return d.applySnapshot(project, expectedHead, snapshotID, true, source, nil)
+}
+
+// ArtifactIndex derives the inventory row for a restored entry, or reports that the
+// entry is not one.
+//
+// A manifest records what serves a request — project, ecosystem, key, digest, size —
+// and nothing else. A package's name, version and architecture are not derivable from a
+// key without the owning ecosystem's own parser, so the caller that has one supplies
+// this and the inventory is rebuilt in the same transaction as the entries it describes.
+type ArtifactIndex func(Entry) (Artifact, bool)
+
+// ApplySnapshotIndexed applies a snapshot and rebuilds the inventory as it goes.
+//
+// Applying a snapshot empties the artifacts table along with the entries, because both
+// describe what a project holds and the incoming manifest replaces them. Only the
+// entries were ever put back. So importing a pack — or rolling back — left a project
+// whose packages served perfectly and whose inventory was empty: the cache worked, the
+// console showed nothing, and that reads as an import that silently failed.
+//
+// A nil index keeps the old behaviour, which is the right answer for a caller with no
+// ecosystem registry to ask.
+func (d *DB) ApplySnapshotIndexed(
+	project, expectedHead, snapshotID string, checkHead bool,
+	source EntrySource, index ArtifactIndex,
+) error {
+	return d.applySnapshot(project, expectedHead, snapshotID, checkHead, source, index)
 }
 
 func (d *DB) applySnapshot(
-	project, expectedHead, snapshotID string, checkHead bool, source EntrySource,
+	project, expectedHead, snapshotID string, checkHead bool,
+	source EntrySource, index ArtifactIndex,
 ) error {
 	if project == "" || snapshotID == "" {
 		return errors.New("catalog: project and snapshot id are required")
@@ -765,6 +792,26 @@ func (d *DB) applySnapshot(
 			return err
 		}
 		defer func() { _ = stmt.Close() }()
+		// Prepared once beside the entry insert: a restore is one statement per artifact
+		// across a whole project, and preparing it per row is the difference between a
+		// pause and a stall.
+		//
+		// ON CONFLICT because two entries can describe one artifact — the same wheel
+		// reachable under more than one key — and the second must update the row rather
+		// than fail the whole restore.
+		var artifactStmt *sql.Stmt
+		if index != nil {
+			artifactStmt, err = tx.Prepare(
+				`INSERT INTO artifacts(project, eco, name, version, arch, sha256, size, origin, cached_at, extra)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(project, eco, name, version, arch) DO UPDATE SET
+				   sha256=excluded.sha256, size=excluded.size, origin=excluded.origin,
+				   cached_at=excluded.cached_at, extra=excluded.extra`)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = artifactStmt.Close() }()
+		}
 		if err := source(func(e Entry) error {
 			if e.Project != "" && e.Project != project {
 				return fmt.Errorf("entry belongs to project %q, not %q", e.Project, project)
@@ -778,8 +825,38 @@ func (d *DB) applySnapshot(
 			if e.LastAccess.IsZero() {
 				e.LastAccess = now
 			}
-			_, err := stmt.Exec(project, e.Eco, e.Key, string(e.Digest), e.Size,
-				e.MediaType, ts(e.CachedAt), ts(e.LastAccess), e.Hits)
+			if _, err := stmt.Exec(project, e.Eco, e.Key, string(e.Digest), e.Size,
+				e.MediaType, ts(e.CachedAt), ts(e.LastAccess), e.Hits); err != nil {
+				return err
+			}
+			if artifactStmt == nil {
+				return nil
+			}
+			artifact, ok := index(e)
+			if !ok {
+				// Not an artifact: an index page, a metadata document, a manifest. Most
+				// of a project's entries are these, and recording them as packages would
+				// list rows nobody could install.
+				return nil
+			}
+			var extra any
+			if len(artifact.Extra) > 0 {
+				encoded, err := json.Marshal(artifact.Extra)
+				if err != nil {
+					return fmt.Errorf("catalog: marshal artifact extra: %w", err)
+				}
+				extra = string(encoded)
+			}
+			cached := artifact.CachedAt
+			if cached.IsZero() {
+				// The entry's own time, which a manifest carries. "When was this
+				// cached" has no better answer after a restore, and inventing now()
+				// would make every imported package look fetched this second.
+				cached = e.CachedAt
+			}
+			_, err := artifactStmt.Exec(project, artifact.Eco, artifact.Name,
+				artifact.Version, artifact.Arch, string(artifact.Digest), artifact.Size,
+				artifact.Origin, ts(cached), extra)
 			return err
 		}); err != nil {
 			return err
