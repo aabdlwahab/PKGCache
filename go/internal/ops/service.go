@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -207,11 +208,33 @@ func (s *Service) exportJob(
 	if defaulted {
 		name = defaultPackName(record.Project, pack, s.clock())
 	}
-	if filepath.Base(name) != name || !strings.HasSuffix(name, ".tar") {
+	if filepath.Base(name) != name || !strings.HasSuffix(name, packExtension) {
 		return errors.New("export: file must be a .tar basename")
 	}
-	finalPath := filepath.Join(outDir, name)
-	if err := os.Link(tempPath, finalPath); err != nil {
+	// A directory somebody chose in the window. The name stays a basename either way —
+	// the two halves are separate so that "which pack" and "which place" cannot be
+	// confused, and so a caller that supplies neither still gets the generated name in
+	// the cache's own outbox.
+	//
+	// Absolute only, and checked here rather than trusted: a relative directory would
+	// resolve against the daemon's working directory, which is not anywhere the person
+	// choosing it is standing.
+	destination := outDir
+	if chosen := stringParam(record.Params, "dir"); chosen != "" {
+		if !filepath.IsAbs(chosen) {
+			return fmt.Errorf("export: %s is not an absolute directory", chosen)
+		}
+		info, err := os.Stat(chosen)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("export: %s is not a directory", chosen)
+		}
+		destination = chosen
+	}
+	finalPath := filepath.Join(destination, name)
+	if err := publishPack(tempPath, finalPath); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			// A generated name carries the kind, both checkpoints and the second it was
 			// made in, so a file already at that path is this exact pack, written inside
@@ -395,9 +418,22 @@ func (s *Service) lockwarmJob(
 
 func (s *Service) importPath(name string) (string, error) {
 	inDir := filepath.Join(s.DataDir, "shuttle", "in")
+	// An absolute path is a pack somebody pointed at — on the stick it arrived on,
+	// usually, rather than one they copied into the inbox first. Accepted only in that
+	// form: a relative path would resolve against the daemon's working directory, which
+	// is nowhere the person choosing it is standing.
+	if filepath.IsAbs(name) {
+		if !strings.HasSuffix(name, packExtension) {
+			return "", fmt.Errorf("import: %s is not a .tar pack", name)
+		}
+		if _, err := os.Stat(name); err != nil {
+			return "", err
+		}
+		return filepath.Clean(name), nil
+	}
 	if name != "" {
-		if filepath.Base(name) != name || !strings.HasSuffix(name, ".tar") {
-			return "", errors.New("import: file must be a .tar basename")
+		if filepath.Base(name) != name || !strings.HasSuffix(name, packExtension) {
+			return "", errors.New("import: file must be a .tar basename or an absolute path")
 		}
 		return filepath.Join(inDir, name), nil
 	}
@@ -425,6 +461,44 @@ func (s *Service) importPath(name string) (string, error) {
 func stringParam(params map[string]any, name string) string {
 	value, _ := params[name].(string)
 	return strings.TrimSpace(value)
+}
+
+// packExtension is the only thing a pack is ever called.
+const packExtension = ".tar"
+
+// publishPack puts the finished pack at its destination without overwriting anything.
+//
+// A hard link is the cheap path and the one that has always been taken, because the
+// staging file and the outbox are the same filesystem. A chosen directory usually is
+// not — that is the entire point of choosing one, it is a USB stick — and a link across
+// devices fails with EXDEV. So the copy is the fallback, and it is opened O_EXCL so that
+// the "already exists" answer is the same on both paths rather than depending on which
+// one happened to run.
+func publishPack(from, to string) error {
+	if err := os.Link(from, to); err == nil || errors.Is(err, os.ErrExist) {
+		return err
+	}
+	source, err := os.Open(from) // #nosec G304 -- a temp file this job just wrote.
+	if err != nil {
+		return err
+	}
+	defer func() { _ = source.Close() }()
+	// #nosec G304 -- the destination the operator chose.
+	target, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		_ = os.Remove(to)
+		return err
+	}
+	if err := target.Sync(); err != nil {
+		_ = target.Close()
+		_ = os.Remove(to)
+		return err
+	}
+	return target.Close()
 }
 
 // packNameTime is the timestamp in a generated pack name: ISO 8601 basic, UTC.

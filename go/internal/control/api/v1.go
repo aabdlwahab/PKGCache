@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,7 @@ func (a *API) v1Routes() {
 	a.route("GET /api/v1/local/project", a.getSelection)
 	a.route("PUT /api/v1/local/project", a.putSelection)
 	a.route("POST /api/v1/local/project/repoint", a.repointSettings)
+	a.route("GET /api/v1/local/files", a.browseFiles)
 }
 
 func (a *API) gcJob(w http.ResponseWriter, r *http.Request) error {
@@ -674,6 +676,26 @@ func (a *API) exportJob(w http.ResponseWriter, r *http.Request) error {
 	return a.projectJob(w, r, "export")
 }
 
+// pathParam is the value of a job parameter that names a place on the cache's machine.
+//
+// Refused unless this instance browses one. The job runners accept an absolute directory
+// to export into and an absolute pack to import from, which is right for a cache on
+// somebody's laptop and is not something a server should do because a client asked: a
+// pkgreg's filesystem is not the reader's, and writing a pack into it on request is a
+// different program.
+func (a *API) requireLocalPath(body map[string]any, key string) error {
+	value, _ := body[key].(string)
+	if value == "" || filepath.IsAbs(value) == (a.Files != nil) {
+		return nil
+	}
+	if a.Files == nil && filepath.IsAbs(value) {
+		return control.NewError(http.StatusBadRequest, "no_local_files",
+			"this instance does not write to a machine of its own; %s must be a bare .tar name",
+			key)
+	}
+	return nil
+}
+
 // lockwarmJob pre-fetches everything a uv.lock pins. The job has been registered in
 // ops since it was written; until now the only way to reach it was the legacy
 // POST /api/jobs shim, so the versioned API could not warm a cache at all.
@@ -702,6 +724,11 @@ func (a *API) importJob(w http.ResponseWriter, r *http.Request) error {
 		if err := a.decode(r, &body); err != nil {
 			return err
 		}
+		// Its own handler, so it does not pass through projectJob's guard and needs
+		// its own. An absolute pack is a local cache's business alone.
+		if err := a.requireLocalPath(body, "file"); err != nil {
+			return err
+		}
 	}
 	return a.submitJob(w, r, actor, name, "import", body)
 }
@@ -715,6 +742,11 @@ func (a *API) projectJob(w http.ResponseWriter, r *http.Request, action string) 
 	var body map[string]any
 	if r.ContentLength != 0 {
 		if err := a.decode(r, &body); err != nil {
+			return err
+		}
+	}
+	for _, key := range []string{"dir", "file"} {
+		if err := a.requireLocalPath(body, key); err != nil {
 			return err
 		}
 	}

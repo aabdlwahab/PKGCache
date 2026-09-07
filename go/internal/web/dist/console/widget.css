@@ -382,3 +382,37 @@
   line-height: 1.4;
 }
 .wg-check input { width: 13px; height: 13px; accent-color: var(--accent); margin: 2px 0 0; flex: none; }
+
+/* The machine picker. One box over the page, because choosing where a pack goes is a
+   question that has to be answered before anything else happens — and because the
+   alternative, a panel that pushes the page around, loses the reader's place. */
+.pk-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.pk-box {
+  display: grid; gap: 10px;
+  width: min(38rem, 100%); max-height: min(32rem, 90vh);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  padding: 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.pk-where { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.pk-warn { color: var(--warn); }
+/* The list scrolls, not the box: a directory with four hundred entries must not push
+   the buttons off the bottom of the screen. */
+.pk-list { overflow-y: auto; display: grid; gap: 2px; align-content: start; }
+.pk-row {
+  display: block; width: 100%; text-align: left;
+  padding: 6px 8px; font: inherit; font-size: 13px;
+  color: var(--fg); background: none; border: 1px solid transparent;
+  border-radius: 6px; cursor: pointer;
+}
+.pk-row:hover { background: var(--bg2); }
+.pk-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pk-row.is-dir { font-weight: 600; }
+.pk-row.is-muted { color: var(--muted); font-weight: 400; }
+.pk-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.pk-actions { display: flex; justify-content: flex-end; gap: 8px; }

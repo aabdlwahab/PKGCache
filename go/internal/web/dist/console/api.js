@@ -172,6 +172,9 @@ export const api = {
   // call, never folded into the switch: rewriting files in somebody's home directory is a
   // second decision, and an unasked one redirects an editor that is already open.
   repointTools: () => request("/local/project/repoint", { method: "POST" }),
+  // Browse the machine the cache runs on — not the viewer's. Empty path means the
+  // starting places. 404 on a server, which is how callers know not to offer a picker.
+  browse: (path) => request(`/local/files${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

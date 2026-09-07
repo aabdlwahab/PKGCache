@@ -11,6 +11,7 @@
  */
 
 import { api } from "./api.js";
+import { canBrowse, pickDirectory, pickPack } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
 import { bytes, ago } from "./format.js";
@@ -212,6 +213,14 @@ export function transferPanel({ notice, reload, settle }) {
   }
 
   async function exportPack() {
+    // Where it goes is asked before anything is built, because a pack is gigabytes and
+    // the question is cheap. Declining the picker keeps the old behaviour — the cache's
+    // own outbox — rather than cancelling the export.
+    let dir = null;
+    if (await canBrowse()) {
+      dir = await pickDirectory();
+      if (dir === null) return;
+    }
     await guard(async () => {
       // Reads the head; it does not make one. This used to take a checkpoint before every
       // export, which guaranteed there was something to export and that it was current —
@@ -234,7 +243,8 @@ export function transferPanel({ notice, reload, settle }) {
             "and carries what that checkpoint captured.",
         );
       }
-      const job = await settle(await api.exportPack(store.state.project, {}));
+      const job = await settle(
+        await api.exportPack(store.state.project, dir ? { dir } : {}));
       const wrote = /wrote (\S+)/.exec(job.log ?? "");
       // Names the checkpoint it packed. What a pack contains is now a question with an
       // answer the person can check, rather than "everything, probably".
@@ -246,8 +256,17 @@ export function transferPanel({ notice, reload, settle }) {
   }
 
   async function importPack() {
+    // Which pack, rather than "whatever single .tar is in the inbox" — which failed
+    // outright with two of them there, and silently read the wrong one when somebody had
+    // put a second one in since.
+    let file = null;
+    if (await canBrowse()) {
+      file = await pickPack();
+      if (file === null) return;
+    }
     await guard(async () => {
-      const job = await settle(await api.importPack(store.state.project, {}));
+      const job = await settle(
+        await api.importPack(store.state.project, file ? { file } : {}));
       const applied = /imported checkpoint (\S+)/.exec(job.log ?? "");
       return applied ? `Applied ${applied[1].slice(0, 12)}.` : "The pack was applied.";
     });

@@ -60,11 +60,15 @@ type Options struct {
 	// A server leaves it nil: its readers each have a project of their own and there is
 	// no machine-wide answer to store. See LocalSelection.
 	Selection LocalSelection
-	Engine    *engine.Engine
-	Ecos      *eco.Registry
-	Events    *obs.Bus
-	DataDir   string
-	CAFile    string
+	// Files, when set, browses the machine this cache runs on, so the window can choose
+	// where a pack goes and which one to import. A server leaves it nil: it has no
+	// machine the reader is standing at. See LocalFiles.
+	Files   LocalFiles
+	Engine  *engine.Engine
+	Ecos    *eco.Registry
+	Events  *obs.Bus
+	DataDir string
+	CAFile  string
 	// Log records the errors this package answers 500 for. Without it they were written
 	// nowhere at all: the caller was told "internal server error" and the cause was
 	// discarded, which is the one failure mode a control plane cannot afford to have.

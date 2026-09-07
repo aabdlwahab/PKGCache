@@ -5,6 +5,7 @@
 
 import { el, region, panel, fill, table, button, field, input, loading } from "../dom.js";
 import { api } from "../api.js";
+import { canBrowse, pickDirectory, pickPack } from "../picker.js";
 import * as store from "../store.js";
 import { bytes, count, ago, digest } from "../format.js";
 
@@ -85,6 +86,67 @@ function renderActions() {
     checkpointForm.reset();
   });
 
+  // Declared before the forms that hold them: these are referenced while the form is
+  // being built, and a const referenced above its declaration is a ReferenceError rather
+  // than a warning.
+  //
+  // Beside the fields rather than in them, because choosing a place is a different act
+  // from naming a file — a picker that submitted the form would export before anybody
+  // pressed Export.
+  let chosenDir = null;
+  let chosenPack = null;
+  const whereRegion = region("div", { class: "note" });
+  const packRegion = region("div", { class: "note" });
+  const whereButton = button("Choose a folder…", async () => {
+    const picked = await pickDirectory();
+    if (picked === null) return;
+    chosenDir = picked;
+    drawWhere();
+  });
+  const clearWhere = button("Use the cache's outbox", () => {
+    chosenDir = null;
+    drawWhere();
+  });
+  const packButton = button("Choose a pack…", async () => {
+    const picked = await pickPack();
+    if (picked === null) return;
+    chosenPack = picked;
+    drawPack();
+  });
+  const clearPack = button("Use the inbox", () => {
+    chosenPack = null;
+    drawPack();
+  });
+  function drawWhere() {
+    whereRegion.set(
+      chosenDir
+        ? el("div", {}, el("span", { text: "Writing to " }), el("code", { text: chosenDir }))
+        : el("span", { text: "Written into shuttle/out on the cache's machine." }),
+    );
+    clearWhere.hidden = !chosenDir;
+  }
+  function drawPack() {
+    packRegion.set(
+      chosenPack
+        ? el("div", {}, el("span", { text: "Reading " }), el("code", { text: chosenPack }))
+        : el("span", { text: "Read from shuttle/in on the cache's machine." }),
+    );
+    clearPack.hidden = !chosenPack;
+  }
+  drawWhere();
+  drawPack();
+  // Hidden where the daemon browses no machine of its own — a pkgreg — so the buttons
+  // are absent rather than present and always failing.
+  void canBrowse().then((able) => {
+    for (const node of [whereButton, clearWhere, packButton, clearPack]) {
+      node.hidden = node.hidden || !able;
+    }
+    if (!able) {
+      whereButton.hidden = true;
+      packButton.hidden = true;
+    }
+  });
+
   const exportForm = el(
     "form",
     { class: "form" },
@@ -97,6 +159,8 @@ function renderActions() {
         "named pkgreg-<project>-full-<time>-<checkpoint>.tar unless you say otherwise"),
     field("Since checkpoint", input("base", { placeholder: "leave empty for a full pack" }),
       "a delta pack carries only what changed"),
+    whereRegion.node,
+    el("div", { class: "field-actions" }, whereButton, clearWhere),
     el("button", { class: "btn", type: "submit", text: "Export pack" }),
   );
   exportForm.addEventListener("submit", async (event) => {
@@ -106,6 +170,7 @@ function renderActions() {
       () => api.exportPack(store.state.project, {
         file: String(data.get("file") || ""),
         base: String(data.get("base") || ""),
+        ...(chosenDir ? { dir: chosenDir } : {}),
       }),
       "Export started",
     );
@@ -115,12 +180,17 @@ function renderActions() {
     "form",
     { class: "form" },
     field("File name", input("file", { placeholder: "leave empty if there is only one" }),
-      "a .tar already in shuttle/in on the server"),
+      "a .tar already in shuttle/in on the cache's machine"),
+    packRegion.node,
+    el("div", { class: "field-actions" }, packButton, clearPack),
     el("button", { class: "btn", type: "submit", text: "Import pack" }),
   );
   importForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const file = String(new FormData(importForm).get("file") || "");
+    // A chosen pack is an absolute path and wins over the name field, which addresses
+    // the inbox. Both at once is a contradiction, and the one the person clicked is the
+    // more recent statement of what they meant.
+    const file = chosenPack || String(new FormData(importForm).get("file") || "");
     await store.mutate(() => api.importPack(store.state.project, { file }), "Import started");
   });
 

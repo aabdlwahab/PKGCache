@@ -125,6 +125,10 @@ func Run(ctx context.Context, o RunOptions) error {
 	// app knows about is the bug this fixes: the window changed and every build on the
 	// machine carried on filling the project it had left.
 	a.API.Selection = &Selection{DataDir: snap.DataDir}
+	// And the machine itself, so the window can choose where a pack goes and which one
+	// to read back. Local-only for the reason the other two are: a server has no
+	// filesystem the reader is standing at.
+	a.API.Files = &Files{DataDir: snap.DataDir}
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}
