@@ -103,6 +103,12 @@ func Environment(base []string, o Options) []string {
 		{"PIP_INDEX_URL", projectBase + "/pypi/root/pypi/+simple/"},
 		{"UV_DEFAULT_INDEX", projectBase + "/pypi/root/pypi/+simple/"},
 		{"NPM_CONFIG_REGISTRY", projectBase + "/npm/"},
+		{"GOPROXY", projectBase + "/gomod/goproxy"},
+		// See the gomod adapter: the checksum database is a transparency log rather
+		// than an index, so it is not cached and the toolchain is told not to wait on
+		// it. go.sum still verifies every module.
+		{"GOSUMDB", "off"},
+		{"GONOSUMDB", "*"},
 		{"NO_PROXY", noProxy},
 		{"no_proxy", noProxy},
 	}

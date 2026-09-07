@@ -32,6 +32,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/eco/apt"
 	"github.com/aabdlwahab/PKGCache/internal/eco/files"
 	ecogit "github.com/aabdlwahab/PKGCache/internal/eco/git"
+	"github.com/aabdlwahab/PKGCache/internal/eco/gomod"
 	"github.com/aabdlwahab/PKGCache/internal/eco/npm"
 	"github.com/aabdlwahab/PKGCache/internal/eco/oci"
 	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
@@ -187,6 +188,7 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 	ecosystems.Register(apt.New())
 	ecosystems.Register(files.New(tokens, 0))
 	ecosystems.Register(ecogit.NewWithConfig(snap.Git))
+	ecosystems.Register(gomod.New())
 	ecosystems.Register(npm.New())
 	ecosystems.Register(oci.New())
 	ecosystems.Register(pypi.New())

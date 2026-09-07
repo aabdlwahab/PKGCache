@@ -135,6 +135,24 @@ The URL carries the project, exactly as on a server:
 `http://127.0.0.1:41780/<project>/npm/…`. An unregistered name is a 404 rather than
 somebody else's content.
 
+## Go modules
+
+The module proxy protocol, served like every other index: `/<project>/gomod/goproxy`,
+which is what `GOPROXY` is set to. `pkgcache shell`, `pkgcache run` and `pkgcache build`
+set it for you beside `PIP_INDEX_URL`.
+
+A version list and `@latest` are answers about a moving target and revalidate on a short
+TTL; `.info`, `.mod` and `.zip` never change once published, which is the guarantee
+`go.sum` already relies on, so they are cached permanently. A module zip is an artifact
+in the inventory the same way a wheel is, and travels in a checkpoint and a pack like one.
+
+The checksum database is deliberately not served. `sum.golang.org` is a transparency log
+rather than a package index: a cached view of an append-only log is a stale one, and
+proxying every lookup live is not a cache. Modules are still verified — `go.sum` is
+checked against every zip — so `GOSUMDB=off` against this cache gives up the log's
+third-party witness, not integrity. Leave it on and the toolchain reaches
+`sum.golang.org` directly, which needs the network this cache exists to avoid.
+
 ## Three tiers
 
 With a team cache configured, a lookup goes local, then the team's cache, then the
@@ -165,9 +183,10 @@ otherwise, and `pkgcache project ls` marks an inherited chain with `*`. Two team
 mean two self-minted CAs, so the file the outbound pool trusts is a bundle assembled
 from those records; removing a project's configuration removes its CA with it.
 
-Chained ecosystems today are **pypi, npm and oci**. apt and git derive their origin from
-the request itself rather than from configuration, and `files` has no upstream at all —
-its content arrives by upload. Those three are absent rather than half-supported.
+Chained ecosystems today are **pypi, npm, oci and gomod**. apt and git derive their
+origin from the request itself rather than from configuration, and `files` has no
+upstream at all — its content arrives by upload. Those three are absent rather than
+half-supported.
 
 OCI is the one whose URLs do not look like the others'. The distribution spec fixes
 `/v2` as the API root, so a chained origin has to name it — the team's root for Docker

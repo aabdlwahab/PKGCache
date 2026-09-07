@@ -453,11 +453,21 @@ func buildArgs(o Options) []string {
 	index := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/pypi/root/pypi/+simple/"
 	npm := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/npm/"
 	git := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/git"
+	goproxy := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/gomod/goproxy"
 
 	args := []string{
 		"ARG PIP_INDEX_URL=" + index,
 		"ARG UV_DEFAULT_INDEX=" + index,
 		"ARG NPM_CONFIG_REGISTRY=" + npm,
+		"ARG GOPROXY=" + goproxy,
+		// The checksum database is not served by this cache — see the gomod adapter,
+		// which explains why an append-only transparency log is not a thing to cache.
+		// Without this the toolchain still reaches sum.golang.org for every module and
+		// the build needs the network it was pointed at a cache to avoid. go.sum is
+		// unaffected and still verifies every zip.
+		"ARG GONOSUMDB=*",
+		"ARG GONOSUMCHECK=1",
+		"ARG GOSUMDB=off",
 		// A cold cache is slower than the CDN these defaults were chosen for.
 		//
 		// uv gives a request 30 seconds and pip 15. That is generous against

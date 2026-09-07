@@ -278,6 +278,15 @@ var chainedEcosystems = []struct {
 		},
 		public: "https://registry.npmjs.org",
 	},
+	{
+		// The module proxy chains like an index: one origin, and the team's copy of it
+		// is that origin with their project in the path.
+		eco: "gomod", index: "goproxy",
+		teamURL: func(server, project string) string {
+			return server + "/" + project + "/gomod/goproxy"
+		},
+		public: "https://proxy.golang.org",
+	},
 	// The three registries the OCI adapter knows by default. Each is chained
 	// separately because the alias is part of the path, not a parameter: an image
 	// pulled from ghcr must reach the team's ghcr, not its Docker Hub.
