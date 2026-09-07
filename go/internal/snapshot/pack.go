@@ -69,6 +69,13 @@ type ExportOptions struct {
 	Target  string
 	CertDir string
 	Logf    func(string)
+	// Progress reports blobs written of blobs total, for a caller drawing a bar.
+	//
+	// Blobs rather than bytes: the total is known before the first one is written,
+	// where a byte total would have to be summed up front over the same set. A bar
+	// that is honest about the count is worth more than one that is precise about
+	// bytes and only appears halfway through.
+	Progress func(done, total int64)
 }
 
 // WritePack streams a transfer tar. Digest membership is held in a temporary SQLite
@@ -186,6 +193,16 @@ func WritePack(
 		if opts.Logf != nil && written%1000 == 0 {
 			opts.Logf(fmt.Sprintf("exported %d of %d blobs", written, pack.Blobs))
 		}
+		// Reported far more often than it is logged: a log line every thousand blobs is
+		// a record, and a bar that moves once every thousand is not a bar.
+		//
+		// The step is proportional rather than fixed, so the frame count is bounded at
+		// about a hundred whatever the pack's size — a fixed step of 25 puts four
+		// thousand frames on the bus for a hundred-thousand-blob pack, and exactly one
+		// for a pack of ten.
+		if opts.Progress != nil && progressDue(written, pack.Blobs) {
+			opts.Progress(written, pack.Blobs)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return Pack{}, err
@@ -204,6 +221,22 @@ func WritePack(
 	}
 	failed = false
 	return pack, nil
+}
+
+// progressDue spaces progress frames at about one percent of the work, and always
+// reports the last one so a bar ends full rather than at ninety-something.
+func progressDue(done, total int64) bool {
+	if done == total || total <= 0 {
+		return true
+	}
+	// Rounded up, not down. Flooring gives a step of 2 for 250 blobs — 125 frames for
+	// a bound that says a hundred — because the bound is on the count and the division
+	// that produces it has to round the other way.
+	step := (total + 99) / 100
+	if step < 1 {
+		step = 1
+	}
+	return done%step == 0
 }
 
 func exportLineage(
@@ -297,6 +330,8 @@ type ImportOptions struct {
 	Project string
 	CertDir string
 	Logf    func(string)
+	// Progress reports blobs read of blobs the pack declares. See ExportOptions.
+	Progress func(done, total int64)
 	// Apply lets the composition root materialize descriptor-owned managed trees
 	// before atomically applying the catalog mappings. Nil applies catalog entries
 	// directly, which is useful for stores without managed ecosystems.
@@ -427,6 +462,11 @@ func ReadPack(
 			importedBlobs++
 			if opts.Logf != nil && importedBlobs%1000 == 0 {
 				opts.Logf(fmt.Sprintf("verified %d of %d blobs", importedBlobs, pack.Blobs))
+			}
+			// The total is pack.json's own count, read before any blob was, so the bar
+			// has a denominator from the first frame rather than growing one.
+			if opts.Progress != nil && progressDue(importedBlobs, pack.Blobs) {
+				opts.Progress(importedBlobs, pack.Blobs)
 			}
 		case strings.HasPrefix(header.Name, "certs/"):
 			if pack.Project != "global" || opts.CertDir == "" {

@@ -45,6 +45,9 @@ export const state = {
   grants: null,
 
   live: new Map(),
+  /* Transfer packs being written or read right now, by job id. Empty almost always:
+     this is one entry while an export or import runs and nothing the rest of the time. */
+  packs: new Map(),
   recent: [],
   connected: false,
   health: "starting",
@@ -415,6 +418,13 @@ export function connectEvents() {
         return;
       }
       if (event.kind === "job.update") {
+        // A finished job has no bar. Removed on any terminal status, because a failed
+        // export leaving a half-full bar on screen reads as one still running.
+        if (event.status && event.status !== "running" && state.packs.has(String(event.id))) {
+          const packs = new Map(state.packs);
+          packs.delete(String(event.id));
+          set({ packs });
+        }
         // The server withholds these from a guest, whose /jobs access is refused.
         // Guarded here too so a stray frame cannot start a request that 403s.
         if (isGuest()) return;
@@ -423,6 +433,20 @@ export function connectEvents() {
         return;
       }
       if (event.project && event.project !== state.project) return;
+
+      if (event.kind === "pack.progress") {
+        // Kept by job id, so an export and an import running together each get their
+        // own bar rather than fighting over one. Cleared by the job.update frame that
+        // ends them, which arrives whether they succeeded or failed.
+        const packs = new Map(state.packs);
+        packs.set(String(event.id), {
+          action: event.name || "transfer",
+          done: event.size ?? 0,
+          total: event.total ?? 0,
+        });
+        set({ packs });
+        return;
+      }
 
       const id = `${event.eco ?? ""}:${event.id ?? ""}`;
       if (event.kind === "fetch.start" || event.kind === "fetch.progress") {

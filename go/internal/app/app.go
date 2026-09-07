@@ -230,6 +230,7 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 	a.Ops = &ops.Service{
 		Catalog: cat, Blobs: blobs, Config: cfg, Projects: projects,
 		Ecos: ecosystems, Data: http.HandlerFunc(a.Data.ServeInternal), DataDir: snap.DataDir,
+		Events: events,
 	}
 	a.Ops.Register(jobs)
 	a.Maintenance = &maintenance.Service{

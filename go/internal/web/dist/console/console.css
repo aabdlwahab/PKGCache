@@ -640,3 +640,9 @@ body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
 .pk-row.is-muted { color: var(--muted); font-weight: 400; }
 .pk-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
 .pk-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The transfer bar; see .wg-bar in widget.css, which is the same thing in the panel. */
+.prog { display: grid; gap: 4px; margin-bottom: 12px; }
+.prog-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.prog-track { height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
+.prog-fill { height: 100%; background: var(--accent); transition: width 200ms linear; }

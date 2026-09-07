@@ -14,6 +14,31 @@ export default {
     const history = region("div");
     const actions = region("div");
     const warm = region("div");
+    const bars = region("div");
+
+    /* A pack takes minutes, and a form that goes quiet for minutes is a form somebody
+     * presses a second time. */
+    const drawBars = () => {
+      const running = [...store.state.packs.values()];
+      bars.set(
+        running.length
+          ? running.map((pack) => {
+              const share = pack.total > 0 ? pack.done / pack.total : 0;
+              return el(
+                "div",
+                { class: "prog" },
+                el("div", { class: "prog-label" },
+                  el("span", { text: pack.action === "import" ? "Importing" : "Exporting" }),
+                  el("span", { class: "note", text: `${pack.done} / ${pack.total} blobs` })),
+                el("div", { class: "prog-track", role: "progressbar",
+                  "aria-valuemin": "0", "aria-valuemax": String(pack.total),
+                  "aria-valuenow": String(pack.done) },
+                  el("div", { class: "prog-fill", style: `width: ${Math.round(share * 100)}%` })),
+              );
+            })
+          : null,
+      );
+    };
 
     fill(
       node,
@@ -21,7 +46,8 @@ export default {
         el("h1", { text: "Transfer" }),
         el("p", { class: "note", text: `Moving ${store.state.project} in, out, and backwards.` })),
       el("div", { class: "panel-grid" },
-        panel("Checkpoint and pack", { note: "a checkpoint is a manifest, a pack carries the bytes" }, actions.node),
+        panel("Checkpoint and pack", { note: "a checkpoint is a manifest, a pack carries the bytes" },
+          bars.node, actions.node),
         panel("Warm from a lockfile", { note: "fetch everything a uv.lock pins, before anyone asks for it" }, warm.node)),
       panel("History", { note: "newest first", wide: true }, history.node),
     );
@@ -31,7 +57,11 @@ export default {
       actions.set(renderActions());
       warm.set(renderWarm());
     };
-    const unsubscribe = [store.on(["snapshots", "projects", "project"], draw)];
+    const unsubscribe = [
+      store.on(["snapshots", "projects", "project"], draw),
+      store.on(["packs"], drawBars),
+    ];
+    drawBars();
     draw();
 
     return { teardown: () => unsubscribe.forEach((off) => off()) };

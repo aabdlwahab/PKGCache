@@ -416,3 +416,13 @@
 .pk-row.is-muted { color: var(--muted); font-weight: 400; }
 .pk-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
 .pk-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The transfer bar. A pack is the one thing this window does that takes minutes, and a
+   button that goes quiet for minutes is a button somebody presses again. */
+.wg-bar { display: grid; gap: 4px; margin-bottom: 8px; }
+.wg-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--fg2); }
+.wg-bar-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.wg-bar-track { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }
+/* Transitioned, because frames arrive about once a percent and an untweened bar of that
+   cadence reads as stuttering rather than as progress. */
+.wg-bar-fill { height: 100%; background: var(--accent); transition: width 200ms linear; }

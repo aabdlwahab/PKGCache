@@ -172,7 +172,35 @@ function packageRow(artifact, selected, onChange) {
  * accepted only where its starting point is the receiver's checkpoint. */
 export function transferPanel({ notice, reload, settle }) {
   const list = region("div", { class: "wg-rows" });
+  const barRegion = region("div", {});
   let head = "";
+
+  /* A pack is the one thing this window does that takes minutes. Without a bar the
+   * button goes quiet and the only evidence anything is happening is the disk light. */
+  function drawBars() {
+    const running = [...store.state.packs.values()];
+    barRegion.set(
+      running.length
+        ? running.map((pack) => {
+            const share = pack.total > 0 ? pack.done / pack.total : 0;
+            return el(
+              "div",
+              { class: "wg-bar" },
+              el("div", { class: "wg-bar-label" },
+                el("span", { text: pack.action === "import" ? "Importing" : "Exporting" }),
+                el("span", { class: "wg-bar-count",
+                  text: `${pack.done} / ${pack.total}` })),
+              el("div", { class: "wg-bar-track", role: "progressbar",
+                "aria-valuemin": "0", "aria-valuemax": String(pack.total),
+                "aria-valuenow": String(pack.done) },
+                el("div", { class: "wg-bar-fill", style: `width: ${Math.round(share * 100)}%` })),
+            );
+          })
+        : null,
+    );
+  }
+  store.on(["packs"], drawBars);
+  drawBars();
 
   async function refresh() {
     const project = store.state.project;
@@ -288,6 +316,7 @@ export function transferPanel({ notice, reload, settle }) {
       "div",
       { class: "wg-panel" },
       el("div", { class: "wg-panel-head" }, el("span", { class: "wg-label", text: "Checkpoints" })),
+      barRegion.node,
       list.node,
       el(
         "div",

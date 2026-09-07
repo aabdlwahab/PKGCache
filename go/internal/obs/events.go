@@ -18,8 +18,12 @@ const (
 	EventFetchError    EventKind = "fetch.error"
 	EventCacheHit      EventKind = "cache.hit"
 	EventJobUpdate     EventKind = "job.update"
-	EventHealth        EventKind = "health"
-	EventAudit         EventKind = "audit"
+	// EventPackProgress is a transfer pack being written or read, one frame per few
+	// hundred blobs rather than one per chunk: a pack is a job somebody is watching a
+	// bar for, not a fetch, and the bar only has to move.
+	EventPackProgress EventKind = "pack.progress"
+	EventHealth       EventKind = "health"
+	EventAudit        EventKind = "audit"
 )
 
 // Event is one thing that happened. It is deliberately flat and allocation-cheap:

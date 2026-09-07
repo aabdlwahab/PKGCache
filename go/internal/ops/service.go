@@ -24,6 +24,7 @@ import (
 	controlproject "github.com/aabdlwahab/PKGCache/internal/control/project"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	"github.com/aabdlwahab/PKGCache/internal/lockwarm"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 	"github.com/aabdlwahab/PKGCache/internal/snapshot"
 )
 
@@ -39,6 +40,30 @@ type Service struct {
 	Data     http.Handler
 	DataDir  string
 	Now      func() time.Time
+	// Events carries pack progress to anything watching. Nil is silent, which is what
+	// a test wants and what a build without a bus gets.
+	Events *obs.Bus
+}
+
+// packProgress reports one transfer's progress onto the bus.
+//
+// Frames rather than job log lines because a bar is a thing being watched now: the log
+// is what the job did, and by the time somebody reads it the bar is not needed. The job
+// id is the frame's id, so a window can tell one export from another export started
+// beside it.
+//
+// Nil bus, nil function: the pack writer skips the call entirely rather than publishing
+// into nothing on every twenty-fifth blob.
+func (s *Service) packProgress(record control.Job) func(done, total int64) {
+	if s.Events == nil {
+		return nil
+	}
+	return func(done, total int64) {
+		s.Events.Publish(obs.Event{
+			Kind: obs.EventPackProgress, Project: record.Project,
+			ID: fmt.Sprint(record.ID), Name: record.Action, Size: done, Total: total,
+		})
+	}
 }
 
 // Register installs every Phase 8 action on the durable manager.
@@ -184,11 +209,12 @@ func (s *Service) exportJob(
 	defer func() { _ = os.Remove(tempPath) }()
 	logf("building streamed transfer pack")
 	pack, err := snapshot.WritePack(ctx, temp, s.Catalog, s.Blobs, snapshot.ExportOptions{
-		Project: record.Project,
-		Base:    stringParam(record.Params, "base"),
-		Target:  stringParam(record.Params, "target"),
-		CertDir: filepath.Join(s.DataDir, "certs"),
-		Logf:    logf,
+		Project:  record.Project,
+		Base:     stringParam(record.Params, "base"),
+		Target:   stringParam(record.Params, "target"),
+		CertDir:  filepath.Join(s.DataDir, "certs"),
+		Logf:     logf,
+		Progress: s.packProgress(record),
 	})
 	if err != nil {
 		_ = temp.Close()
@@ -297,6 +323,7 @@ func (s *Service) importJob(
 	logf(fmt.Sprintf("verifying and applying %s", path))
 	imported, err := snapshot.ReadPack(ctx, file, s.Catalog, s.Blobs, snapshot.ImportOptions{
 		Project: pack.Project, CertDir: filepath.Join(s.DataDir, "certs"), Logf: logf,
+		Progress: s.packProgress(record),
 		Apply: func(ctx context.Context, pack snapshot.Pack, target snapshot.Meta) error {
 			base := pack.Base
 			return s.applySnapshot(ctx, pack.Project, &base, target)
