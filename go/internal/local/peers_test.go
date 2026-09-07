@@ -2,7 +2,10 @@
 
 package local
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // What somebody types has to become one address, or the same machine appears in
 // `peer ls` three times under three spellings.
@@ -52,17 +55,50 @@ func TestPeerNameIsTheHost(t *testing.T) {
 	}
 }
 
-// Only ecosystems that can hold a peer row and would ever be asked for one. A row for
-// anything else is refused by the control plane or never consulted by the engine, and
-// either way it is a line in somebody's chain that does nothing.
-func TestPeerEcosystemsAreTheOnesThatWork(t *testing.T) {
+// The digest half reaches only what can be asked for by hash. A row for anything else is
+// refused by the control plane or never consulted by the engine, and either way it is a
+// line in somebody's chain that does nothing.
+func TestDigestEcosystemsAreTheOnesThatWork(t *testing.T) {
 	allowed := map[string]bool{"pypi": true, "oci": true}
-	for _, eco := range peerEcosystems {
+	for _, eco := range digestEcosystems {
 		if !allowed[eco] {
 			t.Errorf("%s cannot serve a peer row", eco)
 		}
 	}
-	if len(peerEcosystems) != len(allowed) {
-		t.Errorf("peerEcosystems is %v, want every one that works", peerEcosystems)
+	if len(digestEcosystems) != len(allowed) {
+		t.Errorf("digestEcosystems is %v, want every one that works", digestEcosystems)
+	}
+}
+
+// The wide half is the whole chained set, and it has to stay that way: the point of
+// treating a sibling like a pkgreg is that everything a team cache fronts, a friend's
+// laptop fronts too. A chained ecosystem missing from here would work through a server
+// and silently not through a laptop.
+func TestASiblingFrontsEveryChainedEcosystem(t *testing.T) {
+	seen := map[string]bool{}
+	for _, entry := range chainedEcosystems {
+		seen[entry.eco] = true
+		if entry.teamURL == nil {
+			t.Errorf("%s/%s has no URL builder", entry.eco, entry.index)
+			continue
+		}
+		got := entry.teamURL("http://laptop:41780", "global")
+		if got == "" || !strings.HasPrefix(got, "http://laptop:41780/") {
+			t.Errorf("%s/%s builds %q against a sibling", entry.eco, entry.index, got)
+		}
+	}
+	for _, want := range []string{"pypi", "npm", "oci", "gomod"} {
+		if !seen[want] {
+			t.Errorf("%s is not chained, so a sibling cannot front it", want)
+		}
+	}
+}
+
+// A sibling goes in front of a team cache and the public registry, and must not collide
+// with either: the upstream table is unique per index per position.
+func TestSiblingSitsAheadOfTheRestOfTheChain(t *testing.T) {
+	if siblingPriority >= teamPriority || siblingPriority >= publicPriority {
+		t.Fatalf("a sibling at %d does not come before the team at %d or public at %d",
+			siblingPriority, teamPriority, publicPriority)
 	}
 }

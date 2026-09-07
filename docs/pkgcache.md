@@ -168,15 +168,21 @@ cache with no accounts allows the control plane to whoever can reach it — the 
 `pkgcache project create` relies on. Where that is not true, `pkgcache peer token` on the
 other machine prints one to pass with `-token`.
 
-A peer is asked for content **by digest** and answers with bytes that hash to it, so
-neither machine has to trust what the other calls anything. That is why this needs no
-certificate while `pkgcache setup` needs a pinned CA, and it is also the limit: a peer
-fills in a *file*, never tells you which file to want. The index has to have been fetched
-here already, which means pypi and oci — the rest either do not hash their content up
+It writes two things, because a sibling is useful in two different ways.
+
+**Fetched through, like a team cache.** A pkgcache serves the same data plane a pkgreg
+does, so everything a team cache can front, a friend's laptop can front too: pypi, npm,
+oci and gomod, the whole chained set. Their cache goes in front of the public registries
+rather than replacing them, so a miss there still resolves.
+
+**Asked by digest, which also works offline.** For pypi and oci this cache knows a file's
+hash before it asks for it, so it can ask a sibling for exactly those bytes and check the
+answer itself — no certificate, no trusting what the other machine calls anything. Those
+two are consulted before this cache gives up offline, which is what lets two machines on
+a plane fill each other in. The rest cannot: they either do not hash their content up
 front, or derive their upstream from the request and have no row for a peer to sit in.
 
-It is asked before this cache gives up offline and before it reaches the internet, so two
-machines on a plane fill each other in.
+So: everything works through a sibling; two of them work with the network off.
 
 A cache listens on loopback unless it was told otherwise, so a sibling is reachable only
 if it was started with `PKGCACHE_ADDR=0.0.0.0:41780`. `pkgcache peer add` says so when

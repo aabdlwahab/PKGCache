@@ -137,23 +137,12 @@ func peerList(ctx context.Context, args []string) error {
 		fmt.Println("  `pkgcache peer add <address>` to point it at another machine's cache")
 		return nil
 	}
-	// One line per sibling rather than per row: three rows are one machine, and
-	// printing it three times reads as three machines.
-	shown := map[string]bool{}
-	for _, peer := range peers {
-		if shown[peer.Name] {
-			continue
+	for _, sibling := range peers {
+		fmt.Printf("%-16s %s\n", sibling.Name, sibling.URL)
+		fmt.Printf("  through  %s\n", strings.Join(sibling.Through, ", "))
+		if len(sibling.Offline) > 0 {
+			fmt.Printf("  offline  %s\n", strings.Join(sibling.Offline, ", "))
 		}
-		shown[peer.Name] = true
-		var ecos []string
-		seen := map[string]bool{}
-		for _, row := range peers {
-			if row.Name == peer.Name && !seen[row.Eco] {
-				seen[row.Eco] = true
-				ecos = append(ecos, row.Eco)
-			}
-		}
-		fmt.Printf("%-20s %s  (%s)\n", peer.Name, peer.URL, strings.Join(ecos, ", "))
 	}
 	return nil
 }
@@ -166,6 +155,8 @@ func peerAdd(ctx context.Context, args []string) error {
 	name := fs.String("name", "", "what to call it here (default: its host)")
 	token := fs.String("token", "",
 		"a peer token from that cache; without one, it is asked for its own")
+	theirProject := fs.String("their-project", "",
+		"the project on their side (default: their global project)")
 	fs.Usage = func() { peerUsage(os.Stderr); fs.PrintDefaults() }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -212,17 +203,26 @@ func peerAdd(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	added, err := local.AddPeer(ctx, state, scope, label, address, secret)
+	known, err := local.KnownEcosystems(ctx, state)
 	if err != nil {
 		return err
 	}
-	var ecos []string
-	for _, row := range added {
-		ecos = append(ecos, row.Eco)
+	added, err := local.AddPeer(ctx, state, scope, label, address, *theirProject, secret, known)
+	if err != nil {
+		return err
 	}
-	fmt.Printf("pkgcache: %s borrows from %s (%s)\n", scope, address, strings.Join(ecos, ", "))
-	fmt.Println("  asked before this cache gives up offline, and before it reaches the internet")
-	fmt.Println("  it answers by digest, so an index still has to be fetched here first")
+	// Two lists because they are two different promises, and saying so is the
+	// difference between "it works" and "it works until you go offline".
+	fmt.Printf("pkgcache: %s fetches through %s\n", scope, added.URL)
+	fmt.Printf("  through  %s — everything a team cache would serve\n",
+		strings.Join(added.Through, ", "))
+	if len(added.Offline) > 0 {
+		fmt.Printf("  offline  %s — answered by digest even with this project offline\n",
+			strings.Join(added.Offline, ", "))
+	} else {
+		fmt.Println("  offline  nothing: no token, so it cannot be asked by digest")
+	}
+	fmt.Println("  the public registries stay behind it, so a miss there still resolves")
 	return nil
 }
 
