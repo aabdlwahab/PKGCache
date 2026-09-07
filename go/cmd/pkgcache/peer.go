@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
@@ -138,7 +139,7 @@ func peerList(ctx context.Context, args []string) error {
 		return nil
 	}
 	for _, sibling := range peers {
-		fmt.Printf("%-16s %s\n", sibling.Name, sibling.URL)
+		fmt.Printf("%-16s %s  project %s\n", sibling.Name, sibling.URL, sibling.TheirProject)
 		fmt.Printf("  through  %s\n", strings.Join(sibling.Through, ", "))
 		if len(sibling.Offline) > 0 {
 			fmt.Printf("  offline  %s\n", strings.Join(sibling.Offline, ", "))
@@ -161,8 +162,18 @@ func peerAdd(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
+	switch {
+	case fs.NArg() == 0:
 		return fmt.Errorf("peer add: which cache? `pkgcache peer add <address>`")
+	case fs.NArg() > 1:
+		// Go stops parsing flags at the first non-flag argument, so an address followed
+		// by a flag arrives here as three arguments rather than one and a setting. Said
+		// plainly, because the alternative reads as "which cache?" about an address the
+		// person can see they typed.
+		return fmt.Errorf(
+			"peer add: unexpected argument %q; flags come before the address, as in\n"+
+				"  pkgcache peer add -their-project research %s",
+			fs.Arg(1), fs.Arg(0))
 	}
 	snap, err := config.LoadLocal(collect())
 	if err != nil {
@@ -181,19 +192,9 @@ func peerAdd(ctx context.Context, args []string) error {
 	if err := local.ReachPeer(ctx, address); err != nil {
 		return err
 	}
-	secret := *token
-	if secret == "" {
-		here, hostErr := os.Hostname()
-		if hostErr != nil || here == "" {
-			here = "a sibling"
-		}
-		secret, err = local.MintPeerToken(ctx, address, here)
-		if err != nil {
-			return fmt.Errorf("%s would not issue a token: %w\n"+
-				"  run `pkgcache peer token` on that machine and pass it with -token",
-				address, err)
-		}
-	}
+	// Minting is the daemon's job, not this command's: the console and the window add a
+	// sibling too, and a token obtained in only one of the three would mean the offline
+	// half worked from a terminal and silently not from a window.
 	label := *name
 	if label == "" {
 		label = local.PeerName(address)
@@ -203,17 +204,16 @@ func peerAdd(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	known, err := local.KnownEcosystems(ctx, state)
-	if err != nil {
-		return err
-	}
-	added, err := local.AddPeer(ctx, state, scope, label, address, *theirProject, secret, known)
+	added, err := local.AddPeer(ctx, state, scope, controlapi.PeerSpec{
+		Address: address, TheirProject: *theirProject, Name: label, Token: *token,
+	})
 	if err != nil {
 		return err
 	}
 	// Two lists because they are two different promises, and saying so is the
 	// difference between "it works" and "it works until you go offline".
-	fmt.Printf("pkgcache: %s fetches through %s\n", scope, added.URL)
+	fmt.Printf("pkgcache: %s fetches through %s, project %s\n",
+		scope, added.URL, added.TheirProject)
 	fmt.Printf("  through  %s — everything a team cache would serve\n",
 		strings.Join(added.Through, ", "))
 	if len(added.Offline) > 0 {
@@ -235,11 +235,10 @@ func peerRemove(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	removed, err := local.RemovePeer(ctx, state, project, target)
-	if err != nil {
+	if err := local.RemovePeer(ctx, state, project, target); err != nil {
 		return err
 	}
-	fmt.Printf("pkgcache: %s no longer borrows from %s (%d row(s))\n", project, target, removed)
+	fmt.Printf("pkgcache: %s no longer borrows from %s\n", project, target)
 	return nil
 }
 

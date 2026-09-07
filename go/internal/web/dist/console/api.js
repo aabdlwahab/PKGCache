@@ -165,6 +165,14 @@ export const api = {
   // working in whichever project they had been working in before — usually global,
   // silently, with every artifact landing in the wrong catalog. These two are how the
   // page reads and writes the file those commands actually consult.
+  // ---- siblings: other machines' caches, present only on a local cache
+  peers: (project) => request(`/local/peers/${encodeURIComponent(project)}`),
+  addPeer: (project, spec) =>
+    request(`/local/peers/${encodeURIComponent(project)}`, { method: "POST", body: body(spec) }),
+  forgetPeer: (project, peer) =>
+    request(`/local/peers/${encodeURIComponent(project)}/${encodeURIComponent(peer)}`,
+      { method: "DELETE" }),
+
   machineProject: () => request("/local/project"),
   setMachineProject: (project) =>
     request("/local/project", { method: "PUT", body: body({ project }) }),

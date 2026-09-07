@@ -20,6 +20,10 @@ export default {
     // and the endpoint 404s there. An empty "Team cache" panel on a server would be a
     // permanent piece of furniture explaining something that does not apply.
     const team = region("div");
+    // Its own slot beside the team cache's, because they are the same question asked of
+    // two different kinds of machine: where do misses go, and whose project on the far
+    // side do they land in.
+    const peers = region("div");
 
     fill(
       node,
@@ -30,6 +34,7 @@ export default {
         panel("Offline", { note: "serve from cache only" }, offline.node),
         panel("Upstream health", { note: "hourly, last 24h — mean and max only", wide: true }, health.node)),
       team.node,
+      peers.node,
       panel("Upstreams and peers", { note: "tried in priority order", wide: true }, list.node),
     );
 
@@ -38,15 +43,18 @@ export default {
       list.set(renderUpstreams());
     };
     const drawTeam = () => renderTeam(team);
+    const drawPeers = () => renderPeers(peers);
     const unsubscribe = [
       store.on(["upstreams", "projects", "project", "ecosystems"], draw),
       // Redrawn on a project switch like everything else here: the team cache is
       // configured per project, and showing one project's while another is selected is
       // the same class of lie the switcher has caused everywhere else.
       store.on(["project"], drawTeam),
+      store.on(["project"], drawPeers),
     ];
     draw();
     void drawTeam();
+    void drawPeers();
     health.set(loading("Reading upstream health"));
 
     let cancelled = false;
@@ -223,6 +231,85 @@ function teamSummary(state) {
       ? el("span", { class: "note", text: "(inherited from another project)" })
       : null,
   );
+}
+
+/* Other machines' caches.
+ *
+ * The same question the team-cache panel above asks — where do misses go, and whose
+ * project on the far side — of a laptop rather than a server. A sibling is written as
+ * several upstream rows, one per ecosystem it fronts plus the digest rows, so this talks
+ * to the surface that knows that arithmetic rather than writing rows itself.
+ */
+async function renderPeers(slot) {
+  const project = store.state.project;
+  let peers;
+  try {
+    peers = (await api.peers(project)).peers ?? [];
+  } catch {
+    // A pkgreg, which does not borrow from laptops, or a daemon older than this page.
+    slot.set();
+    return;
+  }
+  if (store.state.project !== project) return; // switched while we were asking
+  slot.set(panel("Other machines", { note: "caches on the same desk, asked before the internet" },
+    peersBody(project, peers, () => void renderPeers(slot))));
+}
+
+function peersBody(project, peers, again) {
+  const rows = peers.length
+    ? peers.map((peer) => el("div", { class: "stack" },
+        el("div", { class: "status-line" },
+          el("span", { class: "pill good", text: peer.name }),
+          el("span", { class: "note", text: `${peer.url} → ${peer.their_project}` }),
+          store.canOperate()
+            ? button("Forget", async () => {
+                if (!await askConfirm({
+                  title: "Forget this machine",
+                  body: `Stop borrowing from ${peer.name}?\nMisses go to the public registries instead. Nothing already cached here is lost.`,
+                  confirmLabel: "Forget", danger: true,
+                })) return;
+                await store.mutate(() => api.forgetPeer(project, peer.name),
+                  `${project} no longer borrows from ${peer.name}`);
+                await store.loadProject();
+                again();
+              }, { kind: "danger" })
+            : null),
+        // Two lists because they are two different promises, and a reader who is told
+        // only the first will be surprised the day they go offline.
+        el("p", { class: "note", text: `through  ${peer.through.join(", ") || "nothing"}` }),
+        el("p", { class: "note",
+          text: peer.offline.length
+            ? `offline  ${peer.offline.join(", ")} — answered by digest with this project offline`
+            : "offline  nothing: no token, so it cannot be asked by digest" })))
+    : [el("p", { class: "note", text: "This project borrows from no other machine." })];
+
+  if (!store.canOperate()) {
+    return el("div", { class: "stack" }, ...rows);
+  }
+
+  const address = input("address", { placeholder: "sams-laptop or 192.168.1.4:41780", autocomplete: "off" });
+  const theirProject = input("their_project", { placeholder: "global", autocomplete: "off" });
+  const token = input("token", { placeholder: "only if that cache has accounts", autocomplete: "off" });
+  const form = el("form", { class: "form" },
+    field("Their address", address, "a cache listens on loopback unless it was told otherwise"),
+    field("Project on their side", theirProject, "empty means their global project"),
+    field("Peer token", token, "leave empty and that cache is asked for one"),
+    el("button", { class: "btn primary", type: "submit", text: "Borrow from it" }));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const added = await store.mutate(
+      () => api.addPeer(project, {
+        address: address.value.trim(),
+        their_project: theirProject.value.trim(),
+        token: token.value.trim(),
+      }),
+      `${project} now fetches through that machine`);
+    if (added) {
+      await store.loadProject();
+      again();
+    }
+  });
+  return el("div", { class: "stack" }, ...rows, form);
 }
 
 function renderHealth(points) {

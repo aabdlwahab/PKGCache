@@ -129,6 +129,10 @@ func Run(ctx context.Context, o RunOptions) error {
 	// to read back. Local-only for the reason the other two are: a server has no
 	// filesystem the reader is standing at.
 	a.API.Files = &Files{DataDir: snap.DataDir}
+	// And the machines this one borrows from. Handed the project service and the
+	// credential store because a sibling is rows plus a sealed token, and both halves
+	// have to be written or neither is.
+	a.API.Peers = &Peers{Store: a.Projects, Credentials: a.Credentials, Ecos: a.Ecos}
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}

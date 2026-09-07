@@ -11,7 +11,7 @@
  */
 
 import { api } from "./api.js";
-import { askConfirm } from "./dialog.js";
+import { askConfirm, askText } from "./dialog.js";
 import { canBrowse, pickDirectory, pickPack } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
@@ -373,8 +373,10 @@ function checkpointRow(snapshot, head, rollTo) {
 export function sourcesPanel({ notice, reload }) {
   const current = region("div", { class: "wg-rows" });
   const formRegion = region("div", {});
+  const peerRegion = region("div", {});
 
   async function refresh() {
+    void refreshPeers();
     let answer;
     try {
       answer = await api.sources();
@@ -388,6 +390,85 @@ export function sourcesPanel({ notice, reload }) {
     const mine = states.find((state) => state.project === store.state.project);
     current.set(sourceRows(states, store.state.project));
     formRegion.set(sourceForm(mine));
+  }
+
+  /* The other machines this project borrows from. A team cache is a server somebody
+   * runs; these are laptops on the same desk, and the window is where somebody sitting
+   * at one of them would think to add the other. */
+  async function refreshPeers() {
+    const project = store.state.project;
+    let peers;
+    try {
+      peers = (await api.peers(project)).peers ?? [];
+    } catch {
+      peerRegion.set();
+      return;
+    }
+    if (store.state.project !== project) return;
+    peerRegion.set(el("div", { class: "wg-peers" },
+      el("div", { class: "wg-label", text: "other machines" }),
+      ...(peers.length
+        ? peers.map((peer) => el("div", { class: "wg-peer" },
+            el("div", { class: "wg-peer-head" },
+              el("span", { text: peer.name }),
+              button("Forget", () => forgetPeer(project, peer), { kind: "danger" })),
+            el("div", { class: "wg-quiet", text: `${peer.url} → ${peer.their_project}` }),
+            el("div", { class: "wg-quiet", text: `through ${peer.through.join(", ") || "nothing"}` }),
+            el("div", { class: "wg-quiet",
+              text: peer.offline.length
+                ? `offline ${peer.offline.join(", ")}`
+                : "offline nothing — no token" })))
+        : [el("div", { class: "wg-quiet", text: "None. Add one to borrow from a machine beside you." })]),
+      button("Add a machine…", () => void addPeer(project))));
+  }
+
+  async function addPeer(project) {
+    const address = await askText({
+      title: "Borrow from another machine",
+      label: "Its address",
+      placeholder: "sams-laptop or 192.168.1.4:41780",
+      confirmLabel: "Next",
+    });
+    if (address === null) return;
+    // Asked separately rather than assumed: two machines number their projects
+    // independently, and taking theirs to be ours is how somebody ends up pointed at a
+    // project that does not exist over there.
+    const theirProject = await askText({
+      title: "Which project on their side?",
+      label: "Their project",
+      placeholder: "global",
+      value: "global",
+      confirmLabel: "Borrow from it",
+      validate: () => "",
+    });
+    if (theirProject === null) return;
+    try {
+      notice("Reaching that machine…");
+      const added = await api.addPeer(project, {
+        address, their_project: theirProject,
+      });
+      await reload();
+      await refresh();
+      notice(`${project} fetches through ${added.name}.`);
+    } catch (cause) {
+      notice(cause?.message || String(cause), true);
+    }
+  }
+
+  async function forgetPeer(project, peer) {
+    if (!await askConfirm({
+      title: "Forget this machine",
+      body: `Stop borrowing from ${peer.name}?\nMisses go to the public registries instead. Nothing already cached here is lost.`,
+      confirmLabel: "Forget", danger: true,
+    })) return;
+    try {
+      await api.forgetPeer(project, peer.name);
+      await reload();
+      await refresh();
+      notice(`No longer borrowing from ${peer.name}.`);
+    } catch (cause) {
+      notice(cause?.message || String(cause), true);
+    }
   }
 
   function sourceForm(state) {
@@ -486,6 +567,7 @@ export function sourcesPanel({ notice, reload }) {
       el("div", { class: "wg-panel-head" }, el("span", { class: "wg-label", text: "Every project" })),
       current.node,
       formRegion.node,
+      peerRegion.node,
     ),
     refresh,
   };

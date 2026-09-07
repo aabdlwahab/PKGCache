@@ -158,10 +158,24 @@ third-party witness, not integrity. Leave it on and the toolchain reaches
 Another machine's pkgcache, as a source for this one:
 
 ```sh
-pkgcache peer add laptop-b            # on the machine that wants to borrow
+pkgcache peer add laptop-b                              # borrow from that machine
+pkgcache peer add -their-project research laptop-b      # from that project on it
 pkgcache peer ls
 pkgcache peer rm laptop-b
 ```
+
+Also in the console, under Sources, and in the window's sources panel — the same three
+fields either way.
+
+**Projects between two machines are independent.** `-their-project` names the project on
+their side, defaulting to their global one, for the same reason `-team-project` does on a
+pkgreg: assuming a name exists on somebody else's machine is not this program's call. Your
+project borrows, theirs serves, and neither has to be called the same thing.
+
+That applies to the chain half. The digest half has no projects in it at all: a blob is
+addressed by its hash and the store is content-addressed across every project on that
+machine, so a peer token grants any blob it holds, wherever it came from. Worth knowing
+before handing one to somebody.
 
 One command, on one side. `add` asks the sibling for its own token, which works because a
 cache with no accounts allows the control plane to whoever can reach it — the same fact

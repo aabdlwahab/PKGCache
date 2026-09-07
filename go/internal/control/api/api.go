@@ -63,7 +63,10 @@ type Options struct {
 	// Files, when set, browses the machine this cache runs on, so the window can choose
 	// where a pack goes and which one to import. A server leaves it nil: it has no
 	// machine the reader is standing at. See LocalFiles.
-	Files   LocalFiles
+	Files LocalFiles
+	// Peers, when set, is the sibling caches a local cache borrows from. A server
+	// leaves it nil: its operator does not point it at somebody's laptop.
+	Peers   LocalPeers
 	Engine  *engine.Engine
 	Ecos    *eco.Registry
 	Events  *obs.Bus

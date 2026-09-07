@@ -440,3 +440,9 @@
 .dlg-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .dlg-error:not(:empty) { font-size: 12px; color: var(--bad); }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Other machines' caches, under the team cache in the sources panel. A sibling is a
+   laptop on the same desk; the panel above it is a server somebody runs. */
+.wg-peers { display: grid; gap: 6px; margin-top: 10px; }
+.wg-peer { display: grid; gap: 2px; padding: 6px 8px; background: var(--bg2); border-radius: 6px; }
+.wg-peer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
