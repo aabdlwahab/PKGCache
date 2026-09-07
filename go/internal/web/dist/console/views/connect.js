@@ -17,6 +17,7 @@
 
 import { el, region, panel, fill, table, button, field, input, select } from "../dom.js";
 import { api } from "../api.js";
+import { askConfirm } from "../dialog.js";
 import * as store from "../store.js";
 import { when, ecoColor } from "../format.js";
 
@@ -291,12 +292,14 @@ function renderTokens() {
                   async () => {
                     // A token is only ever shown once, so a mistaken revoke cannot be
                     // undone by pasting it back — the credential is gone for good.
-                    if (!confirm(
-                      `Revoke the token ${row.label || row.id}?\n\n` +
-                      "Anything still using it — CI jobs, shared hosts, running builds — " +
-                      "starts failing authentication immediately. This cannot be undone; " +
-                      "you would have to issue a new token and redistribute it.",
-                    )) return;
+                    if (!await askConfirm({
+                      title: "Revoke token",
+                      body: `Revoke the token ${row.label || row.id}?\n` +
+                        "Anything still using it — CI jobs, shared hosts, running builds — " +
+                        "starts failing authentication immediately. This cannot be undone; " +
+                        "you would have to issue a new token and redistribute it.",
+                      confirmLabel: "Revoke", danger: true,
+                    })) return;
                     await store.mutate(() => api.deleteToken(row.id), "Token revoked");
                   },
                   { kind: "ghost small danger" })

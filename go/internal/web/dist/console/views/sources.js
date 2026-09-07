@@ -5,6 +5,7 @@
 
 import { el, region, panel, fill, table, button, field, input, select, loading } from "../dom.js";
 import { api } from "../api.js";
+import { askConfirm } from "../dialog.js";
 import * as store from "../store.js";
 import * as charts from "../charts.js";
 import { bytes, count, percent, duration, ecoColor } from "../format.js";
@@ -88,12 +89,14 @@ function renderOffline() {
             // Going offline is fleet-wide and takes effect immediately: it is the one
             // switch here that changes what every machine using this project sees.
             // Coming back online restores the default, so only the outbound trip asks.
-            if (!isOffline && !confirm(
-              `Take ${store.state.project} offline?\n\n` +
-              "Every machine using this project stops reaching upstreams — misses fail " +
-              "instead of being fetched. Cached content still serves.\n" +
-              "You can bring it back online from this page at any time.",
-            )) return;
+            if (!isOffline && !await askConfirm({
+              title: "Go offline",
+              body: `Take ${store.state.project} offline?\n` +
+                "Every machine using this project stops reaching upstreams — misses fail " +
+                "instead of being fetched. Cached content still serves.\n" +
+                "You can bring it back online from this page at any time.",
+              confirmLabel: "Go offline", danger: true,
+            })) return;
             await store.mutate(
               () => api.patchProject(store.state.project, { offline: !isOffline }),
               isOffline ? "Project is online" : "Project is offline");
@@ -173,8 +176,12 @@ function teamBody(project, state, again) {
       // nothing or take it from everyone.
       configured && !state.inherited
         ? button("Forget", async () => {
-            if (!confirm(`Stop sending ${project} through ${state.server}?\n\n` +
-              "Its misses go to the public registries instead, or fail if this project is offline.")) return;
+            if (!await askConfirm({
+              title: "Forget the team cache",
+              body: `Stop sending ${project} through ${state.server}?\n` +
+                "Its misses go to the public registries instead, or fail if this project is offline.",
+              confirmLabel: "Forget", danger: true,
+            })) return;
             await store.mutate(() => api.deleteSource(project), `${project} no longer uses a team cache`);
             await store.loadProject();
             again();
@@ -340,11 +347,13 @@ function renderUpstreams() {
             canOperate
               ? button("Remove",
                   async () => {
-                    if (!confirm(
-                      `Remove the upstream ${row.name}?\n\n` +
-                      "Misses that would have been fetched from it start failing unless " +
-                      "another upstream covers the same ecosystem. Cached content is untouched.",
-                    )) return;
+                    if (!await askConfirm({
+                      title: "Remove upstream",
+                      body: `Remove the upstream ${row.name}?\n` +
+                        "Misses that would have been fetched from it start failing unless " +
+                        "another upstream covers the same ecosystem. Cached content is untouched.",
+                      confirmLabel: "Remove", danger: true,
+                    })) return;
                     await store.mutate(
                       () => api.deleteUpstream(store.state.project, row.id), `Removed ${row.name}`);
                   },

@@ -5,6 +5,7 @@
 
 import { el, region, panel, fill, table, button, field, input, loading } from "../dom.js";
 import { api } from "../api.js";
+import { askConfirm } from "../dialog.js";
 import { canBrowse, pickDirectory, pickPack } from "../picker.js";
 import * as store from "../store.js";
 import { bytes, count, ago, digest } from "../format.js";
@@ -86,7 +87,11 @@ function renderHistory() {
           canOperate
             ? button("Roll back", async () => {
                 // Rollback rewrites what the project serves. Ask before doing it.
-                if (!confirm(`Roll ${store.state.project} back to ${digest(row.id)}?\n\nEntries added since this checkpoint stop being served.`)) return;
+                if (!await askConfirm({
+                  title: "Roll back",
+                  body: `Roll ${store.state.project} back to ${digest(row.id)}?\nEntries added since this checkpoint stop being served.`,
+                  confirmLabel: "Roll back", danger: true,
+                })) return;
                 await store.mutate(() => api.rollback(store.state.project, row.id),
                   `Rolling back to ${digest(row.id)}`);
               }, { kind: "ghost small danger" })

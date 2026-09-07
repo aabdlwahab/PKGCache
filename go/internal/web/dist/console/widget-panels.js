@@ -11,6 +11,7 @@
  */
 
 import { api } from "./api.js";
+import { askConfirm } from "./dialog.js";
 import { canBrowse, pickDirectory, pickPack } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
@@ -69,7 +70,11 @@ export function packagesPanel({ notice, reload }) {
     // Asked once, in the language of what will happen. Removal is reversible only by
     // fetching the packages again, which is exactly what somebody short of disk does not
     // want to discover afterwards.
-    if (!confirm(`Remove ${digests.length} package${digests.length === 1 ? "" : "s"} from this project?\n\nThe bytes go if nothing else holds them. Anything a checkpoint holds is kept.`)) {
+    if (!await askConfirm({
+      title: "Remove packages",
+      body: `Remove ${digests.length} package${digests.length === 1 ? "" : "s"} from this project?\nThe bytes go if nothing else holds them. Anything a checkpoint holds is kept.`,
+      confirmLabel: "Remove", danger: true,
+    })) {
       return;
     }
     await run(async () => {
@@ -218,7 +223,11 @@ export function transferPanel({ notice, reload, settle }) {
   async function rollTo(id) {
     // The one action in this window that discards something. Named in the question, not
     // softened: what goes is whatever the project has cached since that checkpoint.
-    if (!confirm(`Go back to checkpoint ${id.slice(0, 12)}?\n\nWhat this project has cached since then stops being served until it is fetched again. The bytes are shared, so nothing else loses them.`)) {
+    if (!await askConfirm({
+      title: "Roll back",
+      body: `Go back to checkpoint ${id.slice(0, 12)}?\nWhat this project has cached since then stops being served until it is fetched again. The bytes are shared, so nothing else loses them.`,
+      confirmLabel: "Roll back", danger: true,
+    })) {
       return;
     }
     await guard(async () => {

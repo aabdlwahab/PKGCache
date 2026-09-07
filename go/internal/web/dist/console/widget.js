@@ -17,6 +17,7 @@
  */
 
 import { api } from "./api.js";
+import { askText } from "./dialog.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
 import { packagesPanel, transferPanel, sourcesPanel } from "./widget-panels.js";
@@ -602,10 +603,15 @@ function renderAlignment(regions) {
  * first request; pointing it somewhere of its own is a deliberate second step, in the
  * sources panel. */
 async function addProject(existing) {
-  const answer = window.prompt("Name for the new project");
-  if (answer === null) return;
-  const name = answer.trim();
-  if (!name) return;
+  // Not window.prompt: WKWebView answers null without asking, so on a Mac this button
+  // did nothing at all. See dialog.js.
+  const name = await askText({
+    title: "New project",
+    label: "Name",
+    placeholder: "work",
+    confirmLabel: "Create",
+  });
+  if (name === null) return;
   if (existing.includes(name)) {
     // Already here: switching to it is what was meant, and is what creating it would
     // have failed to do.

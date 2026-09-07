@@ -15,6 +15,7 @@
  */
 
 import { el, region, button, loading } from "./dom.js";
+import { openModal } from "./dialog.js";
 import { api } from "./api.js";
 import { bytes } from "./format.js";
 
@@ -49,36 +50,20 @@ function open({ title, confirm, wantDir }) {
     const confirmButton = button(confirm, () => finish(wantDir ? current : chosen), {
       kind: "primary",
     });
-    const overlay = el(
-      "div",
-      { class: "pk-overlay" },
-      el(
-        "div",
-        { class: "pk-box", role: "dialog", "aria-modal": "true", "aria-label": title },
-        el("div", { class: "pk-head" }, el("strong", { text: title })),
-        whereRegion.node,
-        listRegion.node,
-        el(
-          "div",
-          { class: "pk-actions" },
-          button("Cancel", () => finish(null)),
-          confirmButton,
-        ),
-      ),
-    );
-
+    // The same modal as every other question this window asks — one overlay, one escape
+    // key, one focus trap — rather than a second implementation that drifts from it.
+    let close = () => {};
     function finish(value) {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
+      close();
       resolve(value || null);
     }
-    function onKey(event) {
-      if (event.key === "Escape") finish(null);
-    }
-    document.addEventListener("keydown", onKey);
-    // A click on the backdrop, but not one that started inside the box.
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) finish(null);
+    close = openModal({
+      title,
+      // A file browser needs the room a yes-or-no question does not.
+      wide: true,
+      body: el("div", { class: "pk-body" }, whereRegion.node, listRegion.node),
+      onCancel: () => resolve(null),
+      actions: [button("Cancel", () => finish(null)), confirmButton],
     });
 
     async function show(path) {
@@ -149,7 +134,6 @@ function open({ title, confirm, wantDir }) {
       return node;
     }
 
-    document.body.appendChild(overlay);
     void show("");
   });
 }

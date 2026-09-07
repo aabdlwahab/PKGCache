@@ -2,6 +2,7 @@
 
 import { el, region, panel, fill, table, button, field, input, select, loading } from "../dom.js";
 import { api } from "../api.js";
+import { askConfirm } from "../dialog.js";
 import * as store from "../store.js";
 import * as charts from "../charts.js";
 import { bytes, ago, duration } from "../format.js";
@@ -280,11 +281,13 @@ function renderMaintenance() {
       button("Dry run", () => runMaintenance(() => api.gc(true), "GC dry run started"),
         { kind: "ghost", disabled: !superuser }),
       button("Collect", async () => {
-        if (!confirm(
-          "Collect garbage across the whole instance?\n\n" +
-          "Blobs that nothing references are deleted permanently. This cannot be undone.\n" +
-          "Run a dry run first to see what would go.",
-        )) return;
+        if (!await askConfirm({
+          title: "Collect garbage",
+          body: "Collect garbage across the whole instance?\n" +
+            "Blobs that nothing references are deleted permanently. This cannot be undone.\n" +
+            "Run a dry run first to see what would go.",
+          confirmLabel: "Collect", danger: true,
+        })) return;
         await runMaintenance(() => api.gc(false), "GC started");
       }, { kind: "danger", disabled: !superuser })),
 
@@ -294,11 +297,13 @@ function renderMaintenance() {
       button("Dry run", () => runMaintenance(() => api.evict(store.state.project, true), "Eviction dry run started"),
         { kind: "ghost", disabled: !canOperate }),
       button("Evict", async () => {
-        if (!confirm(
-          `Evict from ${store.state.project}?\n\n` +
-          "The least recently used entries are deleted until the policy holds. " +
-          "This cannot be undone.\nRun a dry run first to see what would go.",
-        )) return;
+        if (!await askConfirm({
+          title: "Evict",
+          body: `Evict from ${store.state.project}?\n` +
+            "The least recently used entries are deleted until the policy holds. " +
+            "This cannot be undone.\nRun a dry run first to see what would go.",
+          confirmLabel: "Evict", danger: true,
+        })) return;
         await runMaintenance(() => api.evict(store.state.project, false), "Eviction started");
       }, { kind: "danger", disabled: !canOperate })),
     maintenanceResult.node,
@@ -446,7 +451,11 @@ function renderAccess(reload) {
           label: "",
           cell: (row) =>
             button("Revoke", async () => {
-              if (!confirm(`Revoke ${row.username}'s access to ${store.state.project}?`)) return;
+              if (!await askConfirm({
+                title: "Revoke access",
+                body: `Revoke ${row.username}'s access to ${store.state.project}?`,
+                confirmLabel: "Revoke", danger: true,
+              })) return;
               await store.mutate(
                 () => api.deleteGrant(store.state.project, row.username),
                 `Revoked ${row.username}`);
@@ -572,7 +581,11 @@ function renderUsers() {
           label: "",
           cell: (row) =>
             row.builtin ? "—" : button("Delete", async () => {
-              if (!confirm(`Delete the account ${row.username}?`)) return;
+              if (!await askConfirm({
+                title: "Delete account",
+                body: `Delete the account ${row.username}?`,
+                confirmLabel: "Delete", danger: true,
+              })) return;
               await store.mutate(() => api.deleteUser(row.username), `Deleted ${row.username}`);
               await refresh();
             }, { kind: "ghost small danger" }),
@@ -637,7 +650,11 @@ function renderLifecycle() {
     form,
     store.isSuperuser() && current !== "global"
       ? button(`Delete ${current}`, async () => {
-          if (!confirm(`Delete the project ${current}?\n\nIts cached entries stop being served. Blobs shared with other projects are untouched.`)) return;
+          if (!await askConfirm({
+            title: "Delete project",
+            body: `Delete the project ${current}?\nIts cached entries stop being served. Blobs shared with other projects are untouched.`,
+            confirmLabel: "Delete", danger: true,
+          })) return;
           await store.mutate(() => api.deleteProject(current), `Deleted ${current}`);
           await store.loadInstance();
           // The page must not go on naming a project that is gone — every panel would

@@ -607,22 +607,9 @@ body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
   body.rail-open .view { padding-right: 18px; }
 }
 
-/* The machine picker. One box over the page, because choosing where a pack goes is a
-   question that has to be answered before anything else happens — and because the
-   alternative, a panel that pushes the page around, loses the reader's place. */
-.pk-overlay {
-  position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
-  background: color-mix(in srgb, #000 55%, transparent);
-}
-.pk-box {
-  display: grid; gap: 10px;
-  width: min(38rem, 100%); max-height: min(32rem, 90vh);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  padding: 14px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-}
+/* The machine picker's list. Its shell is the shared dialog — see .dlg-box — so only
+   what is particular to browsing a filesystem lives here. */
+.pk-body { display: grid; gap: 10px; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 .pk-where { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .pk-warn { color: var(--warn); }
 /* The list scrolls, not the box: a directory with four hundred entries must not push
@@ -639,10 +626,37 @@ body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
 .pk-row.is-dir { font-weight: 600; }
 .pk-row.is-muted { color: var(--muted); font-weight: 400; }
 .pk-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
-.pk-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* The transfer bar; see .wg-bar in widget.css, which is the same thing in the panel. */
 .prog { display: grid; gap: 4px; margin-bottom: 12px; }
 .prog-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
 .prog-track { height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
 .prog-fill { height: 100%; background: var(--accent); transition: width 200ms linear; }
+
+/* Dialogs the window draws itself. WKWebView asks its host to draw alert(), confirm()
+   and prompt(), Wails' macOS backend does not implement those delegate methods, and
+   WKWebView's answer without them is null, false and nothing — so on a Mac every
+   question this UI asked answered itself. See dialog.js. */
+.dlg-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.dlg-box {
+  display: grid; gap: 10px; width: min(30rem, 100%);
+  max-height: min(30rem, 90vh); padding: 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+/* A browser needs the room a question does not. */
+.dlg-box.is-wide { width: min(38rem, 100%); max-height: min(32rem, 90vh); }
+.dlg-body { display: grid; gap: 8px; overflow-y: auto; min-height: 0; }
+.dlg-line { margin: 0; font-size: 13px; color: var(--fg2); }
+.dlg-label { font-size: 12px; color: var(--muted); }
+.dlg-input {
+  width: 100%; padding: 6px 8px; font: inherit;
+  color: var(--fg); background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.dlg-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.dlg-error:not(:empty) { font-size: 12px; color: var(--bad); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
