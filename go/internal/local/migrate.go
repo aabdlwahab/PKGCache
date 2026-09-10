@@ -222,7 +222,7 @@ func acquireIdle(ctx context.Context, dataDir string, wait time.Duration) (*Lock
 }
 
 // migratePaths resolves both ends and rejects the pairs that cannot mean anything.
-func migratePaths(from, to string) (string, string, error) {
+func migratePaths(from, to string) (source, destination string, err error) {
 	if strings.TrimSpace(to) == "" {
 		return "", "", fmt.Errorf("local: name the directory to move the cache to")
 	}
@@ -344,10 +344,10 @@ func renameInto(from, to string) (bool, error) {
 		return false, err
 	}
 	if err := os.Remove(to); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return false, nil //nolint:nilerr // a destination that will not go is a reason to copy, not to fail
 	}
 	if err := renameMove(from, to); err != nil {
-		return false, nil
+		return false, nil //nolint:nilerr // EXDEV and its friends mean "copy instead", not "stop"
 	}
 	return true, nil
 }
