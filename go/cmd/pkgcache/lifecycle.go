@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
@@ -54,6 +55,14 @@ flags:
 		return err
 	}
 	fmt.Printf("cache      %s\n", snap.DataDir)
+	// Where it is not where it would be by default, say so and say what sends every
+	// command here — otherwise a moved cache looks like a second one somebody made by
+	// accident.
+	if base, err := config.LocalDefaultDataDir(); err == nil {
+		if target, moved := config.MovedTo(base); moved && target == snap.DataDir {
+			fmt.Printf("           moved here from %s\n", base)
+		}
+	}
 	project := local.CurrentProject(snap.DataDir)
 	if local.HasCurrentProject(snap.DataDir) {
 		fmt.Printf("project    %s\n", project)

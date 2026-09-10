@@ -4,6 +4,7 @@ package local
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -64,4 +65,19 @@ func terminate(pid int) error {
 // kill stops a daemon that did not honour terminate.
 func kill(pid int) error {
 	return syscall.Kill(pid, syscall.SIGKILL)
+}
+
+// fileIdentity keys a file by the filesystem object behind the name, so a tree copy can
+// recreate hardlinks rather than storing the same bytes once per name. It reports false
+// for a file with one link, which needs no bookkeeping — which is most of them, and
+// keeps the map small on a cache with a hundred thousand blobs.
+//
+// Formatted rather than converted because the widths differ between Linux and the BSDs
+// and a conversion would have to name one of them.
+func fileIdentity(info os.FileInfo) (key string, shared bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink < 2 {
+		return "", false
+	}
+	return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino), true
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -339,5 +340,79 @@ func TestServerPostureIsUnchanged(t *testing.T) {
 	worst, found := WorstSeverity(issues)
 	if !found || worst != SeverityCritical {
 		t.Fatalf("worst severity = %v, want critical for an exposed unauthenticated server", worst)
+	}
+}
+
+func TestLocalDataDirFollowsTheSignpostAMigrationLeaves(t *testing.T) {
+	home := t.TempDir()
+	moved := filepath.Join(t.TempDir(), "cache-on-the-big-disk")
+	if err := os.MkdirAll(moved, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(LocalEnvPrefix+"DATA_DIR", "")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOCALAPPDATA", "")
+
+	base, err := LocalDefaultDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteMovedTo(base, moved); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := LocalDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != moved {
+		t.Fatalf("data dir = %q, want the location the signpost names, %q", dir, moved)
+	}
+
+	// The override is above the signpost, not below it: somebody who names a directory
+	// explicitly is not asking to be redirected out of it.
+	t.Setenv(LocalEnvPrefix+"DATA_DIR", "/somewhere/chosen")
+	dir, err = LocalDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != "/somewhere/chosen" {
+		t.Fatalf("data dir = %q, want the explicit override to win", dir)
+	}
+
+	// And taking the signpost down puts the cache back where it was.
+	t.Setenv(LocalEnvPrefix+"DATA_DIR", "")
+	if removed, err := ClearMovedTo(base); err != nil || !removed {
+		t.Fatalf("clear signpost: %v, %v", removed, err)
+	}
+	if dir, err = LocalDataDir(); err != nil || dir != base {
+		t.Fatalf("data dir = %q, %v; want %q", dir, err, base)
+	}
+}
+
+// A signpost to a disk that is not mounted is the failure this design has to get right:
+// the quiet alternative is a second, empty cache filling the disk the move was meant to
+// spare, while the user believes they still have the first one.
+func TestASignpostToNothingIsAnErrorRatherThanAFreshCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(LocalEnvPrefix+"DATA_DIR", "")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOCALAPPDATA", "")
+
+	base, err := LocalDefaultDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	absent := filepath.Join(t.TempDir(), "not-mounted", "pkgcache")
+	if err := WriteMovedTo(base, absent); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := LocalDataDir()
+	if err == nil {
+		t.Fatalf("data dir = %q, want a refusal naming the missing location", dir)
+	}
+	if !strings.Contains(err.Error(), absent) {
+		t.Errorf("error does not name where the cache went: %v", err)
 	}
 }

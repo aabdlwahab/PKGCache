@@ -88,3 +88,13 @@ func kill(pid int) error {
 	defer func() { _ = windows.CloseHandle(handle) }()
 	return windows.TerminateProcess(handle, 1)
 }
+
+// fileIdentity has no answer here, so a tree copy writes every name's bytes.
+//
+// Windows does have hardlinks on NTFS, and the file index that identifies one is behind
+// GetFileInformationByHandle — which os.FileInfo does not carry and which would mean
+// reopening every file by handle during a copy. A cache on Windows is deduplicated on
+// disk by the store when it is written, and a moved one deduplicates again as it fills;
+// paying for a handle per file to preserve that on the one platform where the move is
+// rarest is the wrong trade.
+func fileIdentity(os.FileInfo) (string, bool) { return "", false }
