@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -111,13 +113,41 @@ func LocalDefaults() Snapshot {
 
 // LocalDataDir is where one user's cache lives.
 //
-// Per user, not per machine: /var/lib/pkgreg is a service's state directory and needs
-// root to create. A cache nobody else can read is also the only thing keeping the data
-// directory private, since the loopback socket in front of it is not per-user.
+// Three layers, in order: the environment override, a signpost left by `pkgcache
+// migrate`, and the per-user default. The middle one is what makes a cache movable —
+// see MovedTo.
 func LocalDataDir() (string, error) {
 	if dir := strings.TrimSpace(os.Getenv(LocalEnvPrefix + "DATA_DIR")); dir != "" {
 		return dir, nil
 	}
+	base, err := LocalDefaultDataDir()
+	if err != nil {
+		return "", err
+	}
+	target, moved := MovedTo(base)
+	if !moved {
+		return base, nil
+	}
+	// A signpost pointing at nothing is the one failure worth being loud about. The
+	// cache is on a disk that is not mounted, and the alternative — quietly falling
+	// back to the default location — starts filling the disk this move was meant to
+	// spare, with a cache the user believes they already have.
+	if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		return "", fmt.Errorf(
+			"config: this cache was moved to %s, which is not there.\n"+
+				"  mount that disk and run the command again, or, if the move is to be\n"+
+				"  undone, delete %s and %s becomes the cache again",
+			target, MovedToPath(base), base)
+	}
+	return target, nil
+}
+
+// LocalDefaultDataDir is the per-user location, before any override or signpost.
+//
+// Per user, not per machine: /var/lib/pkgreg is a service's state directory and needs
+// root to create. A cache nobody else can read is also the only thing keeping the data
+// directory private, since the loopback socket in front of it is not per-user.
+func LocalDefaultDataDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("config: locate home directory: %w\n"+
@@ -136,6 +166,60 @@ func LocalDataDir() (string, error) {
 			return filepath.Join(base, "pkgcache"), nil
 		}
 		return filepath.Join(home, ".local", "share", "pkgcache"), nil
+	}
+}
+
+// MovedToName is the file a moved cache leaves behind, naming where it went.
+//
+// A signpost rather than an environment variable, because the environment is not one
+// place. A laptop reaches its cache from a login shell, a systemd user unit, an
+// autostarted tray app and a Docker credential helper, and a variable exported in the
+// first of those is absent from the other three — so the machine would half-find a
+// cache it half-moved. A file at the location everything already looks in is read by
+// all four without anyone arranging it.
+const MovedToName = "moved-to"
+
+// MovedToPath is where the signpost lives for a given location.
+func MovedToPath(dir string) string { return filepath.Join(dir, MovedToName) }
+
+// MovedTo returns where a cache at dir was moved to, and whether it was moved at all.
+//
+// An unreadable or empty signpost reads as "not moved": the file exists to redirect,
+// and one that cannot say where to is not a reason to refuse to run.
+func MovedTo(dir string) (string, bool) {
+	data, err := os.ReadFile(MovedToPath(dir))
+	if err != nil {
+		return "", false
+	}
+	target := strings.TrimSpace(string(data))
+	if target == "" || !filepath.IsAbs(target) {
+		return "", false
+	}
+	return filepath.Clean(target), true
+}
+
+// WriteMovedTo leaves the signpost. The directory is created if the move took the whole
+// of it away, which is the usual case.
+func WriteMovedTo(dir, target string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("config: signpost %s: %w", dir, err)
+	}
+	if err := os.WriteFile(MovedToPath(dir), []byte(target+"\n"), 0o600); err != nil {
+		return fmt.Errorf("config: signpost %s: %w", dir, err)
+	}
+	return nil
+}
+
+// ClearMovedTo removes the signpost, and reports whether one was there.
+func ClearMovedTo(dir string) (bool, error) {
+	err := os.Remove(MovedToPath(dir))
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
 	}
 }
 

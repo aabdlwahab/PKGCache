@@ -63,6 +63,7 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache tray` | the same, kept in the status bar; `-on-login` starts it with your session |
 | `pkgcache console` | the full console, in your browser |
 | `pkgcache prune` | reclaim space, when you ask and not before |
+| `pkgcache migrate <dir>` | move the whole cache to another disk, and leave a note saying where it went |
 | `pkgcache export` / `import` | carry what a project holds to a machine with no network, and back |
 | `pkgcache checkpoint` / `snapshots` / `rollback` | name what a project holds now, list those names, return to one |
 | `pkgcache persist` | settings that outlive the session, plus socket activation |
@@ -494,6 +495,46 @@ and `team-ca.crt` (the team cache and the CAs it is verified against), `shuttle/
 `shuttle/out` (packs, when you do not give a path of your own), `daemon.json` (the running
 daemon), `daemon.log`.
 
+## Moving it to another disk
+
+The disk a laptop cache lives on fills up, and the cache is usually the largest thing on
+it that can go somewhere else:
+
+```sh
+pkgcache migrate -dry-run /mnt/big/pkgcache   # how much there is, and whether it fits
+pkgcache migrate /mnt/big/pkgcache
+```
+
+It stops the cache first, copies everything — blobs, catalog, projects, checkpoints,
+your limit — verifies that the whole of it arrived before removing the old copy, and
+rewrites the socket unit to name the new place. `-keep` leaves the old copy alone.
+
+What stays behind is one line at the old location:
+
+```
+~/.local/share/pkgcache/moved-to     /mnt/big/pkgcache
+```
+
+That is deliberately a file and not an environment variable. A laptop reaches its cache
+from a login shell, a systemd user unit, an autostarted tray app and a Docker build, and
+a variable exported in the first of those is absent from the other three — so a machine
+would half-find a cache it half-moved. Everything already looks in the default location,
+so a note there is read by all four with nothing to configure. `PKGCACHE_DATA_DIR` still
+wins over it, for anyone who names a directory explicitly.
+
+Two refusals are the point of having a command at all:
+
+- **a destination that cannot hardlink** — exFAT, FAT32 and most network shares. The blob
+  store publishes with `link(2)` and deduplicates across projects the same way, so a cache
+  there breaks on the first fetch after the move, long after anyone is thinking about it.
+- **a cache that is in use.** A copy taken while the daemon is running catches SQLite
+  between two writes. `migrate` stops the daemon, holds the directory's lock for the whole
+  move, and stops socket activation from starting another one halfway through.
+
+And when the disk it was moved to is not mounted, every pkgcache command says so and
+stops, rather than quietly filling the disk the move was meant to spare with a second,
+empty cache.
+
 ## Verified where
 
 Linux is implemented and run: real `npm`, `uv` and `git` through the cache and again
@@ -501,7 +542,9 @@ from it with the origin switched off; a real `docker build`; socket activation a
 pre-bound descriptor; twenty concurrent starts producing one daemon; two caches passing a
 pack between them, with the receiving one offline and installing from it — including a
 delta second trip, and a pack that does not continue from the receiver's checkpoint being
-refused without writing anything. The widget is rendered in a real browser at 420 and 320
+refused without writing anything. A cache moved to another filesystem with its daemon
+running, its hardlinks intact on the far side, its projects and limit still there
+afterwards, and every command refusing to run once the disk it moved to went away. The widget is rendered in a real browser at 420 and 320
 pixels wide in both themes, and its export and import buttons driven through to their
 results.
 

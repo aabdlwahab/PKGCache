@@ -403,6 +403,48 @@ func InstallService(executable, dataDir string, uninstall bool, out io.Writer) (
 	}
 }
 
+// SuspendService stops socket activation and any daemon it started.
+//
+// It exists for `pkgcache migrate`, which moves the directory the unit names. Without
+// it the sequence is a race nobody would win reliably: stop the daemon, start copying,
+// and the first tool on the machine to reach for a package wakes the socket, which
+// starts a daemon on a cache that is halfway to somewhere else.
+//
+// It reports whether there was a unit to stop, which is the same question as whether
+// one has to be reinstalled afterwards.
+func SuspendService() (bool, error) {
+	switch runtime.GOOS {
+	case "linux":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false, err
+		}
+		unit := filepath.Join(home, ".config", "systemd", "user", "pkgcache.socket")
+		if _, err := os.Stat(unit); err != nil {
+			return false, nil //nolint:nilerr // no unit is not a failure to stop one
+		}
+		if err := runSystemctl("--user", "stop", "pkgcache.socket", "pkgcache.service"); err != nil {
+			return true, fmt.Errorf("local: stop pkgcache.socket: %w", err)
+		}
+		return true, nil
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false, err
+		}
+		agent := filepath.Join(home, "Library", "LaunchAgents", "dev.pkgcache.plist")
+		if _, err := os.Stat(agent); err != nil {
+			return false, nil //nolint:nilerr // as above
+		}
+		if err := runLaunchctl("unload", agent); err != nil {
+			return true, fmt.Errorf("local: unload the launch agent: %w", err)
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
 func installSystemdSocket(
 	executable, dataDir string, uninstall bool, out io.Writer,
 ) (Availability, error) {

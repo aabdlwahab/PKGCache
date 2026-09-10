@@ -936,6 +936,7 @@ added 1 package in 331ms</pre>
             <tr><td class="cmd-cell">rollback &lt;id&gt;</td><td>make a checkpoint the content again — this discards what is there now</td></tr>
             <tr><td class="cmd-cell">widget / console</td><td>the small window, or the full interface</td></tr>
             <tr><td class="cmd-cell">limit / prune</td><td>set the budget; reclaim space when you ask</td></tr>
+            <tr><td class="cmd-cell">migrate &lt;dir&gt;</td><td>move the whole cache to another disk, and leave a note saying where it went</td></tr>
             <tr><td class="cmd-cell">status</td><td>is it running, what is in it, per project, and is it still caching</td></tr>
             <tr><td class="cmd-cell">stop / serve / version</td><td>stop the daemon; run it in the foreground; build identity</td></tr>
           </tbody>
@@ -971,6 +972,28 @@ added 1 package in 331ms</pre>
         <code>docker-build-setup</code> and <code>widget -on-login</code> install — each marked,
         each reversible with <code>-uninstall</code> or <code>-off-login</code>, and none of them
         will touch something you wrote yourself.
+      </p>
+      <h3>Moving it to another disk</h3>
+      <figure>
+        <div class="term">
+          <div class="term-bar"><span>terminal</span></div>
+<pre><span class="cmd">pkgcache migrate -dry-run /mnt/big/pkgcache</span>   <span class="note"># how much, and does it fit</span>
+<span class="cmd">pkgcache migrate /mnt/big/pkgcache</span></pre>
+        </div>
+      </figure>
+      <p>
+        A full laptop disk is the usual reason. <code>migrate</code> stops the cache, copies
+        everything — blobs, catalog, projects, checkpoints, your limit — checks that the whole of
+        it arrived before removing the old copy, and rewrites the socket unit to name the new
+        place. What it leaves behind is a one-line <code>moved-to</code> file at the old location,
+        which is how this shell, the tray app, <code>docker build</code> and anything else you
+        have already configured keep finding the cache with nothing reconfigured.
+      </p>
+      <p>
+        It refuses a destination it cannot make a cache on: one that cannot hardlink — exFAT,
+        FAT32 and most network shares, where a deduplicated store cannot work — or one without
+        the space. And when the disk it moved to is not mounted, every command says so and stops,
+        rather than quietly starting a second cache on the disk you were trying to spare.
       </p>
       <div class="note-block guard">
         <span class="label">The one thing this does not promise</span>

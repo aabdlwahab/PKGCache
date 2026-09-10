@@ -45,6 +45,7 @@ var commands = map[string]struct {
 	"tray":               {"keep the cache in your status bar", runTray},
 	"console":            {"open the full console in your browser", runConsole},
 	"limit":              {"set how much disk this cache may use", runLimit},
+	"migrate":            {"move this cache to another disk", runMigrate},
 	"prune":              {"reclaim space, now, because you asked", runPrune},
 	"status":             {"is the cache running, and what is in it", runStatus},
 	"stop":               {"stop the cache daemon", runStop},
@@ -58,7 +59,7 @@ var order = []string{
 	"pull", "warmlock", "persist", "docker-setup", "docker-build-setup",
 	"checkpoint", "export", "import", "snapshots", "rollback",
 	"widget", "tray", "console",
-	"limit", "status", "prune", "stop", "serve", "version",
+	"limit", "status", "prune", "migrate", "stop", "serve", "version",
 }
 
 func main() {
