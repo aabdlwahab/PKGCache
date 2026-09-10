@@ -98,6 +98,7 @@ flags:
 			return err
 		}
 		if suspended {
+			//nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
 			defer func() { restoreService(serve) }()
 		}
 	}
@@ -132,7 +133,6 @@ func restoreService(dataDir string) {
 		fmt.Fprintf(os.Stderr, "pkgcache: socket activation was not reinstalled: %v\n", err)
 		return
 	}
-	//nolint:contextcheck // as above: the service manager calls carry their own deadline
 	if _, err := local.InstallService(executable, dataDir, false, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr,
 			"pkgcache: socket activation was not reinstalled: %v\n"+
