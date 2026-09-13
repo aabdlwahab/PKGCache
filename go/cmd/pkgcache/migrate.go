@@ -20,6 +20,9 @@ func runMigrate(ctx context.Context, args []string) error {
 	keep := fs.Bool("keep", false,
 		"leave the old copy in place instead of removing it once the new one is verified")
 	dryRun := fs.Bool("dry-run", false, "say what would happen, and change nothing")
+	fromWindow := fs.Bool("from-window", false,
+		"leave the outcome where the window that asked for this move reads it, and start "+
+			"the cache again afterwards")
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(fs.Output(), `pkgcache migrate — move this cache to another disk
 
@@ -79,54 +82,88 @@ flags:
 		}
 	}
 
-	// Where socket activation should point when this command is done. It is the old
-	// location until the move has actually happened, so a failure leaves the machine
-	// pointed at the cache it still has.
-	serve := snap.DataDir
-	if !*dryRun {
-		stopped, err := local.Stop(ctx, snap.DataDir, 30*time.Second)
-		if err != nil {
-			return err
-		}
-		if stopped {
-			fmt.Println("pkgcache: stopped the cache")
-		}
-		// Socket activation would otherwise start a new daemon on the directory being
-		// moved, at the first `npm install` anybody on this machine runs.
-		suspended, err := local.SuspendService() //nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
-		if err != nil {
-			return err
-		}
-		if suspended {
-			//nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
-			defer func() { restoreService(serve) }()
-		}
+	if *dryRun {
+		_, err := local.Migrate(ctx, local.MigrateOptions{
+			From: snap.DataDir, To: to, Keep: *keep, DryRun: true, Signpost: signpost,
+			Out: os.Stdout,
+		})
+		return err
 	}
 
-	result, err := local.Migrate(ctx, local.MigrateOptions{
-		From:     snap.DataDir,
-		To:       to,
-		Keep:     *keep,
-		DryRun:   *dryRun,
-		Signpost: signpost,
-		Out:      os.Stdout,
-	})
+	started := time.Now()
+	// Socket activation before the daemon, not after. A window that asked for this move
+	// polls every couple of seconds to learn when it is over, and between stopping the
+	// daemon and stopping the socket that poll would wake a new daemon on the very
+	// directory about to be moved.
+	suspended, err := local.SuspendService() //nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
+	var result local.MigrateResult
+	if err == nil {
+		err = stopCache(ctx, snap.DataDir)
+	}
+	if err == nil {
+		result, err = local.Migrate(ctx, local.MigrateOptions{
+			From:     snap.DataDir,
+			To:       to,
+			Keep:     *keep,
+			Signpost: signpost,
+			Out:      os.Stdout,
+		})
+	}
+
+	// Wherever the cache is now: the new place if it got there, the old one if not. A
+	// failure leaves the machine pointed at the cache it still has.
+	home := snap.DataDir
+	if err == nil {
+		home = result.To
+	}
+	if suspended {
+		restoreService(home) //nolint:contextcheck // as above
+	}
+	if *fromWindow {
+		if recordErr := local.FinishMigration(snap.DataDir, to, started, result, err); recordErr != nil {
+			fmt.Fprintf(os.Stderr, "pkgcache: the window will not hear how this ended: %v\n", recordErr)
+		}
+		// Socket activation brings the cache back on the window's next request. Without
+		// it nothing would, and the window would wait on an address nobody answers.
+		if !suspended {
+			restartCache(ctx, snap, home)
+		}
+	}
 	if err != nil {
 		return err
 	}
-	if *dryRun {
-		return nil
-	}
-	serve = result.To
 	reportMigration(result, fixed)
 	return nil
 }
 
+// stopCache stops the daemon, if there is one, and says so.
+func stopCache(ctx context.Context, dataDir string) error {
+	stopped, err := local.Stop(ctx, dataDir, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	if stopped {
+		fmt.Println("pkgcache: stopped the cache")
+	}
+	return nil
+}
+
+// restartCache starts the daemon again on the address the window was using.
+func restartCache(ctx context.Context, snap *config.Snapshot, dataDir string) {
+	restarted, err := config.LoadLocal(config.LocalFlags{DataDir: dataDir, Addr: snap.LocalAddr()})
+	if err == nil {
+		_, err = local.Ensure(ctx, local.EnsureOptions{Snapshot: restarted, Notes: os.Stdout})
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pkgcache: the cache was not started again: %v\n", err)
+	}
+}
+
 // restoreService puts socket activation back, naming the cache's directory.
 //
-// Deferred, so it also runs when the move failed: the unit was stopped by this command,
-// and a machine left without the activation it had is a machine whose persisted .npmrc
-// names a port nothing answers on any more.
+// Run whether or not the move worked: the unit was stopped by this command, and a machine
+// left without the activation it had is a machine whose persisted .npmrc names a port
+// nothing answers on any more.
 func restoreService(dataDir string) {
 	executable, err := os.Executable()
 	if err != nil {

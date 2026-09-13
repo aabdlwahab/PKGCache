@@ -133,6 +133,11 @@ func Run(ctx context.Context, o RunOptions) error {
 	// credential store because a sibling is rows plus a sealed token, and both halves
 	// have to be written or neither is.
 	a.API.Peers = &Peers{Store: a.Projects, Credentials: a.Credentials, Ecos: a.Ecos}
+	// And the cache's own directory, so the window can move it to another disk. Told
+	// whether systemd started this daemon, because then the process doing the move has
+	// to be started as systemd's too: stopping the service kills everything in its
+	// control group, setsid or not, and the move would die halfway through its copy.
+	a.API.Migration = &Migrator{DataDir: snap.DataDir, Supervised: activated != nil}
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}

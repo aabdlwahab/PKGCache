@@ -535,6 +535,26 @@ And when the disk it was moved to is not mounted, every pkgcache command says so
 stops, rather than quietly filling the disk the move was meant to spare with a second,
 empty cache.
 
+From the window, it is **Move…**, beside the path under the disk meter — and, once the
+cache is full, **Move to a bigger disk** beside **Reclaim space**. Before anything
+happens the window shows how much there is, how much room the chosen disk has and
+everything that stands in the way, beside a button that stays disabled until nothing
+does. Pointing the picker at a disk that already holds things — a mount point, with its
+`lost+found` — puts the cache in a `pkgcache` directory of its own there.
+
+The daemon serving the window cannot move the directory it holds a lock on, so it hands
+the move to `pkgcache migrate -from-window`: the same command, which stops the daemon,
+moves the cache, and starts it again on the same address. The window loses its
+connection meanwhile and says how the move went once the cache answers. A cache that has
+been moved gets its old location offered as a place to move back to, since that
+directory hides under `~/.local`.
+
+Two moves the window refuses that a terminal does not. A cache whose location was chosen
+with `PKGCACHE_DATA_DIR` or `-data-dir`: the move would leave that setting naming the old
+place. And a socket-activated cache on a machine without `systemd-run`: stopping
+`pkgcache.service` kills everything in its control group, so the move has to run as a
+unit of its own or it dies halfway through the copy.
+
 ## Verified where
 
 Linux is implemented and run: real `npm`, `uv` and `git` through the cache and again
@@ -544,7 +564,11 @@ pack between them, with the receiving one offline and installing from it — inc
 delta second trip, and a pack that does not continue from the receiver's checkpoint being
 refused without writing anything. A cache moved to another filesystem with its daemon
 running, its hardlinks intact on the far side, its projects and limit still there
-afterwards, and every command refusing to run once the disk it moved to went away. The widget is rendered in a real browser at 420 and 320
+afterwards, and every command refusing to run once the disk it moved to went away. The
+same move started from the window, driven in a real browser: out to another filesystem
+and back to the default location, with the window reconnecting and reporting each. The
+`systemd-run` hand-off a socket-activated cache needs is built and unit-tested, and has
+not been run against a live user session. The widget is rendered in a real browser at 420 and 320
 pixels wide in both themes, and its export and import buttons driven through to their
 results.
 

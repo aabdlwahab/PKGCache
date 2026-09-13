@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aabdlwahab/PKGCache/internal/config"
 	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 )
 
@@ -116,6 +117,14 @@ func (f *Files) roots() controlapi.Listing {
 	}
 	add("Media", "/media")
 	add("Mounted", "/mnt")
+	// Where this user's cache would be had it never been moved, once it has been. That
+	// directory holds nothing but the signpost and sits under a dotfile this listing hides,
+	// so without it moving a cache back is the one move the window could not make.
+	if base, err := config.LocalDefaultDataDir(); err == nil {
+		if _, moved := config.MovedTo(base); moved {
+			add("Where this cache used to be", base)
+		}
+	}
 	return listing
 }
 

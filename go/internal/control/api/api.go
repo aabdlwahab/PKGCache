@@ -66,12 +66,16 @@ type Options struct {
 	Files LocalFiles
 	// Peers, when set, is the sibling caches a local cache borrows from. A server
 	// leaves it nil: its operator does not point it at somebody's laptop.
-	Peers   LocalPeers
-	Engine  *engine.Engine
-	Ecos    *eco.Registry
-	Events  *obs.Bus
-	DataDir string
-	CAFile  string
+	Peers LocalPeers
+	// Migration, when set, moves a local cache to another disk from the window. A server
+	// leaves it nil: moving its state directory is an operator's job with a maintenance
+	// window, not a button. See LocalMigration.
+	Migration LocalMigration
+	Engine    *engine.Engine
+	Ecos      *eco.Registry
+	Events    *obs.Bus
+	DataDir   string
+	CAFile    string
 	// Log records the errors this package answers 500 for. Without it they were written
 	// nowhere at all: the caller was told "internal server error" and the cause was
 	// discarded, which is the one failure mode a control plane cannot afford to have.

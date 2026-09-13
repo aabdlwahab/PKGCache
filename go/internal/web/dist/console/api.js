@@ -187,6 +187,15 @@ export const api = {
   // Browse the machine the cache runs on — not the viewer's. Empty path means the
   // starting places. 404 on a server, which is how callers know not to offer a picker.
   browse: (path) => request(`/local/files${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+  // Move this cache to another disk: present only on a local cache. The move runs with the
+  // daemon stopped, so starting one answers as soon as it is handed off, and how it ended
+  // is read back from whichever daemon answers afterwards.
+  migration: () => request("/local/migration"),
+  planMigration: (path) =>
+    request("/local/migration/plan", { method: "POST", body: body({ path }) }),
+  startMigration: (path) =>
+    request("/local/migration", { method: "POST", body: body({ path }) }),
+  acknowledgeMigration: () => request("/local/migration", { method: "DELETE" }),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

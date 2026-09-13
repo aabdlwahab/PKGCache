@@ -17,11 +17,12 @@
  */
 
 import { api } from "./api.js";
-import { askText } from "./dialog.js";
+import { askText, openModal } from "./dialog.js";
+import { pickDirectory } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
 import { packagesPanel, transferPanel, sourcesPanel } from "./widget-panels.js";
-import { bytes, percent, outcomeColor, OUTCOME_LABEL } from "./format.js";
+import { bytes, count, percent, outcomeColor, OUTCOME_LABEL } from "./format.js";
 
 const root = document.getElementById("root");
 
@@ -246,8 +247,15 @@ function buildSections(regions) {
 	);
 	const used = el("span", {});
 	const ceilingText = el("span", { class: "wg-of" });
+	// Where the cache is, and the way to put it somewhere else. Under the meter because
+	// that is where somebody is looking when the answer to "how much room is left" is
+	// "not enough".
+	const whereText = el("code", { class: "wg-where-path" });
+	const moveButton = button("Move…", () => moveCache(), { kind: "ghost small" });
+	const where = el("div", { class: "wg-where", hidden: true },
+		el("span", { text: "In" }), whereText, moveButton);
 	regions.diskRegion.set(
-		diskLabel, meter, el("div", { class: "wg-numbers" }, used, ceilingText));
+		diskLabel, meter, el("div", { class: "wg-numbers" }, used, ceilingText), where);
 
 	const served = el("span", { class: "wg-figure-value", text: "—" });
 	const held = el("span", { class: "wg-figure-value", text: "0" });
@@ -270,7 +278,7 @@ function buildSections(regions) {
 
 	parts = {
 		stateLine, stateNote, stateRow, banner,
-		diskLabel, meter, meterFill, used, ceilingText,
+		diskLabel, meter, meterFill, used, ceilingText, where, whereText, moveButton,
 		served, held,
 		liveLabel, liveList, recentList, quiet,
 		// Keyed by the event id, so a row that is already on screen is updated rather than
@@ -310,10 +318,13 @@ function renderState(regions) {
 	// The banner is the one part worth replacing, and it changes when the cache fills up
 	// rather than when a byte arrives.
 	const reason = budget?.full ? budget.reason || "" : "";
-	if (parts.bannerReason === reason) {
+	// Whether the move is on offer is part of what the banner says, and it is learned after
+	// the first render — so it is part of the key that decides whether to redraw.
+	const bannerKey = `${reason}|${migration?.movable === true}`;
+	if (parts.bannerKey === bannerKey) {
 		return;
 	}
-	parts.bannerReason = reason;
+	parts.bannerKey = bannerKey;
 	parts.banner.set(
 		budget?.full
 			? el(
@@ -332,6 +343,8 @@ function renderState(regions) {
 						button("Reclaim space", () => run(() => api.gc(false), "Reclaiming space…"), {
 							kind: "danger",
 						}),
+						// The other way out of a full disk, and the one that keeps everything.
+						migration?.movable ? button("Move to a bigger disk", () => moveCache()) : null,
 					),
 				)
 			: null,
@@ -663,6 +676,213 @@ async function settle(submitted) {
   }
 }
 
+/* ---- moving the cache ------------------------------------------------------
+ *
+ * The one thing this window does that takes the cache away while it happens. The daemon
+ * serving this page cannot move the directory it holds a lock on, so it hands the move to
+ * a process of its own and is stopped by it; the page stays loaded, loses its connection,
+ * and asks again until a daemon answers with how the move ended. */
+
+// Where the cache is and whether it can move, from the daemon. Null on a server, which
+// has no such surface, and on a daemon from before it did.
+let migration = null;
+let moving = false;
+
+async function loadMigration() {
+	try {
+		migration = await api.migration();
+	} catch {
+		migration = null;
+	}
+	renderWhere();
+	renderState(regions);
+	const last = migration?.last;
+	if (!last) return;
+	if (last.state === "moving") {
+		await waitForMove(last);
+		return;
+	}
+	// A move finished while no window was watching — or this window was reloaded partway.
+	// Said once, then forgotten.
+	await reportMove(last);
+}
+
+function renderWhere() {
+	if (!parts) return;
+	parts.where.hidden = !migration;
+	if (!migration) return;
+	parts.whereText.textContent = migration.data_dir;
+	parts.whereText.title = migration.moved_from
+		? `${migration.data_dir}\nmoved here from ${migration.moved_from}`
+		: migration.data_dir;
+	parts.moveButton.disabled = moving || !migration.movable;
+	// Why not, on the control that is not available, rather than a button that does nothing.
+	parts.moveButton.title = migration.movable
+		? "Move the cache to another disk"
+		: migration.reason || "";
+}
+
+async function moveCache() {
+	if (!migration?.movable || moving) return;
+	const chosen = await pickDirectory({
+		title: "Move the cache to…",
+		confirm: "Choose this place",
+	});
+	if (chosen === null) return;
+	let plan;
+	try {
+		plan = await api.planMigration(chosen);
+	} catch (cause) {
+		notice(cause?.message || String(cause), true);
+		return;
+	}
+	if (!(await confirmMove(plan))) return;
+	try {
+		await api.startMigration(chosen);
+	} catch (cause) {
+		notice(cause?.message || String(cause), true);
+		return;
+	}
+	await waitForMove({ to: plan.to, started: new Date().toISOString() });
+}
+
+/** Show what the move would do, and what stands in its way. Resolves true to go ahead.
+ *
+ * Every problem is shown at once, beside a disabled button, rather than one at a time on
+ * the way to a failure: the reader is choosing a disk, and what is wrong with it is the
+ * information they need to choose another. */
+function confirmMove(plan) {
+	return new Promise((resolve) => {
+		let close = () => {};
+		const done = (answer) => {
+			close();
+			resolve(answer);
+		};
+		const lines = [
+			el("p", { class: "dlg-line" },
+				el("strong", { text: bytes(plan.bytes) }), ` in ${count(plan.files)} files`),
+			el("p", { class: "dlg-line" }, "from ", el("code", { text: plan.from })),
+			el("p", { class: "dlg-line" }, "to ", el("code", { text: plan.to })),
+		];
+		if (plan.same_disk) {
+			lines.push(el("p", {
+				class: "dlg-line wg-move-warn",
+				text: "That is the disk it is already on, so this moves it without freeing any space.",
+			}));
+		} else if (plan.free_bytes >= 0) {
+			lines.push(el("p", { class: "dlg-line", text: `That disk has ${bytes(plan.free_bytes)} free.` }));
+		}
+		for (const problem of plan.problems) {
+			lines.push(el("p", { class: "dlg-line dlg-problem", text: problem }));
+		}
+		if (!plan.problems.length) {
+			lines.push(el("p", {
+				class: "dlg-line wg-move-note",
+				text: "The cache stops while it moves and this window reconnects when it is back. The old copy is removed only once the new one has been counted and matches.",
+			}));
+		}
+		const go = button("Move the cache", () => done(true), {
+			kind: "primary",
+			disabled: plan.problems.length > 0,
+		});
+		close = openModal({
+			title: "Move the cache",
+			wide: true,
+			body: el("div", { class: "dlg-body" }, ...lines),
+			onCancel: () => resolve(false),
+			actions: [button("Cancel", () => done(false)), go],
+		});
+		// The safe answer holds focus, as in every other question this window asks.
+		go.parentElement?.firstElementChild?.focus();
+	});
+}
+
+/** Wait out a move this window cannot watch, and report it when a daemon answers. */
+async function waitForMove(record) {
+	moving = true;
+	renderWhere();
+	clearTimeout(noticeTimer);
+	const began = Date.parse(record.started) || Date.now();
+	const elapsed = el("span", { class: "wg-bar-count" });
+	const hint = el("div", { class: "wg-move-hint" });
+	regions.noticeRegion.set(
+		el("div", { class: "wg-notice wg-moving", role: "status" },
+			el("div", {}, "Moving the cache to ", el("code", { text: record.to })),
+			el("div", { class: "wg-bar-label" },
+				el("span", { text: "The cache is stopped while it moves" }), elapsed),
+			el("div", { class: "wg-bar-track is-indeterminate" }, el("div", { class: "wg-bar-fill" })),
+			hint),
+	);
+	const tick = () => {
+		const seconds = Math.floor((Date.now() - began) / 1000);
+		elapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+		// A large cache on a slow disk takes minutes, and a bar with no end in sight needs
+		// to say so before somebody decides it has hung.
+		hint.textContent = seconds > 120
+			? "Still going — a large cache takes a while. pkgcache status in a terminal says where it is."
+			: "";
+	};
+	tick();
+	const timer = setInterval(tick, 1000);
+	try {
+		for (;;) {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			let location;
+			try {
+				location = await api.migration();
+			} catch {
+				// Expected: this is the stretch where nothing is answering.
+				continue;
+			}
+			const last = location.last;
+			if (last && last.state !== "moving") {
+				migration = location;
+				regions.noticeRegion.set();
+				await reportMove(last);
+				return;
+			}
+			// Answered with no record at all, from the place it was going: another window
+			// saw the outcome first and acknowledged it.
+			if (!last && location.data_dir === record.to) {
+				migration = location;
+				notice(["The cache is now in ", el("code", { text: record.to }), "."]);
+				return;
+			}
+		}
+	} finally {
+		clearInterval(timer);
+		moving = false;
+		renderWhere();
+		renderState(regions);
+	}
+}
+
+async function reportMove(last) {
+	try {
+		await api.acknowledgeMigration();
+		migration = await api.migration();
+	} catch {
+		// Shown again by the next window, which is harmless.
+	}
+	try {
+		await reload();
+	} catch {
+		// The event stream reconnects on its own; the figures follow on the next frame.
+	}
+	renderWhere();
+	renderState(regions);
+	if (last.state === "done") {
+		notice([
+			"The cache is now in ", el("code", { text: last.to }),
+			last.renamed
+				? " — the same disk, so nothing was copied."
+				: `. ${bytes(last.bytes || 0)} moved, and the old copy is gone.`,
+		]);
+		return;
+	}
+	notice(`The cache was not moved: ${last.error || "the move failed"}.`, true);
+}
+
 /* ---- plumbing ------------------------------------------------------------- */
 
 let regions = null;
@@ -780,6 +1000,7 @@ async function boot() {
   } catch (cause) {
     notice(cause?.message || String(cause), true);
   }
+  await loadMigration();
 }
 
 void boot();

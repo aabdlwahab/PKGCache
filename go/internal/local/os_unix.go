@@ -81,3 +81,17 @@ func fileIdentity(info os.FileInfo) (key string, shared bool) {
 	}
 	return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino), true
 }
+
+// deviceKey identifies the filesystem a path is on, so a plan can say that a move is
+// onto the disk the cache already occupies. Empty when it cannot tell.
+func deviceKey(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d", stat.Dev)
+}

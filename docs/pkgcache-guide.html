@@ -995,6 +995,14 @@ added 1 package in 331ms</pre>
         the space. And when the disk it moved to is not mounted, every command says so and stops,
         rather than quietly starting a second cache on the disk you were trying to spare.
       </p>
+      <p>
+        The window does the same from <b>Move…</b>, beside the path under the disk meter, and
+        from <b>Move to a bigger disk</b> once the cache is full. It shows how much there is,
+        how much room the chosen disk has and anything in the way before it starts; the cache
+        stops while it moves, and the window reconnects and says how it went when it is back.
+        A cache whose location you set with <code>PKGCACHE_DATA_DIR</code> is moved from a
+        terminal instead, so the setting and the cache cannot end up in different places.
+      </p>
       <div class="note-block guard">
         <span class="label">The one thing this does not promise</span>
         <p>

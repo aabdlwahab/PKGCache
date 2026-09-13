@@ -453,3 +453,50 @@
 .wg-peers { display: grid; gap: 6px; margin-top: 10px; }
 .wg-peer { display: grid; gap: 2px; padding: 6px 8px; background: var(--bg2); border-radius: 6px; }
 .wg-peer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+
+/* ---- moving the cache ------------------------------------------------------ */
+
+/* Where the cache is, under the meter. One line: the path is long and the window is not,
+   so it ends in an ellipsis and carries the whole of itself in the title. */
+.wg-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.wg-where[hidden] { display: none; }
+.wg-where-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  color: var(--fg2);
+}
+.wg-where .btn { padding: 2px 8px; font-size: 11.5px; }
+
+.dlg-line code { word-break: break-all; }
+.dlg-problem { color: var(--bad); }
+.wg-move-warn { color: var(--warn); }
+.wg-move-note { color: var(--muted); font-size: 12px; }
+
+.wg-moving { display: grid; gap: 6px; }
+.wg-move-hint { color: var(--fg2); }
+.wg-move-hint:empty { display: none; }
+
+/* A bar with no end, because the daemon that would report progress is the thing stopped. */
+.wg-bar-track.is-indeterminate { position: relative; }
+.wg-bar-track.is-indeterminate .wg-bar-fill {
+  width: 32%;
+  animation: wg-slide 1.4s var(--ease) infinite;
+}
+@keyframes wg-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wg-bar-track.is-indeterminate .wg-bar-fill { width: 100%; opacity: 0.45; animation: none; }
+}

@@ -98,3 +98,7 @@ func kill(pid int) error {
 // paying for a handle per file to preserve that on the one platform where the move is
 // rarest is the wrong trade.
 func fileIdentity(os.FileInfo) (string, bool) { return "", false }
+
+// deviceKey cannot tell here, which only costs a plan the "same disk" remark: the move
+// itself decides between a rename and a copy by trying the rename.
+func deviceKey(string) string { return "" }

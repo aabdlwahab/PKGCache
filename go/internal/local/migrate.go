@@ -46,6 +46,11 @@ var transient = map[string]bool{
 	filepath.Base(StatePath("")):     true,
 	filepath.Base(LockPath("")):      true,
 	filepath.Base(StartLockPath("")): true,
+	// And the two a move started from a window writes while it runs. The log in
+	// particular is growing during the copy, so carrying it would make the far side
+	// larger than the count taken before, and the move would refuse its own success.
+	migrationRecordName: true,
+	migrationLogName:    true,
 }
 
 // MigrateOptions describes one move.
@@ -308,9 +313,27 @@ func checkDestination(to string, need int64) error {
 // exFAT, FAT32 and most SMB mounts fail here, which is exactly the set of disks people
 // reach for when a laptop is full.
 func checkLinks(to string) error {
-	probe, err := os.CreateTemp(to, ".pkgcache-probe-*")
-	if err != nil {
+	writable, err := probeDirectory(to)
+	switch {
+	case err == nil:
+		return nil
+	case !writable:
 		return fmt.Errorf("local: %s cannot be written to: %w", to, err)
+	default:
+		return fmt.Errorf(
+			"local: %s cannot hardlink, so a cache cannot live on it: %w\n"+
+				"  exFAT, FAT32 and most network shares behave this way. Move the cache to\n"+
+				"  an ext4, xfs or btrfs filesystem instead", to, err)
+	}
+}
+
+// probeDirectory creates a file in dir and hardlinks it, and reports how far it got: a
+// nil error means both worked, and writable says whether the failure was the first step
+// or the second. Both files are removed either way.
+func probeDirectory(dir string) (writable bool, err error) {
+	probe, err := os.CreateTemp(dir, ".pkgcache-probe-*")
+	if err != nil {
+		return false, err
 	}
 	name := probe.Name()
 	_ = probe.Close()
@@ -318,13 +341,10 @@ func checkLinks(to string) error {
 
 	link := name + ".link"
 	if err := os.Link(name, link); err != nil {
-		return fmt.Errorf(
-			"local: %s cannot hardlink, so a cache cannot live on it: %w\n"+
-				"  exFAT, FAT32 and most network shares behave this way. Move the cache to\n"+
-				"  an ext4, xfs or btrfs filesystem instead", to, err)
+		return true, err
 	}
 	_ = os.Remove(link)
-	return nil
+	return true, nil
 }
 
 // renameMove is os.Rename, named so that the copy path can be exercised in a test —
