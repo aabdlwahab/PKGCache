@@ -423,10 +423,17 @@
   background: color-mix(in srgb, #000 55%, transparent);
 }
 .dlg-box {
-  display: grid; gap: 10px; width: min(30rem, 100%);
+  display: flex; flex-direction: column; gap: 10px; width: min(30rem, 100%);
   max-height: min(30rem, 90vh); padding: 14px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
 }
+/* The body takes what the title and the buttons leave, and no more. This was a grid with
+   implicit auto rows, which size to their content and ignore the box's max-height — so a
+   directory with more entries than the window has room for grew the box past the bottom
+   of the screen, the list never became scrollable, and the buttons that close the dialog
+   went off the bottom with it. */
+.dlg-box > .dlg-head, .dlg-box > .dlg-actions { flex: none; }
+.dlg-box > :not(.dlg-head):not(.dlg-actions) { flex: 1 1 auto; min-height: 0; }
 /* A browser needs the room a question does not. */
 .dlg-box.is-wide { width: min(38rem, 100%); max-height: min(32rem, 90vh); }
 .dlg-body { display: grid; gap: 8px; overflow-y: auto; min-height: 0; }
