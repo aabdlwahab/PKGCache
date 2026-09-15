@@ -112,8 +112,8 @@ func (f *Files) roots() controlapi.Listing {
 	// Both spellings: /media/<user> is Debian and Ubuntu, /run/media/<user> is what
 	// udisks2 uses on Fedora and friends.
 	if user := filepath.Base(home); user != "" && user != string(filepath.Separator) {
-		add("Removable media", filepath.Join("/media", user))
-		add("Removable media", filepath.Join("/run/media", user))
+		add("Removable media", filepath.Join(filepath.FromSlash("/media"), user))
+		add("Removable media", filepath.Join(filepath.FromSlash("/run/media"), user))
 	}
 	add("Media", "/media")
 	add("Mounted", "/mnt")

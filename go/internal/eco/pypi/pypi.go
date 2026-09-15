@@ -73,9 +73,8 @@ var defaultIndexes = map[string]string{
 
 // Repo is the PyPI ecosystem.
 type Repo struct {
-	indexes   map[string]string
-	ttl       time.Duration
-	maxUpload int64
+	indexes map[string]string
+	ttl     time.Duration
 }
 
 // New builds an adapter with the public PyPI and PyTorch indexes.

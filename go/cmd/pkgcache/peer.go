@@ -85,7 +85,9 @@ flags:
 `)
 }
 
-func peerFlags(name string, args []string, wantArg bool) (*config.Snapshot, string, string, error) {
+func peerFlags(
+	name string, args []string, wantArg bool,
+) (snap *config.Snapshot, scope, argument string, err error) {
 	fs := flag.NewFlagSet("peer "+name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
@@ -108,15 +110,14 @@ func peerFlags(name string, args []string, wantArg bool) (*config.Snapshot, stri
 			"peer %s: unexpected argument %q; flags come before the address",
 			name, rest[len(rest)-1])
 	}
-	snap, err := config.LoadLocal(collect())
+	snap, err = config.LoadLocal(collect())
 	if err != nil {
 		return nil, "", "", err
 	}
-	scope := *project
+	scope = *project
 	if scope == "" {
 		scope = local.CurrentProject(snap.DataDir)
 	}
-	argument := ""
 	if wantArg {
 		argument = rest[0]
 	}

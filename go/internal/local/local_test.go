@@ -202,7 +202,12 @@ func TestLockIsReleasedWhenTheHolderDies(t *testing.T) {
 	}
 	waitGone(t, state)
 
-	lock, err := Acquire(LockPath(snap.DataDir), false)
+	// Released, though not necessarily by the instant the daemon stops answering: on Linux
+	// the final close of a file an exiting task held can be deferred to a kernel worker, so
+	// the lock can go a moment after the port does. Taking it in the next breath is what made
+	// this fail on several CI runs. The claim here is that a dead holder does not keep the
+	// lock, which a bounded wait still proves — and it is the same wait migrate relies on.
+	lock, err := acquireIdle(ctx, snap.DataDir, 5*time.Second)
 	if err != nil {
 		t.Fatalf("the lock outlived the process that held it: %v", err)
 	}
