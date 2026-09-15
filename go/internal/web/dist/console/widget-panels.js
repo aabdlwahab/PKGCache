@@ -52,9 +52,13 @@ export function packagesPanel({ notice, reload }) {
   );
 
   const remove = button("Remove selected", () => removeSelected(), { kind: "danger" });
+  const copy = button("Copy to…", () => transfer(false));
+  const move = button("Move to…", () => transfer(true));
   const actions = el(
     "div",
     { class: "wg-actions" },
+    copy,
+    move,
     remove,
     button("Reclaim space", () =>
       run(() => api.gc(false), "Reclaimed what nothing referenced."),
@@ -88,6 +92,41 @@ export function packagesPanel({ notice, reload }) {
     });
   }
 
+  /* Copy or move what is selected into another project.
+   *
+   * The project is chosen from a list of the ones that exist, so the question cannot be
+   * answered with a name that is not there. A move asks nothing further: the packages are
+   * still in the cache, one choice away from coming back. */
+  async function transfer(moving) {
+    // A git mirror is a directory, not a digest, and cannot be carried like a file.
+    const digests = [...selected].filter(Boolean);
+    if (!digests.length) {
+      notice("Nothing is selected.");
+      return;
+    }
+    const here = store.state.project;
+    const others = store.state.projects.map((project) => project.name).filter((name) => name !== here);
+    if (!others.length) {
+      notice("There is no other project to put them in. Make one with + at the top.", true);
+      return;
+    }
+    const counted = `${digests.length} package${digests.length === 1 ? "" : "s"}`;
+    const to = await askChoice({
+      title: `${moving ? "Move" : "Copy"} ${counted}`,
+      label: moving
+        ? `Into which project? They leave ${here}.`
+        : `Into which project? They stay in ${here} as well.`,
+      choices: others,
+      confirmLabel: moving ? "Move" : "Copy",
+    });
+    if (to === null) return;
+    await run(async () => {
+      const result = await api.transferArtifacts(here, to, digests, moving);
+      selected.clear();
+      return transferred(result, to, moving);
+    });
+  }
+
   async function run(operation) {
     try {
       const said = await operation();
@@ -96,6 +135,11 @@ export function packagesPanel({ notice, reload }) {
       notice(typeof said === "string" ? said : "Done.");
     } catch (cause) {
       notice(cause?.message || String(cause), true);
+    } finally {
+      // After the button's own finally, which re-enables whatever was clicked: the
+      // selection those buttons act on is usually empty by now, and a Copy to… that looks
+      // ready with nothing selected is a button that answers "Nothing is selected".
+      setTimeout(syncRemove, 0);
     }
   }
 
@@ -117,6 +161,8 @@ export function packagesPanel({ notice, reload }) {
 
   function syncRemove() {
     remove.disabled = selected.size === 0;
+    copy.disabled = selected.size === 0;
+    move.disabled = selected.size === 0;
     remove.textContent = selected.size
       ? `Remove ${selected.size} selected`
       : "Remove selected";
@@ -133,6 +179,29 @@ export function packagesPanel({ notice, reload }) {
     ),
     refresh,
   };
+}
+
+/** What a transfer did, in the order somebody needs to hear it: what arrived, then what did
+ *  not and why. */
+function transferred(result, to, moving) {
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const said = [`${moving ? "Moved" : "Copied"} ${plural(result.packages, "package")} to ${to}.`];
+  if (result.companions) {
+    // Named for what they are to the reader: the things that let the other project answer
+    // for these packages without going back to the network.
+    const them = result.packages === 1 ? "it" : "them";
+    said.push(`What ${them} ${result.packages === 1 ? "is" : "are"} found through went too, so ${to} can serve ${them} offline.`);
+  }
+  if (result.conflicts) {
+    said.push(`${plural(result.conflicts, "file")} left alone: ${to} already holds a different file under the same name.`);
+  }
+  if (result.pinned) {
+    said.push(`${plural(result.pinned, "file")} also kept here: a checkpoint holds them.`);
+  }
+  if (result.missing) {
+    said.push(`${plural(result.missing, "package")} had already gone from this project.`);
+  }
+  return said.join(" ");
 }
 
 function packageRow(artifact, selected, onChange) {

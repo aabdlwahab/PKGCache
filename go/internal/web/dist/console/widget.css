@@ -500,3 +500,24 @@
 @media (prefers-reduced-motion: reduce) {
   .wg-bar-track.is-indeterminate .wg-bar-fill { width: 100%; opacity: 0.45; animation: none; }
 }
+
+/* ---- stopping a download --------------------------------------------------- */
+
+/* At the end of the row, where the eye arrives after the size, and quiet until it is
+   pointed at: it corrects a download, it is not what the row is for. */
+.wg-live-cancel {
+  flex: none;
+  margin-left: 2px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.wg-live-cancel:hover:not(:disabled) { color: var(--bad); border-color: var(--line); }
+.wg-live-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.wg-live-cancel:disabled { opacity: 0.45; cursor: default; }

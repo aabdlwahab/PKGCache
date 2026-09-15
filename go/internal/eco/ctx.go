@@ -422,6 +422,10 @@ func (c *Ctx) WriteError(err error) {
 			return
 		}
 		_ = c.Text(http.StatusInsufficientStorage, "project quota exceeded")
+	case errors.Is(err, engine.ErrCancelled):
+		// Stopped from the window. Asking again starts a fresh transfer.
+		_ = c.Text(http.StatusServiceUnavailable,
+			"the download was cancelled; ask again to start it over")
 	case errors.Is(err, context.Canceled):
 		// The client hung up. There is nobody left to tell.
 	default:

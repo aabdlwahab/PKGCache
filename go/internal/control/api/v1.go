@@ -64,6 +64,8 @@ func (a *API) v1Routes() {
 	a.route("POST /api/v1/maintenance/gc", a.gcJob)
 	a.route("POST /api/v1/projects/{project}/maintenance/evict", a.evictJob)
 	a.route("POST /api/v1/projects/{project}/maintenance/remove", a.removeArtifacts)
+	a.route("POST /api/v1/projects/{project}/maintenance/transfer", a.transferArtifacts)
+	a.route("POST /api/v1/projects/{project}/fetches/cancel", a.cancelFetch)
 	// Registered unconditionally, and each one refuses when nothing supplies the surface.
 	// The routes cannot be made conditional: this runs at construction, and the only thing
 	// that can implement them is built from the instance this is part of — so the hook is

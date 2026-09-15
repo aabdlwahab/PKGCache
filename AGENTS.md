@@ -129,9 +129,12 @@ The `Descriptor` declares four axes that decide how the rest of the system treat
 | `Upstreams` | `single` \| `named-set` \| `none` | one origin, a map of alias→origin, or an origin derived from the request |
 | `Freshness` | `Immutable` \| `Revalidate(ttl)` per key | whether a cache key may ever be re-fetched |
 
-Plus `ParseArtifact` (cache key → inventory identity) and `Setup` (the copy-paste client
+Plus `ParseArtifact` (cache key → inventory identity), `Setup` (the copy-paste client
 instructions the console renders — this is *why* adding an ecosystem needs no frontend
-change).
+change), and `Companions` (the other keys a key needs beside it to be served from another
+project: npm's packument for a tarball, an image's layers for its manifest). Copying and
+moving packages between projects asks `Companions`; leave it nil only if a key really is
+servable on its own, as an uploaded file is.
 
 One caveat to know before you rely on it: `Freshness` is the **declaration**. The
 adapter still enacts it by choosing `Serve` (immutable) or `Document` (revalidating) per

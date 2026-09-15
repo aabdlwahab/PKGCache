@@ -145,6 +145,17 @@ export const api = {
   gc: (dryRun) => request("/maintenance/gc", { method: "POST", body: body({ dry_run: dryRun }) }),
   /* Removing named content, as opposed to evicting whatever is coldest. Synchronous:
      this is the handful of digests somebody ticked, not a sweep worth queueing. */
+  /* Copying or moving packages into another project. Nothing is copied byte for byte —
+     the other project gains rows pointing at what the store already holds — so this is
+     synchronous for the same reason removal is. */
+  transferArtifacts: (project, to, digests, move = false) =>
+    request(`${at(project)}/maintenance/transfer`, {
+      method: "POST",
+      body: body({ to, digests, move }),
+    }),
+  // Stop a download in flight. 404 when it has already finished.
+  cancelFetch: (project, eco, key) =>
+    request(`${at(project)}/fetches/cancel`, { method: "POST", body: body({ eco, key }) }),
   removeArtifacts: (project, digests, dryRun = false) =>
     request(`${at(project)}/maintenance/remove`, {
       method: "POST",

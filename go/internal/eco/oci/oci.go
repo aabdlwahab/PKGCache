@@ -95,7 +95,8 @@ func (r *Repo) Descriptor() eco.Descriptor {
 			}
 			return eco.Immutable
 		},
-		Setup: setupSteps,
+		Companions: companions,
+		Setup:      setupSteps,
 	}
 }
 

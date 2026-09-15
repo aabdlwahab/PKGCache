@@ -555,6 +555,11 @@ added 1 package in 962ms</pre>
           and the window reads the last figures from disk until something needs it again.
         </p>
       </div>
+          <p>
+        Each download under <b>Just now</b> has a <b>×</b>. It asks first, then stops the transfer:
+        nothing of it is kept, and whatever was waiting for it fails and can ask again. A client
+        that disconnects never stops a download, because others may be reading the same one.
+      </p>
     </section>
 
     <section id="projects">
@@ -617,6 +622,15 @@ added 1 package in 962ms</pre>
           anything from another.
         </p>
       </div>
+          <h3>Copying and moving packages</h3>
+      <p>
+        In the window's <b>packages</b> panel, select packages and choose <b>Copy to…</b> or
+        <b>Move to…</b>. Nothing is copied byte for byte — the other project gains rows pointing at
+        what the cache already holds — and what each package needs beside it goes too: npm's
+        packument, pip's simple page, an image's config and layers, so the other project can serve
+        it offline. A move leaves shared indexes behind, never overwrites a different file already
+        there, and keeps anything a checkpoint holds.
+      </p>
     </section>
 
     <section id="team">

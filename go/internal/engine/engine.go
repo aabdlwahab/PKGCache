@@ -265,9 +265,9 @@ func (e *Engine) serveMiss(
 ) (Outcome, error) {
 	// One fetch per (project, eco, key): a hundred simultaneous requests for the same
 	// wheel produce exactly one upstream transfer.
-	fetchKey := res.Project + "\x00" + res.Eco + "\x00" + res.Key
-	f, created := e.inflight.Start(fetchKey, res.Eco)
+	f, created := e.inflight.Start(inflightKey(res.Project, res.Eco, res.Key), res.Eco)
 	if created {
+		f.CacheKey = res.Key
 		// Close the lookup→registry TOCTOU window. Another fetch may have published
 		// this entry after Serve's first catalog lookup but before this request won
 		// Registry.Start. Without the second lookup, a late concurrent request can
@@ -370,6 +370,20 @@ func (e *Engine) serveMiss(
 	}
 	e.record(res, OutcomeMiss, written, now)
 	return OutcomeMiss, nil
+}
+
+// inflightKey names one transfer: a project, an ecosystem and a key.
+func inflightKey(project, eco, key string) string {
+	return project + "\x00" + eco + "\x00" + key
+}
+
+// CancelFetch stops an in-flight download, and reports whether one was running.
+//
+// Nothing of it is kept, and every client reading it sees its response end short. That
+// is the point rather than a side effect: somebody who stops a download has decided that
+// nobody gets it from this transfer. Asking for it again starts a fresh one.
+func (e *Engine) CancelFetch(project, eco, key string) bool {
+	return e.inflight.Cancel(inflightKey(project, eco, key))
 }
 
 // publishEntry records a completed fetch in the catalog, exactly once per fetch.

@@ -107,6 +107,7 @@ func (r *Repo) Descriptor() eco.Descriptor {
 			return eco.Immutable
 		},
 		ParseArtifact: parseArtifactKey,
+		Companions:    companions,
 		Setup:         setupSteps,
 	}
 }

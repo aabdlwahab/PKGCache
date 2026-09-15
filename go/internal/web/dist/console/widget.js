@@ -17,7 +17,7 @@
  */
 
 import { api } from "./api.js";
-import { askText, openModal } from "./dialog.js";
+import { askConfirm, askText, openModal } from "./dialog.js";
 import { pickDirectory } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
@@ -446,15 +446,47 @@ function renderRecent() {
    is what tells two rows for the same package apart: an afternoon has both a fetch and a
    hit for the same tarball, and without the word that reads as a rendering bug. */
 function recentRow(event) {
-	const outcome = event.kind === "cache.hit" ? "hit" : event.outcome || outcomeOf(event.kind);
+	// A download somebody stopped is not a failure anybody needs to look into.
+	const cancelled = event.kind === "fetch.error" && event.status === "cancelled";
+	const outcome = cancelled
+		? "cancelled"
+		: event.kind === "cache.hit" ? "hit" : event.outcome || outcomeOf(event.kind);
 	return el(
 		"div",
 		{ class: "wg-recent-row", title: `${event.eco ?? ""} ${event.id ?? ""} — ${outcome}` },
-		el("span", { class: "wg-recent-mark", style: `background:${outcomeColor(outcome)}` }),
+		el("span", { class: "wg-recent-mark", style: `background:${cancelled ? "var(--muted)" : outcomeColor(outcome)}` }),
 		el("span", { class: "wg-recent-name", text: shortName(event.id ?? "") }),
 		el("span", { class: "wg-recent-outcome", text: OUTCOME_LABEL[outcome] ?? outcome }),
 		el("span", { class: "wg-recent-size", text: event.size ? bytes(event.size) : "" }),
 	);
+}
+
+/** Stop a download in flight, once the reader has said so.
+ *
+ * The row is not removed here: the fetch.error frame the engine sends when the transfer
+ * ends does that, and a row taken away on the click alone would be a promise the server
+ * may not have kept. */
+async function stopDownload(event, control) {
+	const name = shortName(event.id ?? "");
+	const confirmed = await askConfirm({
+		title: "Stop this download",
+		body: `Stop downloading ${name}?\nNothing of it is kept. Whatever is waiting for it — an install, a build — fails, and can ask for it again.`,
+		confirmLabel: "Stop downloading",
+		danger: true,
+	});
+	if (!confirmed) return;
+	control.disabled = true;
+	try {
+		await api.cancelFetch(event.project || store.state.project, event.eco, event.id);
+		notice(`Stopped ${name}.`);
+	} catch (cause) {
+		control.disabled = false;
+		if (cause?.status === 404) {
+			notice(`${name} finished before it could be stopped.`);
+			return;
+		}
+		notice(cause?.message || String(cause), true);
+	}
 }
 
 function outcomeOf(kind) {
@@ -468,10 +500,20 @@ function liveRow(event) {
 	const name = el("span", {});
 	const size = el("span", { class: "wg-live-size" });
 	const bar = el("span", { class: "wg-live-fill" });
+	// Stopping it, at the end of the row. Asked first: at 420px a stray click lands here as
+	// easily as anywhere, and it would end a download that was nearly done.
+	const stop = el("button", {
+		class: "wg-live-cancel",
+		type: "button",
+		text: "×",
+		title: "Stop this download",
+		"aria-label": `Stop downloading ${shortName(event.id ?? "")}`,
+		onclick: () => void stopDownload(event, stop),
+	});
 	const node = el(
 		"div",
 		{ class: "wg-live-row" },
-		el("div", { class: "wg-live-name" }, eco, name, size),
+		el("div", { class: "wg-live-name" }, eco, name, size, stop),
 		el("div", { class: "wg-live-track" }, bar),
 	);
 	// What a transfer is does not change while it runs, so it is written once. Only the

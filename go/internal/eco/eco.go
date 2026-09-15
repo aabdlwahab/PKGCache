@@ -139,6 +139,17 @@ type Descriptor struct {
 	// or an apt by-hash blob.
 	ParseArtifact func(key string) (name, version, arch string, ok bool)
 
+	// Companions names the other cache keys that must go with key for it to be served
+	// from another project: the index a client reaches a file through, or the layers an
+	// image manifest lists. read returns the entry's own bytes, for an ecosystem that has
+	// to look inside to answer, and costs nothing unless it is called. Nil means a key
+	// needs nothing beside it.
+	//
+	// Copying or moving packages between projects is what asks. A named key the source
+	// project does not hold is skipped, so answering generously is safe; and the answer is
+	// applied to what it names in turn, so an image index need only name its manifests.
+	Companions func(key string, read func() ([]byte, error)) ([]string, error)
+
 	// Setup renders client configuration instructions. This is what previously lived
 	// as a hand-written block per ecosystem in the control plane's urls.py, and is
 	// why adding an ecosystem needed a frontend change.

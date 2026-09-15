@@ -32,6 +32,9 @@ var (
 	ErrSizeMismatch = errors.New("engine: upstream content length does not match")
 	// ErrUpstreamStatus means the origin refused.
 	ErrUpstreamStatus = errors.New("engine: upstream returned an error status")
+	// ErrCancelled means somebody asked for the download to stop. Nothing of it is kept,
+	// and every reader attached to it is told.
+	ErrCancelled = errors.New("engine: the download was cancelled")
 	// errCommitted means a reader attached after the fetch finished; the caller
 	// should serve the committed blob instead. Internal.
 	errCommitted = errors.New("engine: fetch already committed")
@@ -76,8 +79,13 @@ var bufPool = sync.Pool{New: func() any { b := make([]byte, copyBufSize); return
 // bytes immediately rather than waiting for the download to finish. So a single
 // goroutine streams upstream into a staging file while readers tail-follow it.
 type Fetch struct {
-	Key string
-	Eco string
+	// Key is the registry's name for the fetch, which carries the project and ecosystem
+	// as well as the cache key. CacheKey is the cache key alone, and is how every event
+	// names the fetch: it is what a reader of the bus — a window deciding which download
+	// to stop — knows it by. Set by the creator before the transfer starts.
+	Key      string
+	Eco      string
+	CacheKey string
 
 	// Set before HeadersReady closes, read-only afterwards.
 	Total     int64 // -1 when upstream declared no Content-Length
@@ -108,6 +116,12 @@ type Fetch struct {
 
 	headersOnce sync.Once
 	onFinish    func()
+
+	// cancel ends the transfer. It is bound by runFetch once the transfer's context
+	// exists; cancelRequested remembers a request that arrived before then, which the
+	// registry allows — a fetch is findable from the moment it is registered.
+	cancel          context.CancelCauseFunc
+	cancelRequested bool
 }
 
 func newFetch(key, eco string) *Fetch {
@@ -214,6 +228,44 @@ func (f *Fetch) release() {
 	f.mu.Unlock()
 	if shouldClose {
 		_ = rf.Close()
+	}
+}
+
+// eventKey is the name events give this fetch. It used to be Key, which put the project
+// and ecosystem into every event id joined by NUL bytes — invisible in a window that shows
+// the last path segment, and fatal to anything that handed the id back.
+func (f *Fetch) eventKey() string {
+	if f.CacheKey != "" {
+		return f.CacheKey
+	}
+	return f.Key
+}
+
+// Cancel asks the transfer to stop, and reports whether there was one to stop.
+func (f *Fetch) Cancel() bool {
+	f.mu.Lock()
+	if f.done {
+		f.mu.Unlock()
+		return false
+	}
+	f.cancelRequested = true
+	cancel := f.cancel
+	f.mu.Unlock()
+	if cancel != nil {
+		cancel(ErrCancelled)
+	}
+	return true
+}
+
+// bindCancel gives the fetch the means to stop its transfer, honouring a request that
+// arrived before it had them.
+func (f *Fetch) bindCancel(cancel context.CancelCauseFunc) {
+	f.mu.Lock()
+	f.cancel = cancel
+	requested := f.cancelRequested
+	f.mu.Unlock()
+	if requested {
+		cancel(ErrCancelled)
 	}
 }
 
@@ -384,6 +436,14 @@ func (r *Registry) Len() int {
 	return len(r.m)
 }
 
+// Cancel stops the in-flight fetch for key, and reports whether one was running.
+func (r *Registry) Cancel(key string) bool {
+	r.mu.Lock()
+	f, ok := r.m[key]
+	r.mu.Unlock()
+	return ok && f.Cancel()
+}
+
 // Wait blocks until every fetch that is currently registered has finished. Once
 // listeners stop accepting requests no new fetches can appear, making this the
 // process-shutdown drain barrier.
@@ -412,8 +472,9 @@ func (r *Registry) Wait(ctx context.Context) error {
 // Detachment is deliberate and load-bearing: the goroutine outlives the request that
 // triggered it, so a client pressing Ctrl-C part-way through a 2.5 GB download does
 // not abort the transfer that nine other clients are reading and that the cache is
-// about to keep. The only bounds are the upstream request timeout and process
-// shutdown.
+// about to keep. The only bounds are the upstream request timeout, process shutdown,
+// and Cancel — which is a person deciding the download should stop, not a client
+// happening to leave.
 func (e *Engine) runFetch(
 	f *Fetch,
 	req upstream.Request,
@@ -425,7 +486,9 @@ func (e *Engine) runFetch(
 	if len(projectValue) > 0 {
 		project = projectValue[0]
 	}
-	ctx := context.WithoutCancel(e.baseCtx)
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(e.baseCtx))
+	defer cancel(nil)
+	f.bindCancel(cancel)
 	e.metrics.InflightFetches.WithLabelValues(f.Eco).Inc()
 	started := time.Now()
 
@@ -445,19 +508,30 @@ func (e *Engine) runFetch(
 		}
 		f.finish(digest, size, err)
 		if err != nil {
+			// Said as a status and not only in the detail, so a window can tell a download
+			// somebody stopped from one that broke without parsing an error message.
+			status := ""
+			if errors.Is(err, ErrCancelled) {
+				status = "cancelled"
+			}
 			e.events.Publish(obs.Event{
 				Kind: obs.EventFetchError, Project: project,
-				Eco: f.Eco, ID: f.Key, Detail: err.Error(),
+				Eco: f.Eco, ID: f.eventKey(), Detail: err.Error(), Status: status,
 			})
 		} else {
 			e.events.Publish(obs.Event{
 				Kind: obs.EventFetchDone, Project: project,
-				Eco: f.Eco, ID: f.Key, Size: size,
+				Eco: f.Eco, ID: f.eventKey(), Size: size,
 			})
 		}
 	}()
 
 	digest, size, err = e.stream(ctx, f, req, want, project)
+	if err != nil && errors.Is(context.Cause(ctx), ErrCancelled) {
+		// Whatever the transfer died of on the way out — a closed body, a refused
+		// connection — the reason is the cancel, and that is what readers are told.
+		err = ErrCancelled
+	}
 }
 
 // stream is runFetch's body, split out so every exit path runs the deferred
@@ -513,7 +587,7 @@ func (e *Engine) stream(
 	f.publishHeaders(total, mediaType, w.StagingPath(), readFile)
 	e.events.Publish(obs.Event{
 		Kind: obs.EventFetchStart, Project: project,
-		Eco: f.Eco, ID: f.Key, Total: total,
+		Eco: f.Eco, ID: f.eventKey(), Total: total,
 	})
 
 	bufp := bufPool.Get().(*[]byte)
@@ -551,10 +625,14 @@ func (e *Engine) stream(
 				f.advance(int64(n))
 				e.events.Publish(obs.Event{
 					Kind: obs.EventFetchProgress, Project: project,
-					Eco: f.Eco, ID: f.Key, Size: w.Written(), Total: total,
+					Eco: f.Eco, ID: f.eventKey(), Size: w.Written(), Total: total,
 				})
 			}
 			if rerr != nil {
+				// Stopped on purpose: not an interruption worth resuming.
+				if ctx.Err() != nil {
+					return "", 0, context.Cause(ctx)
+				}
 				if errors.Is(rerr, io.EOF) {
 					stopped = true
 				} else if !e.resumable(total, w.Written(), attempt) {

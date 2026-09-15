@@ -136,6 +136,31 @@ The URL carries the project, exactly as on a server:
 `http://127.0.0.1:41780/<project>/npm/…`. An unregistered name is a 404 rather than
 somebody else's content.
 
+
+### Copying and moving packages between projects
+
+A package cached in the wrong project — `global`, usually, before a `project use` — does
+not have to be fetched again. In the window's **packages** panel, select it and choose
+**Copy to…** or **Move to…**. Content is shared by digest, so neither costs disk: the other
+project gains rows pointing at bytes the cache already holds.
+
+What makes it work in the other project is what goes with it. npm reaches a tarball
+through its packument, pip a wheel through its simple page, and a pull needs an image's
+config and every layer — so each ecosystem names those, and they travel too, including
+offline. A move takes only the selected package out of the source; the packument or index
+it shared stays, because that project's other versions still need it. Two things are never
+done: a different file already in the destination under the same name is left alone and
+reported, and anything a checkpoint holds stays where it is. A git mirror is a directory
+rather than a file and does not move.
+
+### Stopping a download
+
+Each download in the window's **Just now** list has a **×**. It asks first, then stops the
+transfer: nothing of it is kept, and whatever was waiting for it — an install, a build —
+fails and can ask again. That is deliberately the only way a download stops early. A
+client that disconnects does not stop one, because other clients may be reading the same
+transfer and the cache is about to keep it.
+
 ## Go modules
 
 The module proxy protocol, served like every other index: `/<project>/gomod/goproxy`,

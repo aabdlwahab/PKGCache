@@ -1051,3 +1051,118 @@ func TestResumingGivesUpOnAHopelessOrigin(t *testing.T) {
 		t.Fatal("an incomplete fetch wrote a catalog entry")
 	}
 }
+
+// Stopping a download is the one exception to the detachment runFetch is built on: a
+// client going away must not end a transfer, and a person asking for it to end must.
+func TestACancelledDownloadKeepsNothingAndTellsItsReaders(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("cancel-", 1<<20)
+	h.origin.Handle("/big.whl", testupstream.Behaviour{
+		Body: body, ChunkSize: 16 << 10, DelayPerChunk: 2 * time.Millisecond,
+	})
+	res := h.resolution("/big.whl")
+
+	// The download is stopped by the id its own events carry, because that is all a window
+	// has to go on. A test that named the key itself passed while the window could not
+	// stop anything.
+	started := h.engine.events.Subscribe(16, obs.EventFetchStart)
+	defer started.Close()
+
+	type served struct {
+		err       error
+		delivered int
+	}
+	done := make(chan served, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		_, err := h.engine.Serve(rec, get("/big.whl"), res)
+		done <- served{err: err, delivered: rec.Body.Len()}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for h.engine.Inflight().Len() == 0 || h.origin.Hits("/big.whl") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the download never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(30 * time.Millisecond) // let some bytes reach the reader
+
+	var start obs.Event
+	select {
+	case start = <-started.C:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no fetch.start event was published")
+	}
+	if start.ID != "big.whl" || start.Project != "global" || start.Eco != "pypi" {
+		t.Fatalf("fetch.start names %q/%q/%q, want the cache key and its project and ecosystem",
+			start.Project, start.Eco, start.ID)
+	}
+	if !h.engine.CancelFetch(start.Project, start.Eco, start.ID) {
+		t.Fatal("a download in flight could not be cancelled")
+	}
+	var got served
+	select {
+	case got = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the reader was not released by the cancel")
+	}
+	if !errors.Is(got.err, ErrCancelled) {
+		t.Errorf("reader error = %v, want ErrCancelled", got.err)
+	}
+	if got.delivered >= len(body) {
+		t.Error("the whole body was delivered despite the cancel")
+	}
+
+	for h.engine.Inflight().Len() != 0 {
+		if time.Now().After(deadline.Add(5 * time.Second)) {
+			t.Fatal("the cancelled fetch stayed registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := h.cat.GetEntry(catalog.EntryKey{
+		Project: "global", Eco: "pypi", Key: "big.whl",
+	}); !errors.Is(err, catalog.ErrNotFound) {
+		t.Errorf("a cancelled download was recorded in the catalog: %v", err)
+	}
+	if h.blobs.Exists(digestOf(body)) {
+		t.Error("a cancelled download was kept in the store")
+	}
+	if h.engine.CancelFetch("global", "pypi", "big.whl") {
+		t.Error("cancelling a download that is no longer running reported success")
+	}
+
+	// Asking again is a fresh transfer that completes.
+	h.origin.Handle("/big.whl", testupstream.Behaviour{Body: body})
+	rec, outcome, err := h.serve(t, get("/big.whl"), res)
+	if err != nil || outcome != OutcomeMiss || !equal(rec.Body.Bytes(), body) {
+		t.Fatalf("after a cancel, outcome = %s err = %v, want a complete miss", outcome, err)
+	}
+}
+
+// A cancel that arrives between a fetch being registered and its transfer starting is
+// still honoured, rather than lost in the gap.
+func TestACancelBeforeTheTransferStartsIsNotLost(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("early-", 64<<10)
+	h.origin.Serve("/early.whl", body)
+
+	f, created := h.engine.Inflight().Start(inflightKey("global", "pypi", "early.whl"), "pypi")
+	if !created {
+		t.Fatal("fetch was not created")
+	}
+	if !h.engine.CancelFetch("global", "pypi", "early.whl") {
+		t.Fatal("a registered fetch could not be cancelled")
+	}
+	req := upstream.Request{URL: h.origin.URLFor("/early.whl")}
+	go h.engine.runFetch(f, req, Expect{}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := f.Wait(ctx); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("fetch ended with %v, want ErrCancelled", err)
+	}
+	if h.blobs.Exists(digestOf(body)) {
+		t.Error("a download cancelled before it started was kept")
+	}
+}
