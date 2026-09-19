@@ -62,6 +62,7 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache widget` | a small window that watches this cache; `-on-login` opens it with your session |
 | `pkgcache tray` | the same, kept in the status bar; `-on-login` starts it with your session |
 | `pkgcache console` | the full console, in your browser |
+| `pkgcache share on \| off` | let other machines open the console, behind a password; and stop |
 | `pkgcache prune` | reclaim space, when you ask and not before |
 | `pkgcache migrate <dir>` | move the whole cache to another disk, and leave a note saying where it went |
 | `pkgcache export` / `import` | carry what a project holds to a machine with no network, and back |
@@ -452,6 +453,35 @@ what the menu says and when each item is greyed out live in `internal/tray` and
 `internal/appcore`, with no toolkit in either.
 
 
+## Letting other machines open the console
+
+```sh
+pkgcache share on            # asks for a password, then prints the address
+pkgcache share               # whether it is shared, and where
+pkgcache share off           # only this machine again
+```
+
+The same switch is in the window, on the *Seen by* line under the disk meter.
+
+This machine keeps using the cache on `127.0.0.1:41780` exactly as before — every setting
+that names it, and the socket systemd or launchd holds for it, are left alone. Sharing adds
+a second address on port **41781** of every network this machine is on (`-port` chooses
+another), and that address serves the console and nothing else. Its sign-in screen asks
+for the password; once in, anyone with it can do what you can, including removing packages
+and moving the cache. Packages and the apt proxy stay this machine's own, password or not:
+both can reach through this machine to whatever it can reach, and that is not part of
+letting somebody look at the cache.
+
+It is plain HTTP, so the password crosses the network readable to anyone watching it.
+Share on networks you trust, and choose a password you use nowhere else. Five wrong
+guesses from one address lock it out for five minutes. Running `share on` again changes
+the password and signs everybody out.
+
+While it is shared the daemon does not exit when idle, since nothing on the other machines
+could start it again. The choice survives restarts: it is `share.json` in the cache
+directory. `pkgcache share off` works with no daemon running, and deleting that file does
+the same.
+
 ## Carrying a cache somewhere with no network
 
 The packages you need in order to keep working on a plane, at a customer site, or in a
@@ -515,7 +545,8 @@ instead.
 ```
 
 `PKGCACHE_DATA_DIR` overrides it. Inside: `blobs/` and `db/` (the cache itself),
-`budget.json` (your limit), `project.json` (the project you are working in), `team.json`
+`budget.json` (your limit), `project.json` (the project you are working in),
+`share.json` (the shared console's port and password digest, while it is shared), `team.json`
 and `team-ca.crt` (the team cache and the CAs it is verified against), `shuttle/in` and
 `shuttle/out` (packs, when you do not give a path of your own), `daemon.json` (the running
 daemon), `daemon.log`.

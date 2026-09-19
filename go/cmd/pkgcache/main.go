@@ -44,6 +44,7 @@ var commands = map[string]struct {
 	"widget":             {"a small window that watches this cache", runWidget},
 	"tray":               {"keep the cache in your status bar", runTray},
 	"console":            {"open the full console in your browser", runConsole},
+	"share":              {"open the console to other machines, behind a password", runShare},
 	"limit":              {"set how much disk this cache may use", runLimit},
 	"migrate":            {"move this cache to another disk", runMigrate},
 	"prune":              {"reclaim space, now, because you asked", runPrune},
@@ -58,7 +59,7 @@ var order = []string{
 	"setup", "project", "run", "shell", "env", "build", "compose", "crate",
 	"pull", "warmlock", "persist", "docker-setup", "docker-build-setup",
 	"checkpoint", "export", "import", "snapshots", "rollback",
-	"widget", "tray", "console",
+	"widget", "tray", "console", "share",
 	"limit", "status", "prune", "migrate", "stop", "serve", "version",
 }
 

@@ -71,11 +71,15 @@ type Options struct {
 	// leaves it nil: moving its state directory is an operator's job with a maintenance
 	// window, not a button. See LocalMigration.
 	Migration LocalMigration
-	Engine    *engine.Engine
-	Ecos      *eco.Registry
-	Events    *obs.Bus
-	DataDir   string
-	CAFile    string
+	// Share, when set, opens a local cache's console to other machines behind a
+	// password. A server leaves it nil: its console is reached through accounts. See
+	// LocalShare.
+	Share   LocalShare
+	Engine  *engine.Engine
+	Ecos    *eco.Registry
+	Events  *obs.Bus
+	DataDir string
+	CAFile  string
 	// Log records the errors this package answers 500 for. Without it they were written
 	// nowhere at all: the caller was told "internal server error" and the cause was
 	// discarded, which is the one failure mode a control plane cannot afford to have.

@@ -138,6 +138,14 @@ func Run(ctx context.Context, o RunOptions) error {
 	// to be started as systemd's too: stopping the service kills everything in its
 	// control group, setsid or not, and the move would die halfway through its copy.
 	a.API.Migration = &Migrator{DataDir: snap.DataDir, Supervised: activated != nil}
+	// And the console's second socket, for other machines. Built here and opened only
+	// once the loopback one is up, below: this machine's own clients come first.
+	share := &Share{
+		DataDir: snap.DataDir, SessionTTL: snap.Auth.SessionTTL,
+		ReadHeaderTimeout: snap.Server.ReadHeaderTimeout, Log: a.Log,
+	}
+	share.Handler = a.SharedHandler(share)
+	a.API.Share = share
 	for _, issue := range snap.Posture(a.Accounts.Enabled()) {
 		a.Log.Info(issue.Summary, "issue", issue.ID)
 	}
@@ -146,6 +154,8 @@ func Run(ctx context.Context, o RunOptions) error {
 	if err != nil {
 		return err
 	}
+	share.Start()
+	defer share.Close() //nolint:contextcheck // closes at once; the detached drain is only for a switch turned off from the window
 	// The bound address, not the requested one: it differs whenever the fixed port was
 	// taken and an ephemeral one was used instead, and every client reads this.
 	bound := runtime.Addresses()["single"]
@@ -170,7 +180,7 @@ func Run(ctx context.Context, o RunOptions) error {
 		close(o.Ready)
 	}
 
-	idle := watchIdle(ctx, a, &lastActivity, snap.Local.IdleTimeout)
+	idle := watchIdle(ctx, a, &lastActivity, snap.Local.IdleTimeout, share.Shared)
 
 	var serveErr error
 	select {
@@ -179,6 +189,9 @@ func Run(ctx context.Context, o RunOptions) error {
 	case <-idle:
 		a.Log.Info("idle; exiting", "after", snap.Local.IdleTimeout)
 	}
+
+	// Other machines first: nothing they are doing is worth making this machine wait on.
+	share.Close() //nolint:contextcheck // as above: nothing here waits
 
 	grace := snap.Server.ShutdownGrace
 	if grace <= 0 {
@@ -247,8 +260,12 @@ func snapSetAddr(snap *config.Snapshot, address string) error {
 // which no new request arrives, and exiting underneath it would abandon a download
 // that other readers are attached to — the one thing the engine's detached fetch
 // context exists to prevent.
+//
+// held keeps it up regardless, while it reports true: a console shared with other
+// machines has no way to be started again from any of them.
 func watchIdle(
 	ctx context.Context, a *app.App, last *atomic.Int64, timeout time.Duration,
+	held func() bool,
 ) <-chan struct{} {
 	done := make(chan struct{})
 	if timeout <= 0 {
@@ -269,7 +286,7 @@ func watchIdle(
 				return
 			case <-ticker.C:
 				idleFor := time.Since(time.Unix(0, last.Load()))
-				if idleFor >= timeout && a.Engine.Inflight().Len() == 0 {
+				if idleFor >= timeout && a.Engine.Inflight().Len() == 0 && !held() {
 					close(done)
 					return
 				}

@@ -37,14 +37,16 @@ async function boot() {
     // Its body carries whether this instance offers a guest session, which is the
     // only way the sign-in screen can know: every endpoint that could answer sits
     // behind the check that just refused us.
-    if (cause instanceof APIError && cause.status === 401) {
-      return renderLogin(root, undefined, {
-        guestAvailable: cause.detail?.guest_available === true,
-      });
-    }
-    return renderLogin(root, cause.message, {
+    // password_only comes from a pkgcache whose console was shared with this machine:
+    // there is one password and no accounts, so there is no username to ask for.
+    const options = {
       guestAvailable: cause.detail?.guest_available === true,
-    });
+      passwordOnly: cause.detail?.password_only === true,
+    };
+    if (cause instanceof APIError && cause.status === 401) {
+      return renderLogin(root, undefined, options);
+    }
+    return renderLogin(root, cause.message, options);
   }
 
   // Order matters here, and getting it wrong is not a subtle failure.

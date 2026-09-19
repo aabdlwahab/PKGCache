@@ -207,6 +207,13 @@ export const api = {
   startMigration: (path) =>
     request("/local/migration", { method: "POST", body: body({ path }) }),
   acknowledgeMigration: () => request("/local/migration", { method: "DELETE" }),
+
+  // ---- the console, for other machines
+  sharing: () => request("/local/share"),
+  // PUT for both turning it on and changing the password: the two are the same request.
+  share: (password, port = 0) =>
+    request("/local/share", { method: "PUT", body: body({ password, port }) }),
+  unshare: () => request("/local/share", { method: "DELETE" }),
   evict: (project, dryRun) =>
     request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 

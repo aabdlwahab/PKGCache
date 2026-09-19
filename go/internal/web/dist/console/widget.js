@@ -254,8 +254,15 @@ function buildSections(regions) {
 	const moveButton = button("Move…", () => moveCache(), { kind: "ghost small" });
 	const where = el("div", { class: "wg-where", hidden: true },
 		el("span", { text: "In" }), whereText, moveButton);
+	// Who else can open this console. Beside where the cache is, because both are facts
+	// about this machine rather than about the project on screen.
+	const shareText = el("code", { class: "wg-where-path" });
+	const shareButton = button("Share…", () => shareConsole(), { kind: "ghost small" });
+	const unshareButton = button("Stop", () => stopSharing(), { kind: "ghost small" });
+	const shareRow = el("div", { class: "wg-where wg-share", hidden: true },
+		el("span", { text: "Seen by" }), shareText, shareButton, unshareButton);
 	regions.diskRegion.set(
-		diskLabel, meter, el("div", { class: "wg-numbers" }, used, ceilingText), where);
+		diskLabel, meter, el("div", { class: "wg-numbers" }, used, ceilingText), where, shareRow);
 
 	const served = el("span", { class: "wg-figure-value", text: "—" });
 	const held = el("span", { class: "wg-figure-value", text: "0" });
@@ -279,6 +286,7 @@ function buildSections(regions) {
 	parts = {
 		stateLine, stateNote, stateRow, banner,
 		diskLabel, meter, meterFill, used, ceilingText, where, whereText, moveButton,
+		shareRow, shareText, shareButton, unshareButton,
 		served, held,
 		liveLabel, liveList, recentList, quiet,
 		// Keyed by the event id, so a row that is already on screen is updated rather than
@@ -925,6 +933,141 @@ async function reportMove(last) {
 	notice(`The cache was not moved: ${last.error || "the move failed"}.`, true);
 }
 
+/* ---- sharing the console ---------------------------------------------------
+ *
+ * The cache stays on 127.0.0.1 for this machine whatever happens here. Sharing opens a
+ * second address other machines can reach, serving this console behind a password, and
+ * stopping closes it again. The daemon holds the choice; this only asks. */
+
+// Whether the console is shared, from the daemon. Null on a server, which has no such
+// switch, and on a daemon from before it did.
+let sharing = null;
+
+async function loadSharing() {
+	try {
+		sharing = await api.sharing();
+	} catch {
+		sharing = null;
+	}
+	renderShare();
+}
+
+function renderShare() {
+	if (!parts) return;
+	parts.shareRow.hidden = !sharing;
+	if (!sharing) return;
+	const shared = sharing.enabled;
+	parts.shareRow.classList.toggle("is-shared", shared && !sharing.error);
+	parts.shareButton.textContent = shared ? "Password…" : "Share…";
+	parts.shareButton.title = shared
+		? "Choose a new password, which signs everybody else out"
+		: "Let other machines open this console, with a password";
+	parts.unshareButton.hidden = !shared;
+	parts.unshareButton.title = "Only this machine again";
+	if (!shared) {
+		parts.shareText.textContent = "this machine only";
+		parts.shareText.title = "Only this machine can open the console";
+	} else if (sharing.error) {
+		parts.shareText.textContent = "other machines — but not reachable";
+		parts.shareText.title = sharing.error;
+	} else if (!sharing.urls.length) {
+		parts.shareText.textContent = `other machines, on port ${sharing.port}`;
+		parts.shareText.title = "This machine has no network address right now";
+	} else {
+		parts.shareText.textContent = `${sharing.urls[0]}/console`;
+		parts.shareText.title = sharing.urls.map((url) => `${url}/console`).join("\n");
+	}
+}
+
+/** Ask for a password and share the console behind it — or change the password of a
+ * console that is shared already. The same dialog, because it is the same request. */
+function shareConsole() {
+	const changing = sharing?.enabled === true;
+	return new Promise((resolve) => {
+		const first = el("input", {
+			class: "dlg-input", type: "password", autocomplete: "new-password", required: true,
+		});
+		const second = el("input", {
+			class: "dlg-input", type: "password", autocomplete: "new-password", required: true,
+		});
+		const errorRegion = region("div", { class: "dlg-error", role: "alert" });
+		let close = () => {};
+		const lines = changing
+			? [el("p", { class: "dlg-line", text: "Everybody signed in with the old password is signed out." })]
+			: [
+				el("p", { class: "dlg-line", text: `Anyone on your network with this password can open this console on port ${sharing.port} and do what you can here, moving the cache included. Packages stay this machine's.` }),
+				el("p", { class: "dlg-line wg-move-warn", text: "Plain HTTP: the password crosses the network readable." }),
+			];
+
+		async function submit() {
+			if (first.value.length < 8) {
+				errorRegion.set(el("span", { text: "At least 8 characters." }));
+				first.focus();
+				return;
+			}
+			if (first.value !== second.value) {
+				errorRegion.set(el("span", { text: "The two passwords are different." }));
+				second.focus();
+				return;
+			}
+			try {
+				sharing = await api.share(first.value);
+			} catch (cause) {
+				// Refused in place, as askText does: a taken port is something to read beside
+				// the form, not a reason to lose what was typed.
+				errorRegion.set(el("span", { text: cause?.message || String(cause) }));
+				return;
+			}
+			close();
+			renderShare();
+			notice(changing
+				? "Password changed. Everybody else has to sign in again."
+				: sharing.urls.length
+					? ["Shared. Other machines open ", el("code", { text: `${sharing.urls[0]}/console` }), "."]
+					: `Shared on port ${sharing.port}.`);
+			resolve(true);
+		}
+
+		const form = el("form", { class: "dlg-body" },
+			...lines,
+			el("label", { class: "dlg-label", text: "Password" }), first,
+			el("label", { class: "dlg-label", text: "The same again" }), second,
+			errorRegion.node);
+		form.addEventListener("submit", (event) => {
+			event.preventDefault();
+			void submit();
+		});
+		close = openModal({
+			title: changing ? "Change the password" : "Share this console",
+			wide: !changing,
+			body: form,
+			onCancel: () => resolve(false),
+			actions: [
+				button("Cancel", () => { close(); resolve(false); }),
+				button(changing ? "Change it" : "Share the console", submit, { kind: "primary" }),
+			],
+		});
+		first.focus();
+	});
+}
+
+async function stopSharing() {
+	const sure = await askConfirm({
+		title: "Stop sharing",
+		body: "Other machines lose the console straight away, including anyone using it now.\nThis machine is not affected.",
+		confirmLabel: "Stop sharing",
+	});
+	if (!sure) return;
+	try {
+		sharing = await api.unshare();
+	} catch (cause) {
+		notice(cause?.message || String(cause), true);
+		return;
+	}
+	renderShare();
+	notice("Only this machine can open the console now.");
+}
+
 /* ---- plumbing ------------------------------------------------------------- */
 
 let regions = null;
@@ -1042,6 +1185,8 @@ async function boot() {
   } catch (cause) {
     notice(cause?.message || String(cause), true);
   }
+  // Before the migration, which can wait out a move for minutes.
+  await loadSharing();
   await loadMigration();
 }
 

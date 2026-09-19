@@ -209,6 +209,14 @@ export function buildChrome(root) {
           location.reload();
         }, { kind: "ghost" }),
       );
+    } else if (me?.shared) {
+      // Signed in to another machine's cache with the password it was shared with.
+      identity.set(
+        button("shared · sign out", async () => {
+          await api.logout();
+          location.reload();
+        }, { kind: "ghost" }),
+      );
     } else if (me?.authenticated) {
       identity.set(
         button(`${me.username} · sign out`, async () => {
@@ -315,15 +323,18 @@ function recentRow(event) {
 }
 
 /** The sign-in screen. Rendered instead of the console, never alongside it. */
-export function renderLogin(root, message, { guestAvailable = false } = {}) {
+export function renderLogin(
+  root, message, { guestAvailable = false, passwordOnly = false } = {},
+) {
   // autocomplete is what lets a password manager fill this form, and what tells the
   // browser these two fields are credentials rather than arbitrary text.
   const username = el("input", {
-    name: "username", required: true, autofocus: true,
+    name: "username", required: !passwordOnly, autofocus: !passwordOnly,
     autocomplete: "username", autocapitalize: "none", spellcheck: "false",
   });
   const password = el("input", {
     name: "password", type: "password", required: true, autocomplete: "current-password",
+    autofocus: passwordOnly,
   });
   // role="alert" so a failed sign-in is announced. Without it the message appears
   // silently and a screen-reader user is left with a form that simply did nothing.
@@ -359,8 +370,16 @@ export function renderLogin(root, message, { guestAvailable = false } = {}) {
     "form",
     { class: "login-card" },
     wordmark(),
-    el("h1", { class: "login-title", text: "Sign in to the control plane" }),
-    el("label", {}, el("span", { text: "Username" }), username),
+    el("h1", {
+      class: "login-title",
+      text: passwordOnly ? "Sign in to this shared cache" : "Sign in to the control plane",
+    }),
+    passwordOnly
+      ? el("p", {
+        class: "note",
+        text: "Its owner shared this console with a password. Ask them for it.",
+      })
+      : el("label", {}, el("span", { text: "Username" }), username),
     el("label", {}, el("span", { text: "Password" }), password),
     error,
     el("button", { class: "btn primary", type: "submit", text: "Sign in" }),

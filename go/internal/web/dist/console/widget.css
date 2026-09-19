@@ -477,6 +477,9 @@
   color: var(--fg2);
 }
 .wg-where .btn { padding: 2px 8px; font-size: 11.5px; }
+.wg-where .btn[hidden] { display: none; }
+/* In the warning colour while shared: an open door is worth noticing at a glance. */
+.wg-share.is-shared .wg-where-path { color: var(--warn); }
 
 .dlg-line code { word-break: break-all; }
 .dlg-problem { color: var(--bad); }
