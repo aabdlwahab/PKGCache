@@ -194,6 +194,55 @@ func Warm(
 	return warmItems(ctx, handler, items, workers, yield)
 }
 
+// WarmIndex requests the simple index page of every package the lock pins, and nothing
+// else.
+//
+// This is the cheap half of warming, and on its own it is most of the value. The file
+// route cannot serve any distribution without first reading its project's simple page —
+// that is where a filename's upstream URL comes from — so these are the documents every
+// later on-demand fetch depends on, and there is one per package rather than one per
+// file. It is also the proof the rewrite needs: a lock whose every index page this cache
+// answered for is a lock this cache can serve, checked before the file is replaced.
+//
+// The pages are small and revalidate on a TTL, so warming them is not a promise they will
+// never be fetched again. It is a promise the cache knows how to reach them.
+func WarmIndex(
+	ctx context.Context,
+	handler http.Handler,
+	project string,
+	packages []Package,
+	indexes IndexMap,
+	workers int,
+	yield func(Result),
+) error {
+	if handler == nil {
+		return errors.New("lockwarm: data-plane handler is unavailable")
+	}
+	items := make([]warmItem, 0, len(packages))
+	seen := make(map[string]bool, len(packages))
+	for _, pkg := range packages {
+		index, ok := indexes.Index(pkg.Registry)
+		if !ok {
+			return fmt.Errorf("lockwarm: no configured PyPI index for %s", pkg.Registry)
+		}
+		// One page per index and project, however many versions of it a lock forked
+		// across markers happens to pin.
+		key := index + "/" + pkg.Project()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		items = append(items, warmItem{
+			// The trailing slash is load-bearing: the simple route is registered with
+			// one, and without it the request does not match at all.
+			path: "/" + project + "/pypi/" + index + "/+simple/" +
+				url.PathEscape(pkg.Project()) + "/",
+			label: pkg.Project() + " (index)",
+		})
+	}
+	return warmItems(ctx, handler, items, workers, yield)
+}
+
 // WarmNPM requests every tarball a JavaScript lock pins, and each package's packument
 // with them, through the same cache. npm needs no index in the path: it has one
 // upstream, so both are addressed by name below the project's npm base.
