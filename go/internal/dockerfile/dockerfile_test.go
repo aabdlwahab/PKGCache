@@ -1009,7 +1009,7 @@ func TestFromBuiltFromArgsIsResolvedAndPointedAtTheCache(t *testing.T) {
 		t.Errorf("a --build-arg override was not honoured:\n%s", body)
 	}
 
-	options.BuildArgs = nil // Compose: the arguments are not known here
+	options.BuildArgs = nil // the build's arguments are not known
 	if body, _ := rewrite(t, source, options); !strings.Contains(body, "FROM ${BASE_REGISTRY}/${ALPINE_IMAGE}") {
 		t.Errorf("a FROM was resolved without knowing the build's arguments:\n%s", body)
 	}

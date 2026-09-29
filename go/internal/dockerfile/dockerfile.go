@@ -87,10 +87,10 @@ type Options struct {
 	// rewrite nobody needs is a parsing risk nobody needs.
 	SkipFrom bool
 
-	// BuildArgs are this build's --build-arg values. Non-nil means they are known, so a FROM
-	// that names its image through ARGs declared before the first stage can be resolved
-	// the way Docker resolves it and pointed at the cache; nil — a Compose build, whose
-	// arguments live in the Compose file — leaves such a FROM exactly as written.
+	// BuildArgs are this build's --build-arg values, or a Compose service's build args.
+	// Non-nil means they are known, so a FROM that names its image through ARGs declared
+	// before the first stage can be resolved the way Docker resolves it and pointed at the
+	// cache; nil — arguments nobody can know here — leaves such a FROM exactly as written.
 	BuildArgs map[string]string
 
 	// Indexes maps an upstream package index's origin URL to the cache's name for it,

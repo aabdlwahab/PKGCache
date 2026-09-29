@@ -22,6 +22,15 @@ import (
 // environment values, which can include credentials. Nothing about this needs to
 // touch the disk, so nothing does — and that includes each service's rewritten
 // Dockerfile, which travels inside the document as `dockerfile_inline`.
+//
+// Inside the document, a Dockerfile is in Compose's escaped form. Compose interpolates
+// every string in a document it reads, the inline Dockerfile included, and `compose
+// config` renders each literal $ as $$ so that its output reads back as itself. A
+// Dockerfile is full of $ — its own ARGs, a shell loop's variables, the uv wrapper's — and
+// one inlined with them bare had each taken for a Compose variable: "variable is not set"
+// for every one, and "invalid interpolation format" for the wrapper's ${__pkgcache_a#*=},
+// which stopped the build. So a rewrite goes in escaped, and a dockerfile_inline read out
+// of the document is unescaped before it is rewritten.
 
 // ComposeResult is a rewritten configuration and what was done to it.
 type ComposeResult struct {
@@ -84,7 +93,11 @@ func RewriteCompose(
 		if err != nil {
 			return ComposeResult{}, fmt.Errorf("compose: service %s: %w", name, err)
 		}
-		rewritten, err := Rewrite(source, options)
+		// This service's own arguments, so a FROM built from them is resolved and
+		// pointed at the cache the way Build points one.
+		serviceOptions := options
+		serviceOptions.BuildArgs = composeArgs(build)
+		rewritten, err := Rewrite(source, serviceOptions)
 		if err != nil {
 			return ComposeResult{}, fmt.Errorf("compose: service %s: %w", name, err)
 		}
@@ -97,7 +110,7 @@ func RewriteCompose(
 		// cannot read this process's filesystem — a snap, with its private /tmp — to
 		// fail to open. An inline Dockerfile and a dockerfile path are mutually
 		// exclusive, so the rewrite replaces whichever was there.
-		build["dockerfile_inline"] = string(rewritten.Content)
+		build["dockerfile_inline"] = composeEscape(string(rewritten.Content))
 		delete(build, "dockerfile")
 	}
 
@@ -118,11 +131,41 @@ func buildDockerfile(
 	build map[string]any, read func(path string) ([]byte, error),
 ) (path string, content []byte, err error) {
 	if inline, ok := build["dockerfile_inline"].(string); ok && inline != "" {
-		return "", []byte(inline), nil
+		return "", []byte(composeUnescape(inline)), nil
 	}
 	path = dockerfilePath(build)
 	source, err := read(path)
 	return path, source, err
+}
+
+// composeEscape and composeUnescape move a string into and out of Compose's escaped
+// form, where $$ is a literal $. `compose config` never renders a bare $, so the reverse
+// of one is exactly the other.
+func composeEscape(s string) string   { return strings.ReplaceAll(s, "$", "$$") }
+func composeUnescape(s string) string { return strings.ReplaceAll(s, "$$", "$") }
+
+// composeArgs is a service's build arguments as its build will receive them.
+//
+// Unlike a docker build's they are all known here: `compose config` has already resolved
+// the .env file, the environment and a bare name's value into the document. A name left
+// with no value is not passed on, which is also what Compose does with it.
+func composeArgs(build map[string]any) map[string]string {
+	args := map[string]string{}
+	switch raw := build["args"].(type) {
+	case map[string]any:
+		for name, value := range raw {
+			if value != nil {
+				args[name] = composeUnescape(fmt.Sprint(value))
+			}
+		}
+	case []any:
+		for _, item := range raw {
+			if name, value, ok := strings.Cut(fmt.Sprint(item), "="); ok {
+				args[name] = composeUnescape(value)
+			}
+		}
+	}
+	return args
 }
 
 // dockerfilePath resolves a build's Dockerfile, honouring Compose's defaults.

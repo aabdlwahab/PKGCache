@@ -184,7 +184,7 @@ func TestAwkwardDockerfileSurvivesBeingInlined(t *testing.T) {
 	if want := "\tCMD wget"; !strings.Contains(inline, want) {
 		t.Fatalf("inlined Dockerfile lost %q:\n%q", want, inline)
 	}
-	if !strings.Contains(inline, string(result.Dockerfiles["app"].Content)) {
+	if composeUnescape(inline) != string(result.Dockerfiles["app"].Content) {
 		t.Fatalf("inlined Dockerfile is not what was generated:\n%q", inline)
 	}
 }
@@ -221,5 +221,96 @@ func TestUnreadableDockerfileIsReportedWithItsService(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "app") {
 		t.Fatalf("error should name the service: %v", err)
+	}
+}
+
+// Compose interpolates the document it reads, dockerfile_inline included. A rewrite
+// inlined with its $ bare had the Dockerfile's ARGs, a shell loop's variable and the uv
+// wrapper's own taken for Compose variables — "variable is not set" for each, and
+// "invalid interpolation format" for ${__pkgcache_a#*=}, which stopped the build.
+func TestInlinedDockerfileIsInComposesEscapedForm(t *testing.T) {
+	source := "ARG PYTHON_IMAGE=python:3.12-slim\n" +
+		"FROM ${PYTHON_IMAGE}\n" +
+		"RUN for f in a b; do echo \"$f\"; done\n" +
+		"RUN uv sync --locked\n"
+	result, err := RewriteCompose([]byte(rendered), bridge(), readStub(t, source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated := string(result.Dockerfiles["app"].Content)
+	if !strings.Contains(generated, "${__pkgcache_") {
+		t.Fatalf("no uv wrapper in the rewrite, so this tests nothing:\n%s", generated)
+	}
+	build, _ := service(t, decode(t, result.Content), "app")["build"].(map[string]any)
+	inline, _ := build["dockerfile_inline"].(string)
+	if strings.Contains(strings.ReplaceAll(inline, "$$", ""), "$") {
+		t.Fatalf("a $ Compose would interpolate is left in the inlined Dockerfile:\n%s", inline)
+	}
+	if composeUnescape(inline) != generated {
+		t.Fatalf("Compose would not read back the Dockerfile that was generated:\n%s", inline)
+	}
+}
+
+// A dockerfile_inline in the rendered document is in Compose's escaped form. Rewritten as
+// it stood, FROM $${BASE} was not a variable at all, and the build pulled around the cache.
+func TestAlreadyInlineDockerfileIsReadOutOfComposesEscapedForm(t *testing.T) {
+	document := `
+services:
+  app:
+    build:
+      context: /work/app
+      dockerfile_inline: |
+        ARG BASE=python:3.12-alpine
+        FROM $${BASE}
+        RUN echo "$$HOME"
+`
+	result, err := RewriteCompose([]byte(document), bridge(), func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("read %s: there is no file to read", path)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated := string(result.Dockerfiles["app"].Content)
+	for _, want := range []string{
+		"FROM 127.0.0.1:41999/dockerhub/library/python:3.12-alpine",
+		`RUN echo "$HOME"`,
+	} {
+		if !strings.Contains(generated, want) {
+			t.Errorf("missing %q in the rewrite:\n%s", want, generated)
+		}
+	}
+}
+
+// A service's build args are in the rendered document, already resolved, so a FROM built
+// from them is pointed at the cache as Build points one. Without them the base images of
+// such a Dockerfile were pulled around the cache under compose and through it under build.
+func TestComposeBuildArgsResolveAFromBuiltFromThem(t *testing.T) {
+	document := `
+services:
+  app:
+    build:
+      context: /work/app
+      dockerfile: Dockerfile
+      args:
+        UV_IMAGE: ghcr.io/astral-sh/uv:0.9.5
+        KEV_UID: 1000
+`
+	source := "ARG UV_IMAGE=ghcr.io/astral-sh/uv:latest\n" +
+		"ARG PYTHON_IMAGE=python:3.12-slim\n" +
+		"FROM ${UV_IMAGE} AS uv\n" +
+		"FROM ${PYTHON_IMAGE}\n" +
+		"COPY --from=uv /uv /bin/uv\n"
+	result, err := RewriteCompose([]byte(document), bridge(), readStub(t, source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated := string(result.Dockerfiles["app"].Content)
+	for _, want := range []string{
+		"FROM 127.0.0.1:41999/ghcr/astral-sh/uv:0.9.5 AS uv",      // the service's arg wins
+		"FROM 127.0.0.1:41999/dockerhub/library/python:3.12-slim", // the ARG's own default
+	} {
+		if !strings.Contains(generated, want) {
+			t.Errorf("missing %q in the rewrite:\n%s", want, generated)
+		}
 	}
 }
