@@ -2,7 +2,7 @@
  *
  * The one page that should answer a normal day's question without a click. */
 
-import { el, region, panel, fill, loading } from "../dom.js";
+import { el, region, panel, fill, loading, cacheKey } from "../dom.js";
 import { api } from "../api.js";
 import * as store from "../store.js";
 import * as charts from "../charts.js";
@@ -247,13 +247,13 @@ function renderActivity() {
     [...store.state.live.values()].slice(0, 5).map((event) =>
       el("li", { class: "event" },
         el("span", { class: "dot pulse" }),
-        el("code", { text: event.id || "—" }),
+        cacheKey(event.id),
         el("span", { class: "note", text: `${event.eco || ""} · in flight` })),
     ),
     recent.slice(0, 12).map((event) =>
       el("li", { class: "event" },
         el("span", { class: `dot ${event.kind === "fetch.error" ? "bad" : "ok"}` }),
-        el("code", { text: event.id || event.kind }),
+        cacheKey(event.id || event.kind),
         el("span", { class: "note", text: [event.eco, event.size ? bytes(event.size) : null, event.at ? ago(event.at) : null].filter(Boolean).join(" · ") })),
     ),
   );

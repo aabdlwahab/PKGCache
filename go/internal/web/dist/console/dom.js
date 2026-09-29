@@ -180,6 +180,33 @@ export function button(label, onClick, { kind = "", disabled = false, title } = 
   return node;
 }
 
+/** A cache key, whole, with its last segment set apart.
+ *
+ *  The last segment is the part a person recognises — the wheel, the tarball, the tag.
+ *  What comes before it is a host and hash directories that every key from one index
+ *  shares, so it is muted and the name is what the eye lands on. The key wraps rather
+ *  than being shortened: cut from the right, every pypi key read the same; cut from the
+ *  middle, a long wheel name still lost its end. */
+export function cacheKey(key) {
+  const value = String(key || "—");
+  // The slash before the last segment, allowing for a key that ends in one.
+  const cut = value.lastIndexOf("/", value.length - 2) + 1;
+  return el(
+    "code",
+    { class: "key" },
+    cut ? el("span", { class: "key-head" }, breakAfterSlashes(value.slice(0, cut))) : null,
+    el("span", { class: "key-tail", text: value.slice(cut) }),
+  );
+}
+
+/* A key has no spaces, so without these it wraps wherever the line happens to end —
+   usually mid-segment. With them it breaks between segments, and only a segment longer
+   than the line (a hash) is split. */
+function breakAfterSlashes(text) {
+  return text.split("/").flatMap((part, i, all) =>
+    i < all.length - 1 ? [`${part}/`, el("wbr")] : part ? [part] : []);
+}
+
 export function field(label, control, hint) {
   return el(
     "label",

@@ -548,16 +548,25 @@ tbody tr:hover { background: var(--panel2); }
 .rail-body { padding: 12px 14px 24px; overflow-y: auto; }
 .rail-heading { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: var(--tspace); color: var(--muted); }
 .rail-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.rail-item { display: grid; gap: 4px; font-size: 12px; }
-.rail-item.compact { grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-.rail-item code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail-line { display: flex; align-items: center; gap: 8px; }
+/* min-width:0 on both, for the reason .eco-card gives: a transfer's key is one unbroken
+   line, and without it the row took the key's full width, so the key, its meter and its
+   ecosystem ran off the right edge of the rail and could only be scrolled to. */
+.rail-item { display: grid; gap: 4px; font-size: 12px; min-width: 0; }
+/* Baseline, because a key can wrap: the dot and the size belong beside the first line of
+   it, not halfway down. */
+.rail-item.compact { grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; }
+.rail-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rail-line code { flex: 1; }
 body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
 
 .event-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.event { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; font-size: 12px; }
-.event code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 10px; font-size: 12px; }
+
+/* A cache key, whole; cacheKey in dom.js says why it wraps. anywhere rather than
+   break-word because only anywhere lowers the key's min-content width, and that width is
+   what let a key push its row past the rail. */
+.key { min-width: 0; overflow-wrap: anywhere; }
+.key-head { color: var(--muted); }
 
 /* ---- login ---------------------------------------------------------------- */
 

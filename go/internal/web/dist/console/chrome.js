@@ -7,7 +7,7 @@
  * that.
  */
 
-import { el, region, button, fill } from "./dom.js";
+import { el, region, button, fill, cacheKey } from "./dom.js";
 import { api } from "./api.js";
 import * as store from "./store.js";
 import { href, remount } from "./router.js";
@@ -287,7 +287,7 @@ function transferRow(event) {
     "li",
     { class: "rail-item" },
     el("div", { class: "rail-line" },
-      el("code", { text: event.id || "—" }),
+      cacheKey(event.id),
       el("span", { class: "note", text: event.eco || "" })),
     total
       ? el("div", { class: "meter" },
@@ -317,7 +317,7 @@ function recentRow(event) {
     "li",
     { class: "rail-item compact" },
     el("span", { class: `dot ${failed ? "bad" : "ok"}` }),
-    el("code", { text: event.id || event.kind }),
+    cacheKey(event.id || event.kind),
     el("span", { class: "note", text: event.size ? bytes(event.size) : event.kind }),
   );
 }
