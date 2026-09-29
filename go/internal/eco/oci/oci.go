@@ -589,8 +589,12 @@ func imageSize(body []byte) (int64, bool) {
 	return total, true
 }
 
+// requestAccept relays every media type the client accepts. The Docker daemon sends
+// each as its own Accept header, manifest.v2 first; forwarding only that one makes a
+// registry holding just an OCI index (quay does this) fall back to schema1, which the
+// same daemon then refuses as "unsupported manifest media type".
 func requestAccept(r *http.Request) string {
-	if value := r.Header.Get("Accept"); value != "" && value != "*/*" {
+	if value := strings.Join(r.Header.Values("Accept"), ", "); value != "" && value != "*/*" {
 		return value
 	}
 	return manifestAccept

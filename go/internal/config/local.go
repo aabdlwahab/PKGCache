@@ -56,6 +56,50 @@ type Local struct {
 	// IdleTimeout is how long the daemon stays up with nothing to do. Zero means it
 	// stays up until it is stopped, which is what persistent client settings require.
 	IdleTimeout time.Duration `yaml:"-"`
+	// Relays is project → the team cache a forward-proxy ecosystem's requests travel
+	// through. Derived from the team configuration, never decoded; the global project's
+	// entry is the fallback for every project without one, as the team's is.
+	//
+	// Replaced whole on every change, never edited in place, so a Snapshot sharing the
+	// map with the one it was cloned from never sees it move.
+	Relays map[string]Relay `yaml:"-"`
+}
+
+// Relay is how a project's ecosystems with no configured origin reach the caches it
+// borrows from: its siblings, then its team cache, then — unless setup said -no-direct —
+// the origin itself.
+//
+// An upstream chain cannot express this: those ecosystems take the origin from the
+// request itself, so there is no configured one for a cache's to replace. apt asks each
+// cache's forward proxy for the same URL; git asks each for the same path under its own
+// data-plane root.
+type Relay struct {
+	// Hops are the caches to ask, in the order a chain would: siblings, then the team.
+	Hops []Hop
+	// Direct is whether the origin is asked after every hop. False is `setup -no-direct`.
+	Direct bool
+}
+
+// Hop is one cache in a Relay.
+type Hop struct {
+	// Proxy is its forward proxy, with its project as the username.
+	Proxy string
+	// Base is its data-plane root for its project, e.g. https://cache.internal:8443/global
+	// — the prefix its /<eco>/... paths sit under.
+	Base string
+	// Sibling is another machine's pkgcache rather than a team cache. A request that came
+	// from a sibling is never relayed to one, so two machines that borrow from each other
+	// cannot hand a miss back and forth.
+	Sibling bool
+}
+
+// RelayFor returns the relay a project's forward-proxy requests use, if any.
+func (s *Snapshot) RelayFor(project string) (Relay, bool) {
+	if relay, ok := s.Local.Relays[project]; ok {
+		return relay, true
+	}
+	relay, ok := s.Local.Relays[GlobalProject]
+	return relay, ok
 }
 
 // LocalDefaults returns the configuration profile pkgcache serves under.
@@ -96,6 +140,17 @@ func LocalDefaults() Snapshot {
 	// One developer, not twenty CI hosts.
 	s.Catalog.ReadPoolSize = 4
 	s.Upstream.UserAgent = "pkgcache/1"
+	// Longer than a server waits on an origin, because this cache's first upstream is
+	// usually another cache: a team cache answers an index only once it holds all of it,
+	// to rewrite its links, and over a busy team uplink a large one took longer than the
+	// server's 60 s — so this cache gave up and fetched the page, and every file it names,
+	// past the team. A team that is down refuses the connection and still fails over at once.
+	s.Upstream.ResponseHeaderTimeout = 3 * time.Minute
+	// And longer than the team waits on a silent body, for the same reason: when the
+	// team's origin stalls, the team picks its transfer up again after its own two
+	// minutes, and this cache — reading that transfer as it arrives — should still be
+	// there to receive it rather than starting over beside it.
+	s.Upstream.BodyIdleTimeout = 3 * time.Minute
 
 	// Nothing is ever reclaimed unless the user asks for it. A background process
 	// quietly deleting the wheels someone's current work depends on, to hold a number
@@ -289,6 +344,15 @@ func applyLocalEnv(s *Snapshot) error {
 	if v, ok := os.LookupEnv(LocalEnvPrefix + "LOG_LEVEL"); ok {
 		s.Log.Level = v
 	}
+	// Off by default, as a laptop wants it; on, it is the one record of which request
+	// this cache answered from where, which its metrics cannot say per request.
+	if v, ok := os.LookupEnv(LocalEnvPrefix + "LOG_ACCESS"); ok {
+		b, err := parseBool(v)
+		if err != nil {
+			return fmt.Errorf("config: %sLOG_ACCESS: %w", LocalEnvPrefix, err)
+		}
+		s.Log.Access = b
+	}
 	if v, ok := os.LookupEnv(LocalEnvPrefix + "OFFLINE"); ok {
 		b, err := parseBool(v)
 		if err != nil {
@@ -333,17 +397,54 @@ func (s *Snapshot) setLocalAddr(value string) error {
 // LocalAddr is the one socket pkgcache serves on.
 func (s *Snapshot) LocalAddr() string { return s.Server.UnifiedAddr }
 
+// LocalClientAddr is the address a client on this machine uses: LocalAddr, or loopback on
+// the same port when the listener is on every interface to serve siblings too.
+func (s *Snapshot) LocalClientAddr() string { return ClientAddr(s.LocalAddr()) }
+
+// ClientAddr is how a client on this machine reaches a listener bound to address:
+// loopback, when the listener is on every interface.
+func ClientAddr(address string) string {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || !unspecifiedHost(host) {
+		return address
+	}
+	return net.JoinHostPort(LocalLoopback, port)
+}
+
+// ServesSiblings reports whether the cache listens on every interface, so that other
+// machines' caches can fetch from it. They are answered with the sibling surface only;
+// see app.SiblingHandler.
+func (s *Snapshot) ServesSiblings() bool {
+	host, _, err := net.SplitHostPort(s.LocalAddr())
+	return err == nil && unspecifiedHost(host)
+}
+
+func unspecifiedHost(host string) bool {
+	switch strings.Trim(strings.TrimSpace(host), "[]") {
+	case "0.0.0.0", "::":
+		return true
+	}
+	return false
+}
+
 // LocalBaseURL is the origin clients are pointed at. Plain HTTP, which is what removes
 // pip's --trusted-host, the CA in the machine trust store, and every other privileged
 // setup step. Callers with an actually-bound address — an ephemeral port, in the
 // fallback case — should build this from that instead.
-func (s *Snapshot) LocalBaseURL() string { return "http://" + s.LocalAddr() }
+func (s *Snapshot) LocalBaseURL() string { return "http://" + s.LocalClientAddr() }
 
 // validateLocal enforces the invariant that pays for everything pkgcache leaves out.
 //
 // This refuses rather than warns. Local mode runs with no TLS and no accounts, which is
-// safe exactly as long as nothing off this machine can connect; a snapshot that binds
-// elsewhere is not a weakly configured pkgcache, it is an unauthenticated pkgreg.
+// safe exactly as long as nothing off this machine reaches the control plane; a snapshot
+// that let it would not be a weakly configured pkgcache, it would be an unauthenticated
+// pkgreg.
+//
+// Every interface is allowed, for siblings — `PKGCACHE_ADDR=0.0.0.0:41780`, which the peer
+// commands tell people to use and this used to refuse outright. The invariant then holds
+// per connection instead: another machine is served the read-only sibling surface and
+// nothing else (app.SiblingHandler). One specific non-loopback address is still refused,
+// because it would leave this machine's own clients nowhere to connect.
 func (s *Snapshot) validateLocal() error {
 	for _, addr := range []struct{ field, value string }{
 		{"unified_addr", s.Server.UnifiedAddr},
@@ -353,11 +454,17 @@ func (s *Snapshot) validateLocal() error {
 		if addr.value == "" {
 			continue
 		}
-		if reachableOffHost(addr.value) {
+		// Every interface only for the one socket the sibling gate stands in front of:
+		// a separate proxy or admin listener would serve other machines ungated.
+		host, _, err := net.SplitHostPort(addr.value)
+		gated := s.Server.SinglePort && addr.value == s.Server.UnifiedAddr
+		if reachableOffHost(addr.value) && (err != nil || !unspecifiedHost(host) || !gated) {
 			return fmt.Errorf(
-				"config: local mode refuses to bind %s=%q, which other machines can reach.\n"+
-					"  pkgcache serves with no certificate and no accounts, which is safe only\n"+
-					"  on loopback. Bind %s, or run `pkgreg serve` for a cache others use",
+				"config: local mode refuses to bind %s=%q.\n"+
+					"  pkgcache serves with no certificate and no accounts, so its console and\n"+
+					"  control API stay on this machine. Bind %s, or 0.0.0.0 to let other\n"+
+					"  machines' caches fetch from this one (they get packages, read-only), or\n"+
+					"  run `pkgreg serve` for a cache others use",
 				addr.field, addr.value, LocalLoopback)
 		}
 	}

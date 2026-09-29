@@ -34,6 +34,9 @@ type Behaviour struct {
 	// TruncateAfter cuts the body short after this many bytes while still
 	// advertising the full Content-Length — the classic partial-transfer failure.
 	TruncateAfter int
+	// TruncateTimes limits TruncateAfter to the first N requests, after which the body
+	// is served whole: a transfer that broke off once. Zero truncates every request.
+	TruncateTimes int
 	// Corrupt serves a body of the right length but the wrong bytes, which is what
 	// digest verification exists to catch.
 	Corrupt bool
@@ -51,6 +54,9 @@ type Behaviour struct {
 	// FailTimes returns 500 for the first N requests, then succeeds. For retry and
 	// single-flight tests.
 	FailTimes int
+	// Delay holds every response, an error status included, this long before any of it
+	// is written: a slow origin, for tests that need requests to overlap in a set order.
+	Delay time.Duration
 }
 
 // Server is a controllable origin.
@@ -60,6 +66,7 @@ type Server struct {
 	mu     sync.Mutex
 	routes map[string]*Behaviour
 	fails  map[string]int
+	truncs map[string]int
 
 	// Requests counts every request the origin received. The single-flight tests
 	// assert on this: N concurrent clients must produce exactly one upstream fetch.
@@ -72,7 +79,7 @@ type Server struct {
 
 // New starts a synthetic origin. The caller closes it.
 func New() *Server {
-	s := &Server{routes: map[string]*Behaviour{}, fails: map[string]int{}}
+	s := &Server{routes: map[string]*Behaviour{}, fails: map[string]int{}, truncs: map[string]int{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.handle))
 	return s
 }
@@ -83,6 +90,7 @@ func (s *Server) Handle(path string, b Behaviour) {
 	defer s.mu.Unlock()
 	s.routes[path] = &b
 	s.fails[path] = b.FailTimes
+	s.truncs[path] = b.TruncateTimes
 }
 
 // Serve is the common case: a 200 with this body.
@@ -127,11 +135,26 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if ok && remainingFails > 0 {
 		s.fails[r.URL.Path] = remainingFails - 1
 	}
+	truncate := ok && b.TruncateAfter > 0
+	if truncate && b.TruncateTimes > 0 && remainingFails == 0 {
+		if left := s.truncs[r.URL.Path]; left > 0 {
+			s.truncs[r.URL.Path] = left - 1
+		} else {
+			truncate = false
+		}
+	}
 	s.mu.Unlock()
 
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	if b.Delay > 0 {
+		select {
+		case <-time.After(b.Delay):
+		case <-r.Context().Done():
+			return
+		}
 	}
 	if remainingFails > 0 {
 		http.Error(w, "synthetic failure", http.StatusInternalServerError)
@@ -189,7 +212,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := len(body)
-	if b.TruncateAfter > 0 && b.TruncateAfter < limit {
+	if truncate && b.TruncateAfter < limit {
 		limit = b.TruncateAfter
 	}
 	chunk := b.ChunkSize

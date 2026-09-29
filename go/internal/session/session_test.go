@@ -29,8 +29,10 @@ func TestEnvironmentPointsEveryToolAtTheCache(t *testing.T) {
 		"PKGCACHE_BRIDGE_URL":      "http://127.0.0.1:41780",
 		"PKGCACHE_APT_PROXY":       "http://127.0.0.1:41780",
 		"PIP_INDEX_URL":            "http://127.0.0.1:41780/global/pypi/root/pypi/+simple/",
-		"UV_DEFAULT_INDEX":         "http://127.0.0.1:41780/global/pypi/root/pypi/+simple/",
+		"UV_INDEX_URL":             "http://127.0.0.1:41780/global/pypi/root/pypi/+simple/",
 		"NPM_CONFIG_REGISTRY":      "http://127.0.0.1:41780/global/npm/",
+		"PNPM_CONFIG_REGISTRY":     "http://127.0.0.1:41780/global/npm/",
+		"COREPACK_NPM_REGISTRY":    "http://127.0.0.1:41780/global/npm",
 		"GIT_CONFIG_COUNT":         "1",
 		"GIT_CONFIG_KEY_0":         "url.http://127.0.0.1:41780/global/git/github.com/.insteadOf",
 		"GIT_CONFIG_VALUE_0":       "https://github.com/",
@@ -81,6 +83,7 @@ func TestEnvironmentClearsBothNamespacesAndStaleToolSettings(t *testing.T) {
 		"NODE_EXTRA_CA_CERTS=/etc/pkgreg/ca.crt",
 		"GIT_SSL_CAINFO=/etc/pkgreg/ca.crt",
 		"UV_NATIVE_TLS=true",
+		"UV_SYSTEM_CERTS=true",
 		"PKGREG_SERVER=https://cache:8443",
 		"PKGREG_PROJECT=team-a",
 		"PKGREG_CA_FILE=/etc/pkgreg/ca.crt",
@@ -97,7 +100,7 @@ func TestEnvironmentClearsBothNamespacesAndStaleToolSettings(t *testing.T) {
 	joined := strings.Join(environment, "\n")
 	for _, gone := range []string{
 		"PIP_CERT=", "NPM_CONFIG_CAFILE=", "NODE_EXTRA_CA_CERTS=", "GIT_SSL_CAINFO=",
-		"UV_NATIVE_TLS=", "PKGREG_SERVER=", "PKGREG_PROJECT=", "PKGREG_CA_FILE=",
+		"UV_NATIVE_TLS=", "UV_SYSTEM_CERTS=", "PKGREG_SERVER=", "PKGREG_PROJECT=", "PKGREG_CA_FILE=",
 		"https://cache:8443",
 	} {
 		if strings.Contains(joined, gone) {

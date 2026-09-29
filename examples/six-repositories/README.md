@@ -20,9 +20,19 @@ out of image layers, and can be pointed at either side of the air gap.
 | Git | Two smart-HTTP shallow clones, object checks, and an explicit push-refusal check |
 | files | Token and checksum failures, upload, write-once protection, `HEAD`, byte ranges, and repeated downloads |
 
-Every role also has its health response, immediate hit feed, and ledger inventory
-checked. Any failed assertion exits the container non-zero; a successful run writes
-`/results/summary.json`.
+Every role also has its health response, a cache hit for the second fetch, and its
+inventory entry checked. Any failed assertion exits the container non-zero; a successful
+run writes `/results/summary.json`.
+
+The hit check reads the server's `pkgreg_requests_total` counter on `/metrics` for the
+role's ecosystem and project, before and after the second fetch, so run the probe in a
+project nothing else is using at the time. Git clones are answered from the local mirror
+and count no per-request hit, so git's hit check is reported as skipped.
+
+The inventory check signs in to the control API, which takes a console session rather
+than a token. Pass an account with `CACHE_API_USER` and mount its password at
+`/run/secrets/api_password` (or `CACHE_API_PASSWORD_FILE`); without them the inventory
+checks are skipped and every protocol check still runs.
 
 ## Build
 
@@ -77,7 +87,9 @@ When a custom artifact changes the package name, set its matching
 ## Prove offline replay
 
 After the online run passes, switch the same project to offline mode in the
-console, wait for its health response to report `"offline": true`, and rerun:
+console (or `PATCH /api/v1/projects/PROJECT` with `{"offline": true}`) and rerun. With
+`CACHE_API_USER` set, the probe first confirms that the project reports offline mode, so
+a replay cannot pass by quietly fetching everything again:
 
 ```bash
 docker run --rm --network host \
@@ -104,6 +116,8 @@ an upstream fallback.
 | `TEST_PHASE` | `online` | `online` warms/repeats; `offline` replays |
 | `CA_CERT` | `/certs/ca.crt` | Mounted public CA |
 | `FILES_TOKEN_FILE` | `/run/secrets/files_token` | Runtime-only files write token |
+| `CACHE_API_USER` | unset | Console account for the inventory checks; unset skips them |
+| `CACHE_API_PASSWORD_FILE` | `/run/secrets/api_password` | That account's password, mounted at runtime |
 | `RESULTS_DIR` | `/results` | Location for `summary.json` |
 
 `FILES_TOKEN` is also accepted for CI systems that inject masked environment

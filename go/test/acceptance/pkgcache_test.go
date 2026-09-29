@@ -182,7 +182,7 @@ func (c *cacheProcess) pointProjectAtPriority(
 func TestPkgcacheRunConfiguresEveryTool(t *testing.T) {
 	cache := startCache(t)
 	out, err := cache.run(t, t.TempDir(), "sh", "-c",
-		"echo $PIP_INDEX_URL; echo $UV_DEFAULT_INDEX; echo $NPM_CONFIG_REGISTRY; "+
+		"echo $PIP_INDEX_URL; echo $UV_INDEX_URL; echo $NPM_CONFIG_REGISTRY; "+
 			"echo $GIT_CONFIG_COUNT; echo $PKGCACHE_SESSION")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)

@@ -31,6 +31,8 @@ func TestSessionEnvironmentIsTemporaryAndUsesLoopback(t *testing.T) {
 		"PKGREG_GIT_URL=http://127.0.0.1:43210/team-a/git",
 		"PIP_INDEX_URL=http://127.0.0.1:43210/team-a/pypi/root/pypi/+simple/",
 		"NPM_CONFIG_REGISTRY=http://127.0.0.1:43210/team-a/npm/",
+		"PNPM_CONFIG_REGISTRY=http://127.0.0.1:43210/team-a/npm/",
+		"COREPACK_NPM_REGISTRY=http://127.0.0.1:43210/team-a/npm\n",
 		"PKGREG_APT_PROXY=http://team-a@cache:3142",
 		"NO_PROXY=example.test,127.0.0.1,localhost",
 	} {

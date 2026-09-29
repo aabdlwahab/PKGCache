@@ -3,6 +3,7 @@ package apt
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -208,6 +209,18 @@ func TestReconstructTarget(t *testing.T) {
 			t.Fatalf("target=%v err=%v", target, err)
 		}
 	})
+	t.Run("an https repository asked for in plain proxy form is fetched over TLS", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet,
+			"http://developer.download.nvidia.com:443/compute/cuda/repos/ubuntu2404/x86_64/InRelease", nil)
+		target, err := reconstructTarget(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/InRelease"
+		if target.String() != want || cacheKey(target) != want {
+			t.Fatalf("target = %s, key = %s", target, cacheKey(target))
+		}
+	})
 	t.Run("upstream credentials refused", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "http://user:pass@mirror.example/x", nil)
 		if _, err := reconstructTarget(req); err == nil {
@@ -230,5 +243,142 @@ func TestDescriptor(t *testing.T) {
 		"immutable/http://mirror/debian/demo_1.0_arm64.deb")
 	if !ok || name != "demo" || version != "1.0" || arch != "arm64" {
 		t.Fatalf("artifact parse = %q %q %q %v", name, version, arch, ok)
+	}
+}
+
+// relayThrough sends a harness's apt requests through another cache's forward proxy, as
+// pkgcache does once it is pointed at a team cache.
+func relayThrough(t *testing.T, h *ecotest.Harness, proxy string, direct bool) {
+	t.Helper()
+	if err := h.Config.Apply(func(s *config.Snapshot) error {
+		s.Local.Relays = map[string]config.Relay{
+			config.GlobalProject: {Hops: []config.Hop{{Proxy: proxy}}, Direct: direct},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Three tiers for apt: the local cache asks the team's cache, which asks the mirror. The
+// URL apt named travels unchanged; only the route does not.
+func TestRelayedThroughTheTeamCache(t *testing.T) {
+	const (
+		debPath   = "/debian/pool/main/d/demo/demo_1.2.3_amd64.deb"
+		indexPath = "/debian/dists/stable/InRelease"
+	)
+	team := aptHarness(t, func(origin *testupstream.Server) {
+		origin.Serve(debPath, []byte("deb via the team"))
+		origin.Serve(indexPath, []byte("signed index"))
+	})
+	local := aptHarness(t, nil)
+	relayThrough(t, local, team.Server.URL, false)
+	client := proxyClient(t, local)
+
+	for _, path := range []string{debPath, indexPath} {
+		status, _, got := proxyGet(t, client, team.Origin.URLFor(path))
+		if status != http.StatusOK || got == "" {
+			t.Fatalf("%s = %d %q", path, status, got)
+		}
+	}
+	// The team's cache holding them is what proves the route: its origin is also
+	// reachable from here, so a direct fetch would have answered just the same.
+	for _, key := range []string{
+		"immutable/" + team.Origin.URLFor(debPath),
+		"volatile/" + team.Origin.URLFor(indexPath),
+	} {
+		if _, err := team.Engine.Entry(config.GlobalProject, ID, key); err != nil {
+			t.Fatalf("the team cache never saw %s: %v", key, err)
+		}
+	}
+	if hits := team.Origin.Hits(debPath); hits != 1 {
+		t.Fatalf("mirror hits = %d, want 1", hits)
+	}
+}
+
+// With the team cache down, -no-direct means failing rather than quietly reaching the
+// mirror; without it, the mirror is asked directly.
+func TestRelayFallsBackOnlyWhenAllowed(t *testing.T) {
+	const debPath = "/debian/pool/main/d/demo/demo_1.2.3_amd64.deb"
+	local := aptHarness(t, func(origin *testupstream.Server) {
+		origin.Serve(debPath, []byte("deb"))
+	})
+	closed := httptest.NewServer(http.NotFoundHandler())
+	down := closed.URL
+	closed.Close()
+	client := proxyClient(t, local)
+	target := local.Origin.URLFor(debPath)
+
+	relayThrough(t, local, down, false)
+	if status, _, _ := proxyGet(t, client, target); status < 500 {
+		t.Fatalf("no-direct with the team down = %d, want a 5xx", status)
+	}
+	if hits := local.Origin.Hits(debPath); hits != 0 {
+		t.Fatalf("no-direct reached the mirror %d times", hits)
+	}
+
+	relayThrough(t, local, down, true)
+	if status, _, got := proxyGet(t, client, target); status != http.StatusOK || got != "deb" {
+		t.Fatalf("direct fallback = %d %q", status, got)
+	}
+}
+
+// Three tiers with a sibling in the middle: the local cache asks the sibling's proxy, the
+// sibling fetches through its own relay (here the mirror itself, standing in for the
+// internet as a proxy that serves by path), and both keep what went past them. The name
+// apt asked for is a public one, the only kind a sibling relays.
+func TestAptTravelsThroughASibling(t *testing.T) {
+	const debPath = "/debian/pool/main/d/demo/demo_1.2.3_amd64.deb"
+	sibling := aptHarness(t, func(origin *testupstream.Server) {
+		origin.Serve(debPath, []byte("deb via the sibling"))
+	})
+	relayThrough(t, sibling, sibling.Origin.URL, false)
+	local := aptHarness(t, nil)
+	if err := local.Config.Apply(func(s *config.Snapshot) error {
+		s.Local.Relays = map[string]config.Relay{config.GlobalProject: {
+			Hops: []config.Hop{{Proxy: sibling.Server.URL, Sibling: true}},
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	target := "http://deb.example.test" + debPath
+	status, _, got := proxyGet(t, proxyClient(t, local), target)
+	if status != http.StatusOK || got != "deb via the sibling" {
+		t.Fatalf("through the sibling = %d %q", status, got)
+	}
+	if _, err := sibling.Engine.Entry(config.GlobalProject, ID, "immutable/"+target); err != nil {
+		t.Fatalf("the sibling never kept it: %v", err)
+	}
+	if hits := sibling.Origin.Hits(debPath); hits != 1 {
+		t.Fatalf("mirror hits = %d, want 1", hits)
+	}
+}
+
+// A sibling on an older pkgcache refuses every proxy request with 403, and a new one
+// refuses what it will not relay. Neither stops apt: the attempt falls through to the
+// next place in the relay.
+func TestARefusingSiblingFallsThroughToTheTeam(t *testing.T) {
+	const debPath = "/debian/pool/main/d/demo/demo_1.2.3_amd64.deb"
+	team := aptHarness(t, func(origin *testupstream.Server) {
+		origin.Serve(debPath, []byte("deb via the team"))
+	})
+	relayThrough(t, team, team.Origin.URL, false)
+	older := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "this address serves other machines' caches", http.StatusForbidden)
+	}))
+	t.Cleanup(older.Close)
+	local := aptHarness(t, nil)
+	if err := local.Config.Apply(func(s *config.Snapshot) error {
+		s.Local.Relays = map[string]config.Relay{config.GlobalProject: {
+			Hops: []config.Hop{{Proxy: older.URL, Sibling: true}, {Proxy: team.Server.URL}},
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, _, got := proxyGet(t, proxyClient(t, local), "http://deb.example.test"+debPath)
+	if status != http.StatusOK || got != "deb via the team" {
+		t.Fatalf("with a refusing sibling = %d %q", status, got)
 	}
 }

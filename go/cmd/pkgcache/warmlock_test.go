@@ -108,3 +108,34 @@ func TestLockNamesMatchesLockOrder(t *testing.T) {
 		}
 	}
 }
+
+// A lock is left as it is unless -rewrite asks for it: the address a rewrite writes is this
+// machine's loopback, which a Docker build and every other machine cannot reach, and it
+// used to be written by default. -warm-only is still accepted, and contradicting it is an
+// error rather than a guess.
+func TestWarmlockLeavesTheLockAloneUnlessAskedToRewrite(t *testing.T) {
+	for _, c := range []struct {
+		args     []string
+		warmOnly bool
+		fails    bool
+	}{
+		{args: nil, warmOnly: true},
+		{args: []string{"-warm-only"}, warmOnly: true},
+		{args: []string{"-rewrite"}, warmOnly: false},
+		{args: []string{"-rewrite", "-warm-only"}, fails: true},
+	} {
+		request, err := parseWarmlock(append([]string{"-lock", "uv.lock"}, c.args...))
+		if c.fails {
+			if err == nil {
+				t.Errorf("%v: accepted", c.args)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%v: %v", c.args, err)
+		}
+		if request.opts.warmOnly != c.warmOnly {
+			t.Errorf("%v: warm only = %v, want %v", c.args, request.opts.warmOnly, c.warmOnly)
+		}
+	}
+}

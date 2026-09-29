@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -128,7 +129,13 @@ func writePersisted(dataDir string, record Persisted) error {
 type managedFile struct {
 	path    string
 	content string
+	// clash, where set, reports why the block cannot be added beside what the file
+	// already holds; the file is then left alone and the reason printed instead.
+	clash func(existing string) string
 }
+
+// uvPipTableRE finds a [pip] table the user already has, as a header or as dotted keys.
+var uvPipTableRE = regexp.MustCompile(`(?m)^\s*(\[\s*pip\s*\]|pip\s*\.)`)
 
 // ApplyPersist installs or removes the persistent settings.
 func ApplyPersist(o PersistOptions) error {
@@ -267,8 +274,22 @@ func persistFiles(home string, o PersistOptions) []managedFile {
 			content: fmt.Sprintf("[global]\nindex-url = %s/pypi/root/pypi/+simple/\n", projectBase),
 		},
 		{
+			// The pip interface only. A default [[index]] reached uv's project commands too:
+			// every `uv sync --locked` on the machine then refused a lock made against PyPI,
+			// since the index no longer matched it, and `uv lock` and `uv add` wrote this
+			// cache's loopback address into lockfiles that get committed. uv applies a [pip]
+			// table to `uv pip` and nothing else.
 			path:    filepath.Join(home, ".config", "uv", "uv.toml"),
-			content: fmt.Sprintf("[[index]]\nurl = \"%s/pypi/root/pypi/+simple/\"\ndefault = true\n", projectBase),
+			content: fmt.Sprintf("[pip]\nindex-url = \"%s/pypi/root/pypi/+simple/\"\n", projectBase),
+			// TOML allows a table to be defined once. A second [pip] after the user's own
+			// makes the whole file unreadable, and uv then refuses every command.
+			clash: func(existing string) string {
+				if !uvPipTableRE.MatchString(existing) {
+					return ""
+				}
+				return fmt.Sprintf("it has a [pip] table of its own; add "+
+					"index-url = \"%s/pypi/root/pypi/+simple/\" to it", projectBase)
+			},
 		},
 	}
 	if len(o.GitHosts) > 0 {
@@ -319,6 +340,17 @@ func applyManagedFile(file managedFile, uninstall, dryRun bool) (string, error) 
 		return "remove pkgcache settings from " + file.path, nil
 	}
 
+	if file.clash != nil {
+		if reason := file.clash(stripped); reason != "" {
+			if had && !dryRun {
+				// A block of ours beside the user's table is the broken file itself.
+				if err := writeFilePreservingMode(file.path, stripped); err != nil {
+					return "", err
+				}
+			}
+			return "leave " + file.path + " alone: " + reason, nil
+		}
+	}
 	block := beginMarker + "\n" + strings.TrimRight(file.content, "\n") + "\n" + endMarker + "\n"
 	updated := stripped
 	if updated != "" && !strings.HasSuffix(updated, "\n") {

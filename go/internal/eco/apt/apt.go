@@ -80,6 +80,14 @@ func (r *Repo) proxy(w http.ResponseWriter, req *http.Request, p router.Params) 
 			"proxy target is not present in server.proxy_allowlist")
 		return
 	}
+	// Another machine's cache may have this one fetch a public name only, so lending it
+	// the proxy does not lend it this machine's view of the network behind it. Its cache
+	// takes the 403 as "not through me" and asks the next place in its relay.
+	if !c.OriginAllowed(target.Hostname()) {
+		_ = c.Text(http.StatusForbidden,
+			"a sibling relays apt for public host names only")
+		return
+	}
 
 	filename := fileName(target)
 	key := cacheKey(target)
@@ -175,6 +183,8 @@ func reconstructTarget(r *http.Request) (*url.URL, error) {
 			RawQuery: r.URL.RawQuery,
 		}
 	}
+	// An https repository asked for through this plain proxy; see router.PlainProxyForm.
+	router.UpgradePlainProxyForm(&target)
 	if target.Scheme != "http" && target.Scheme != "https" {
 		return nil, fmt.Errorf("unsupported proxy target scheme %q", target.Scheme)
 	}

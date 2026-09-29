@@ -52,6 +52,9 @@ type Options struct {
 	// Extra carries variables only one caller has, such as a CA fingerprint. They are
 	// written after the managed set and are not otherwise interpreted.
 	Extra [][2]string
+	// Shims is a directory put first on PATH, holding the programs a session stands in
+	// front of — uv; see UVShim. Empty leaves PATH alone.
+	Shims string
 }
 
 // Environment returns base with this session's variables applied.
@@ -101,8 +104,16 @@ func Environment(base []string, o Options) []string {
 		// inside this shell reading the variable back does not scope it twice.
 		{prefix + "APT_PROXY", router.ProxyURLFor(o.AptProxy, o.Project)},
 		{"PIP_INDEX_URL", projectBase + "/pypi/root/pypi/+simple/"},
-		{"UV_DEFAULT_INDEX", projectBase + "/pypi/root/pypi/+simple/"},
+		// UV_INDEX_URL, not UV_DEFAULT_INDEX: uv lets UV_DEFAULT_INDEX override an explicit
+		// --index-url on the command line, so a build naming its own index — a CUDA torch
+		// channel, say — was silently sent to PyPI instead. UV_INDEX_URL yields to either flag.
+		{"UV_INDEX_URL", projectBase + "/pypi/root/pypi/+simple/"},
 		{"NPM_CONFIG_REGISTRY", projectBase + "/npm/"},
+		// pnpm 11 reads its own prefix and ignores npm's, and corepack — which fetches the
+		// pnpm or yarn a package.json pins — reads neither: without these both went
+		// straight to registry.npmjs.org. corepack appends /<name>/<version> itself.
+		{"PNPM_CONFIG_REGISTRY", projectBase + "/npm/"},
+		{"COREPACK_NPM_REGISTRY", projectBase + "/npm"},
 		{"GOPROXY", projectBase + "/gomod/goproxy"},
 		// See the gomod adapter: the checksum database is a transparency log rather
 		// than an index, so it is not cached and the toolchain is told not to wait on
@@ -120,7 +131,31 @@ func Environment(base []string, o Options) []string {
 			out = append(out, value[0]+"="+value[1])
 		}
 	}
+	if o.Shims != "" {
+		out = prependPath(out, o.Shims)
+	}
 	return out
+}
+
+// prependPath puts dir first on PATH, and only once: a session opened inside another
+// would otherwise stack the same directory in front of itself.
+func prependPath(environment []string, dir string) []string {
+	separator := string(os.PathListSeparator)
+	for i, entry := range environment {
+		key, value, _ := strings.Cut(entry, "=")
+		if !strings.EqualFold(key, "PATH") {
+			continue
+		}
+		kept := []string{dir}
+		for _, part := range strings.Split(value, separator) {
+			if part != dir {
+				kept = append(kept, part)
+			}
+		}
+		environment[i] = key + "=" + strings.Join(kept, separator)
+		return environment
+	}
+	return append(environment, "PATH="+dir)
 }
 
 // gitConfig redirects clones through the cache's mirror.
@@ -152,9 +187,12 @@ func managedNames(o Options) map[string]bool {
 		// inherited PIP_CERT pointing at a certificate that is no longer in play is a
 		// confusing failure, not a harmless leftover.
 		"PIP_CERT": true, "PIP_INDEX_URL": true,
-		"UV_NATIVE_TLS": true, "UV_DEFAULT_INDEX": true,
+		"UV_NATIVE_TLS": true, "UV_SYSTEM_CERTS": true, "UV_INDEX_URL": true,
+		// Cleared, never set: one inherited from an older setup would still beat --index-url.
+		"UV_DEFAULT_INDEX":    true,
 		"NODE_EXTRA_CA_CERTS": true, "NPM_CONFIG_CAFILE": true,
 		"NPM_CONFIG_REGISTRY": true, "GIT_SSL_CAINFO": true,
+		"PNPM_CONFIG_REGISTRY": true, "COREPACK_NPM_REGISTRY": true,
 		"NO_PROXY": true, "no_proxy": true,
 		"GIT_CONFIG_COUNT": true,
 	}

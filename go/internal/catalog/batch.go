@@ -61,8 +61,12 @@ func (d *DB) Flush() error {
 //
 // The pending map is detached under the mutex before any SQL runs, so a slow write
 // never blocks the request path. On failure the rows are put back — unless a newer
-// write for the same key arrived meanwhile, which wins.
+// write for the same key arrived meanwhile, which wins. Flushes run one at a time
+// (flushMu), so one that finds nothing pending has still waited for any batch another
+// flush had already detached.
 func (d *DB) flushLocked() error {
+	d.flushMu.Lock()
+	defer d.flushMu.Unlock()
 	d.mu.Lock()
 	if len(d.pending) == 0 {
 		d.mu.Unlock()
@@ -71,6 +75,9 @@ func (d *DB) flushLocked() error {
 	batch := d.pending
 	d.pending = make(map[EntryKey]Entry, len(batch))
 	d.mu.Unlock()
+	if d.beforeWrite != nil {
+		d.beforeWrite()
+	}
 
 	if err := d.writeEntries(batch); err != nil {
 		d.mu.Lock()

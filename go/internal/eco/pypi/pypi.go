@@ -75,6 +75,9 @@ var defaultIndexes = map[string]string{
 type Repo struct {
 	indexes map[string]string
 	ttl     time.Duration
+	// fileHosts maps each of LockFileHosts to where /+files/ fetches it from: the host
+	// itself, unless a test has pointed it elsewhere.
+	fileHosts map[string]string
 }
 
 // New builds an adapter with the public PyPI and PyTorch indexes.
@@ -86,7 +89,21 @@ func NewWithIndexes(indexes map[string]string) *Repo {
 	for name, origin := range indexes {
 		copied[strings.Trim(name, "/")] = strings.TrimRight(origin, "/")
 	}
-	return &Repo{indexes: copied, ttl: simpleTTL}
+	hosts := make(map[string]string, len(LockFileHosts))
+	for _, host := range LockFileHosts {
+		hosts[host] = "https://" + host + "/"
+	}
+	return &Repo{indexes: copied, ttl: simpleTTL, fileHosts: hosts}
+}
+
+// WithFileHost fetches /+files/<host>/ paths from origin instead of from the host itself:
+// a test's origin, or a mirror that keeps that host's paths. host must be one of
+// LockFileHosts.
+func (r *Repo) WithFileHost(host, origin string) *Repo {
+	if _, known := r.fileHosts[host]; known {
+		r.fileHosts[host] = strings.TrimRight(origin, "/") + "/"
+	}
+	return r
 }
 
 // Descriptor implements eco.Ecosystem.
@@ -117,6 +134,12 @@ func (r *Repo) Routes() []eco.Route {
 		{
 			Methods: []string{http.MethodGet}, Pattern: "/+indexes",
 			Handler: r.listIndexes, Admin: true,
+		},
+		{
+			// Ahead of the index routes, whose greedy index capture would otherwise take
+			// "+files" for the name of an index.
+			Methods: []string{http.MethodGet, http.MethodHead},
+			Pattern: "/+files/{host}/{path...}", Handler: r.lockedFile,
 		},
 		{
 			Methods: []string{http.MethodGet},
@@ -152,11 +175,7 @@ func (r *Repo) simple(w http.ResponseWriter, req *http.Request, p router.Params)
 
 	files, err := r.loadSimple(c, index, project, origin)
 	if err != nil {
-		if c.Offline() {
-			c.WriteError(err)
-		} else {
-			_ = c.NotFound("no cached index for " + project)
-		}
+		c.WriteLookupError(err, "no index for "+project+" on "+index)
 		return
 	}
 	prefix := strings.TrimRight(c.ExternalBase(), "/") + "/" +
@@ -252,16 +271,23 @@ func (r *Repo) loadSimple(
 	headers.Set("Accept", jsonMediaType+", text/html;q=0.9")
 	pageURL := eco.JoinURL(origin, url.PathEscape(project)) + "/"
 	doc, err := c.Document(engine.DocSpec{
-		Name:    "simple/" + index + "/" + project,
-		Key:     "simple/" + index + "/" + project,
-		URL:     pageURL,
-		TTL:     r.ttl,
-		Headers: headers,
+		Name:         "simple/" + index + "/" + project,
+		Key:          "simple/" + index + "/" + project,
+		URL:          pageURL,
+		TTL:          r.ttl,
+		Headers:      headers,
+		Compressible: true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	files, err := parseSimple(doc.Body, doc.MediaType, pageURL)
+	// Relative links are relative to the page that answered, which is not the one asked
+	// for when a fallback served it.
+	base := pageURL
+	if doc.Source != "" {
+		base = doc.Source
+	}
+	files, err := parseSimple(doc.Body, doc.MediaType, base)
 	if err != nil {
 		return nil, fmt.Errorf("pypi: parse %s/%s: %w", index, project, err)
 	}
@@ -807,7 +833,12 @@ func ParseDistributionFilename(filename string) (name, version, arch string, ok 
 func parseArtifactKey(key string) (name, version, arch string, ok bool) {
 	_, filename, found := strings.Cut(key, "/+f/")
 	if !found {
-		return "", "", "", false
+		filePath, locked := strings.CutPrefix(key, lockedFilesKey)
+		if !locked {
+			return "", "", "", false
+		}
+		filename, _ = url.PathUnescape(filePath[strings.LastIndex(filePath, "/")+1:])
+		return ParseDistributionFilename(filename)
 	}
 	if at := strings.LastIndex(filename, "/"); at >= 0 {
 		filename = filename[at+1:]

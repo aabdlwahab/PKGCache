@@ -74,6 +74,16 @@ type DB struct {
 	pending map[EntryKey]Entry
 	cache   *entryCache
 
+	// flushMu is held for the whole of a flush, from detaching the pending batch to its
+	// commit, and by DeleteEntry. A batch leaves `pending` before its transaction runs,
+	// so without it a Flush that found nothing pending returned while the background
+	// loop was still writing a batch, and the read it was guarding missed those rows —
+	// a checkpoint left an entry out and the rollback to it lost the entry — and a
+	// delete that ran in that window was undone when the batch landed.
+	flushMu sync.Mutex
+	// beforeWrite, when set by a test, runs between detaching a batch and writing it.
+	beforeWrite func()
+
 	flushNow chan struct{}
 	stop     chan struct{}
 	stopped  sync.WaitGroup
@@ -487,6 +497,8 @@ func (d *DB) CommitEntry(
 // DeleteEntry removes one cache entry. The blob it referenced is left for the garbage
 // collector, which is the only thing that knows whether anything else still wants it.
 func (d *DB) DeleteEntry(k EntryKey) error {
+	d.flushMu.Lock()
+	defer d.flushMu.Unlock()
 	d.mu.Lock()
 	delete(d.pending, k)
 	d.cache.drop(k)
@@ -899,10 +911,10 @@ func (d *DB) GetRef(k RefKey) (Ref, error) {
 	var r Ref
 	var fetched, ttl int64
 	err := d.read.QueryRow(
-		`SELECT target, media_type, etag, last_modified, fetched_at, ttl_seconds
+		`SELECT target, media_type, etag, last_modified, fetched_at, ttl_seconds, source
 		   FROM refs WHERE project = ? AND eco = ? AND name = ?`,
 		k.Project, k.Eco, k.Name).
-		Scan(&r.Target, &r.MediaType, &r.ETag, &r.LastModified, &fetched, &ttl)
+		Scan(&r.Target, &r.MediaType, &r.ETag, &r.LastModified, &fetched, &ttl, &r.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Ref{}, fmt.Errorf("%w: ref %s/%s/%s", ErrNotFound, k.Project, k.Eco, k.Name)
 	}
@@ -921,14 +933,14 @@ func (d *DB) PutRef(r Ref) error {
 		r.FetchedAt = d.opts.Now()
 	}
 	_, err := d.write.Exec(
-		`INSERT INTO refs(project, eco, name, target, media_type, etag, last_modified, fetched_at, ttl_seconds)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO refs(project, eco, name, target, media_type, etag, last_modified, fetched_at, ttl_seconds, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(project, eco, name) DO UPDATE SET
 		   target=excluded.target, media_type=excluded.media_type, etag=excluded.etag,
 		   last_modified=excluded.last_modified, fetched_at=excluded.fetched_at,
-		   ttl_seconds=excluded.ttl_seconds`,
+		   ttl_seconds=excluded.ttl_seconds, source=excluded.source`,
 		r.Project, r.Eco, r.Name, r.Target, r.MediaType, r.ETag, r.LastModified,
-		ts(r.FetchedAt), int64(r.TTL.Seconds()))
+		ts(r.FetchedAt), int64(r.TTL.Seconds()), r.Source)
 	if err != nil {
 		return fmt.Errorf("catalog: put ref: %w", err)
 	}

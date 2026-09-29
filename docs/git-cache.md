@@ -69,13 +69,31 @@ Git LFS works. The cache serves the batch API and the objects themselves, so
 `git lfs pull` resolves through it like anything else. Uploads are refused, for the same
 reason pushes are.
 
+## Release assets
+
+A forge's release downloads are cached at the path of the repository they belong to:
+
+```
+http://127.0.0.1:41780/global/git/github.com/<owner>/<repo>/releases/download/<tag>/<file>
+```
+
+That is where software ships what no package index carries — a wheel patched for one GPU
+generation, a static binary — and a build fetches it by URL, past every index the cache
+fronts. An asset is immutable once cached: a tag's assets change only by deleting the
+release. `pkgcache-docker` rewrites `https://github.com/<owner>/<repo>/releases/download/`
+in a Dockerfile's `RUN` and `ARG` lines to this path, for the same hosts it sends clones
+through; a URL whose owner or repository is a variable is left as written.
+
+Unlike clones, release assets do reach a team cache: a machine pointed at one asks the
+team for the same path first, and the forge only if `setup` allowed direct fetches.
+
 ## What it does not do
 
-**It does not chain to a team cache.** Unlike PyPI, npm and OCI, git derives its origin
+**Clones do not chain to a team cache.** Unlike PyPI, npm and OCI, git derives its origin
 from the request itself rather than from a configured upstream, so there is no ordered
-chain to walk and no fall-through. A machine pointed at a team `pkgreg` still fetches
-git from the real host. This is a gap, not a decision that git is different in kind —
-see [pkgcache.md](pkgcache.md#three-tiers).
+chain to walk and no fall-through. A machine pointed at a team `pkgreg` still clones
+from the real host. This is a gap, not a decision that git is different in kind —
+see [pkgcache.md](pkgcache.md#three-tiers). Release assets are the exception above.
 
 **It does not accept pushes.** It is a mirror of upstream, not a place to publish.
 

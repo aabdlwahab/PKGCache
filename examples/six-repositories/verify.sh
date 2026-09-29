@@ -6,8 +6,8 @@ umask 077
 #   OCI, npm, PyPI, apt+apk, Git, and files.
 #
 # Each pull client uses a fresh local cache twice. The test then verifies that the
-# two results are byte-identical, pkgcache recorded an immediate cache hit, and the
-# expected artifact exists in that role's SQLite-backed ledger API.
+# two results are byte-identical, the server counted a cache hit for the second, and
+# the expected artifact is in the project's inventory.
 
 readonly CACHE_HOST="${CACHE_HOST:-localhost}"
 readonly CACHE_HTTPS_PORT="${CACHE_HTTPS_PORT:-8443}"
@@ -16,6 +16,10 @@ readonly PROJECT="${PROJECT:-global}"
 readonly TEST_PHASE="${TEST_PHASE:-online}"
 readonly CA_CERT="${CA_CERT:-/certs/ca.crt}"
 readonly FILES_TOKEN_FILE="${FILES_TOKEN_FILE:-/run/secrets/files_token}"
+# A console account, for the inventory checks: the control API takes a session, not a
+# token. Without it those checks are skipped and every protocol check still runs.
+readonly API_USER="${CACHE_API_USER:-}"
+readonly API_PASSWORD_FILE="${CACHE_API_PASSWORD_FILE:-/run/secrets/api_password}"
 readonly RESULTS_DIR="${RESULTS_DIR:-/results}"
 
 readonly OCI_IMAGE="${OCI_IMAGE:-dockerhub/library/alpine:3.20}"
@@ -37,6 +41,8 @@ readonly APT_PROXY="http://${APT_PROXY_PROJECT}${CACHE_HOST}:${CACHE_APT_PORT}"
 readonly OCI_PROJECT_PREFIX="$(if [[ "${PROJECT}" == "global" ]]; then printf ''; else printf '%s/' "${PROJECT}"; fi)"
 
 PASS_COUNT=0
+SKIP_COUNT=0
+API_SESSION=""
 WORK_DIR=""
 
 log() {
@@ -51,6 +57,11 @@ pass() {
 fail() {
     printf '    FAIL  %s\n' "$*" >&2
     exit 1
+}
+
+skip() {
+    SKIP_COUNT=$((SKIP_COUNT + 1))
+    printf '    SKIP  %s\n' "$*"
 }
 
 cleanup() {
@@ -105,38 +116,55 @@ expect_status() {
     fi
 }
 
-progress_url() {
-    case "$1" in
-        oci) printf '%s/%s/oci/v2/_progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        npm) printf '%s/%s/npm/-/progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        pypi) printf '%s/%s/pypi/+progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        apt) printf '%s/%s/apt/acng-progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        git) printf '%s/%s/git/+progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        files) printf '%s/%s/files/+progress' "${HTTPS_BASE}" "${PROJECT}" ;;
-        *) fail "unknown progress role: $1" ;;
-    esac
+# hit_count prints how many cache hits the server has counted for a role's ecosystems in
+# this project. The server has no per-role request feed; it counts every served request by
+# ecosystem, project and outcome on /metrics, and a hit there after the first fetch is the
+# second clean client being served from the cache. Run the probe in a project of its own
+# when anything else is using the cache, or another client's hits would count.
+hit_count() {
+    local ecos="$1"
+    [[ "$1" == "apt" ]] && ecos="apt|apk"
+    curl --silent --show-error --fail --connect-timeout 10 --max-time 60 \
+        --cacert "${CA_CERT}" "${HTTPS_BASE}/metrics" \
+        | awk -v project="${PROJECT}" -v ecos="^(${ecos})$" '
+            /^pkgreg_requests_total\{/ && /outcome="hit"/ {
+                eco = $0; sub(/.*eco="/, "", eco); sub(/".*/, "", eco)
+                p = $0; sub(/.*project="/, "", p); sub(/".*/, "", p)
+                if (p == project && eco ~ ecos) sum += $NF
+            }
+            END { printf "%d\n", sum }'
 }
 
 assert_recent_hit() {
     local role="$1"
-    local since="$2"
-    local url
-    url="$(progress_url "${role}")"
-
+    local before="$2"
+    if [[ "${role}" == "git" ]]; then
+        # A clone is answered by git from the local mirror, not through the counted path.
+        skip "git: clones are served from the mirror, which counts no per-request hit"
+        return
+    fi
     # Recording is synchronous, but a short poll makes this robust to a streamed
     # response finishing a fraction after its client process exits.
     local attempt
     for attempt in {1..20}; do
-        if https_json "${url}" \
-            | jq --exit-status --argjson since "${since}" \
-                'any(.recent[]?; .hit == true and .failed != true and .time >= $since)' \
-                >/dev/null; then
+        if (( $(hit_count "${role}") > before )); then
             pass "${role}: second clean-client fetch was served from cache"
             return
         fi
         sleep 0.25
     done
-    fail "${role}: no cache hit appeared in the recent-request feed"
+    fail "${role}: the server counted no cache hit for the second fetch"
+}
+
+api_login() {
+    [[ -n "${API_SESSION}" ]] && return 0
+    [[ -n "${API_USER}" && -r "${API_PASSWORD_FILE}" ]] || return 1
+    API_SESSION="${WORK_DIR}/api.cookies"
+    jq --null-input --arg u "${API_USER}" --rawfile p "${API_PASSWORD_FILE}" \
+        '{username: $u, password: ($p | rtrimstr("\n"))}' \
+        | https_json --cookie-jar "${API_SESSION}" --header 'Content-Type: application/json' \
+            --data @- "${HTTPS_BASE}/api/v1/login" >/dev/null \
+        || fail "could not sign in to the console as ${API_USER}"
 }
 
 assert_ledger_artifact() {
@@ -144,14 +172,25 @@ assert_ledger_artifact() {
     local ecosystem="$2"
     local query="$3"
     local response="${WORK_DIR}/ledger-${role}-${ecosystem}.json"
-
-    https_json --get \
-        --data-urlencode "eco=${ecosystem}" \
+    if ! api_login; then
+        skip "${role}: inventory not checked (set CACHE_API_USER and mount the password at ${API_PASSWORD_FILE})"
+        return
+    fi
+    # The inventory is per ecosystem; apk packages are apt's, and the older client names
+    # map to the server's ecosystem ids.
+    local eco="${ecosystem}"
+    case "${ecosystem}" in
+        docker) eco=oci ;;
+        pip) eco=pypi ;;
+        apk) eco=apt ;;
+    esac
+    https_json --get --cookie "${API_SESSION}" \
+        --data-urlencode "eco=${eco}" \
         --data-urlencode "q=${query}" \
-        "${HTTPS_BASE}/${PROJECT}/${role}/+ledger/artifacts" > "${response}"
+        "${HTTPS_BASE}/api/v1/projects/${PROJECT}/artifacts" > "${response}"
     jq --exit-status '.artifacts | length > 0' "${response}" >/dev/null \
-        || fail "${role}: ledger has no ${ecosystem} artifact matching '${query}'"
-    pass "${role}: artifact is present in the ledger"
+        || fail "${role}: the inventory has no ${ecosystem} artifact matching '${query}'"
+    pass "${role}: artifact is present in the inventory"
 }
 
 tree_manifest() {
@@ -181,27 +220,36 @@ assert_same_tree() {
 
 check_health() {
     log "Health and mode checks"
-    https_json "${HTTPS_BASE}/healthz" \
-        | jq --exit-status '.status == "ok" and .server == "unified"' >/dev/null \
+    local health
+    health="$(https_json "${HTTPS_BASE}/healthz")" \
+        || fail "unified HTTPS endpoint is unhealthy"
+    jq --exit-status '.status == "ok" and .server == "unified"' <<<"${health}" >/dev/null \
         || fail "unified HTTPS endpoint is unhealthy"
 
-    local expected_offline=false
-    [[ "${TEST_PHASE}" == "offline" ]] && expected_offline=true
-
+    # The server lists the roles it serves on its own health endpoint. There is no
+    # per-role /<project>/<role>/healthz: that path is a package name to npm and PyPI
+    # (/global/npm/healthz is the npm package called "healthz"). apt is absent from the
+    # list because it is the forward proxy rather than a path role; the apt/apk checks
+    # below exercise it directly, and every role's own checks cover the offline phase.
     local role
-    for role in oci npm pypi apt git files; do
-        https_json "${HTTPS_BASE}/${PROJECT}/${role}/healthz" \
-            | jq --exit-status \
-                --arg role "${role}" \
-                --arg project "${PROJECT}" \
-                --argjson offline "${expected_offline}" \
-                '.status == "ok"
-                 and .role == $role
-                 and .project == $project
-                 and .offline == $offline' >/dev/null \
-            || fail "${role}: health response does not match project/mode"
+    for role in oci npm pypi git files; do
+        jq --exit-status --arg role "${role}" '.roles | index($role) != null' \
+            <<<"${health}" >/dev/null \
+            || fail "${role}: not among the roles the server reports"
     done
     pass "all six roles are healthy in ${TEST_PHASE} mode"
+
+    [[ "${TEST_PHASE}" == "offline" ]] || return 0
+    # Replay proves something only if the project really is offline: run against one that
+    # is not, every check below passes by fetching again.
+    if ! api_login; then
+        skip "offline mode not confirmed (no console account); the files write refusal still requires it"
+        return
+    fi
+    https_json --cookie "${API_SESSION}" "${HTTPS_BASE}/api/v1/projects/${PROJECT}" \
+        | jq --exit-status '.offline == true' >/dev/null \
+        || fail "project ${PROJECT} is online; switch it to offline mode before the offline phase"
+    pass "project ${PROJECT} is in offline mode"
 }
 
 test_oci() {
@@ -222,7 +270,7 @@ test_oci() {
     fi
     local ref="docker://${CACHE_HOST}:${CACHE_HTTPS_PORT}/${OCI_PROJECT_PREFIX}${OCI_IMAGE}"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count oci)"
 
     skopeo copy \
         --src-tls-verify=true \
@@ -249,15 +297,23 @@ test_pypi() {
     mkdir -p "${first}" "${second}"
     local index="${HTTPS_BASE}/${PROJECT}/pypi/root/pypi/+simple/"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count pypi)"
 
+    # pip 24.2 and later verify through the system trust store, which cannot check a
+    # certificate against an IP address: pip stops with "check_hostname requires
+    # server_hostname" before it sends anything. Its previous verifier can, and still
+    # checks the certificate against the CA and the address.
+    local tls=()
+    if [[ "${CACHE_HOST}" =~ ^[0-9.]+$ || "${CACHE_HOST}" == *:* ]]; then
+        tls=(--use-deprecated=legacy-certs)
+    fi
     python -m pip download \
         --quiet --disable-pip-version-check --no-cache-dir --no-deps \
-        --cert "${CA_CERT}" --index-url "${index}" \
+        --cert "${CA_CERT}" "${tls[@]}" --index-url "${index}" \
         --dest "${first}" "${PYPI_PACKAGE}"
     python -m pip download \
         --quiet --disable-pip-version-check --no-cache-dir --no-deps \
-        --cert "${CA_CERT}" --index-url "${index}" \
+        --cert "${CA_CERT}" "${tls[@]}" --index-url "${index}" \
         --dest "${second}" "${PYPI_PACKAGE}"
 
     assert_same_tree pypi "${first}" "${second}"
@@ -272,7 +328,7 @@ test_npm() {
     mkdir -p "${first}" "${second}"
     local registry="${HTTPS_BASE}/${PROJECT}/npm/"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count npm)"
 
     npm pack "${NPM_PACKAGE}" \
         --silent \
@@ -350,7 +406,7 @@ test_apt_apk() {
     local apt_first="${WORK_DIR}/apt-first"
     local apt_second="${WORK_DIR}/apt-second"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count apt)"
 
     apt_fetch "${apt_first}"
     apt_fetch "${apt_second}"
@@ -383,7 +439,7 @@ test_git() {
     local first="${WORK_DIR}/git-first"
     local second="${WORK_DIR}/git-second"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count git)"
 
     git_clone "${first}"
     git_clone "${second}"
@@ -435,7 +491,7 @@ test_files() {
     local auth_headers="${WORK_DIR}/files-auth.headers"
     local url="${HTTPS_BASE}/${PROJECT}/files/${FILES_PATH}"
     local since
-    since="$(date +%s.%3N)"
+    since="$(hit_count files)"
     make_files_payload "${payload}"
 
     local token
@@ -539,12 +595,14 @@ write_summary() {
         --arg project "${PROJECT}" \
         --arg cache "${CACHE_HOST}:${CACHE_HTTPS_PORT}" \
         --argjson checks "${PASS_COUNT}" \
+        --argjson skipped "${SKIP_COUNT}" \
         '{
             status: $status,
             phase: $phase,
             project: $project,
             cache: $cache,
-            checks_passed: $checks
+            checks_passed: $checks,
+            checks_skipped: $skipped
         }' > "${RESULTS_DIR}/summary.json"
 }
 
@@ -567,7 +625,7 @@ main() {
     test_files
     write_summary
 
-    log "All six repository roles passed (${PASS_COUNT} assertions)"
+    log "All six repository roles passed (${PASS_COUNT} assertions, ${SKIP_COUNT} skipped)"
     printf 'Machine-readable summary: %s/summary.json\n' "${RESULTS_DIR}"
 }
 

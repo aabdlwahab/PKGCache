@@ -68,6 +68,9 @@ type mirrorManager struct {
 	refsTTL time.Duration
 	sem     chan struct{}
 
+	versionOnce sync.Once
+	version     gitVersion
+
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 	fresh map[string]time.Time
@@ -224,11 +227,7 @@ func (m *mirrorManager) clone(ctx context.Context, mirrorDir, upstreamURL string
 }
 
 func (m *mirrorManager) fetch(ctx context.Context, mirrorDir string) error {
-	if _, err := m.run(ctx, "fetch", "",
-		"-c", "credential.helper=",
-		"--git-dir", mirrorDir,
-		"fetch", "--progress", "--prune", "--no-write-fetch-head",
-		"--no-auto-maintenance", "--atomic", "origin"); err != nil {
+	if _, err := m.run(ctx, "fetch", "", fetchArgs(m.installed(ctx), mirrorDir)...); err != nil {
 		return err
 	}
 	// Fetch does not update the bare repository's HEAD. A stale HEAD still serves,
@@ -244,6 +243,87 @@ func (m *mirrorManager) fetch(ctx context.Context, mirrorDir string) error {
 		}
 	}
 	return nil
+}
+
+// gitVersion is the installed git's release, as far as it matters here: which options it
+// can be asked for. The zero value is older than every gate below, which is the safe
+// answer when the version cannot be read.
+type gitVersion struct{ major, minor int }
+
+func (v gitVersion) atLeast(major, minor int) bool {
+	return v.major > major || (v.major == major && v.minor >= minor)
+}
+
+// parseGitVersion reads `git version`: "git version 2.27.0", and vendor spellings such as
+// "git version 2.39.3 (Apple Git-146)" and "git version 2.45.2.windows.1".
+func parseGitVersion(out string) (gitVersion, bool) {
+	fields := strings.Fields(out)
+	if len(fields) < 3 || fields[0] != "git" || fields[1] != "version" {
+		return gitVersion{}, false
+	}
+	parts := strings.Split(fields[2], ".")
+	if len(parts) < 2 {
+		return gitVersion{}, false
+	}
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	if majorErr != nil || minorErr != nil {
+		return gitVersion{}, false
+	}
+	return gitVersion{major: major, minor: minor}, true
+}
+
+// installed reports the version of the git this manager runs, asked once. The answer is
+// kept for the process, so the question is not cut short by the caller that happens to
+// ask it first giving up.
+func (m *mirrorManager) installed(ctx context.Context) gitVersion {
+	m.versionOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if out, err := m.run(ctx, "version", "", "version"); err == nil {
+			m.version, _ = parseGitVersion(out)
+		}
+	})
+	return m.version
+}
+
+// fetchArgs is the refresh command for the git that will run it.
+//
+// Every option here that is newer than the git a supported distribution ships is a
+// refinement, and is passed only to a git that knows it. They were passed to every git,
+// and git 2.27 — RHEL 8's — answers an option it does not know with a usage error, so
+// every repository failed to mirror with a 502. Without them: FETCH_HEAD is written into
+// the bare mirror, where nothing reads it; automatic maintenance stays off, because the
+// mirror's own config turns it off; and a fetch that fails part-way may leave some refs
+// updated, which the next refresh completes.
+func fetchArgs(v gitVersion, mirrorDir string) []string {
+	args := []string{
+		"-c", "credential.helper=",
+		"--git-dir", mirrorDir,
+		"fetch", "--progress", "--prune",
+	}
+	if v.atLeast(2, 29) {
+		args = append(args, "--no-write-fetch-head", "--no-auto-maintenance")
+	}
+	if v.atLeast(2, 31) {
+		args = append(args, "--atomic")
+	}
+	return append(args, "origin")
+}
+
+// repackArgs consolidates a mirror's packs with what the installed git offers. A geometric
+// repack (2.32) only rewrites the small packs; before it, everything is folded into one
+// pack, as gc itself does.
+func repackArgs(v gitVersion, mirrorDir string) []string {
+	args := []string{"--git-dir", mirrorDir, "repack", "-d"}
+	switch {
+	case v.atLeast(2, 34):
+		return append(args, "--geometric=2", "--write-midx")
+	case v.atLeast(2, 32):
+		return append(args, "--geometric=2")
+	default:
+		return append(args, "-a")
+	}
 }
 
 type gitRef struct {
@@ -279,8 +359,7 @@ func (m *mirrorManager) maintain(
 	if !mirrorExists(mirrorDir) {
 		return fmt.Errorf("%w: %s", ErrNotCached, key)
 	}
-	if _, err := m.run(ctx, "geometric repack", "",
-		"--git-dir", mirrorDir, "repack", "-d", "--geometric=2", "--write-midx"); err != nil {
+	if _, err := m.run(ctx, "repack", "", repackArgs(m.installed(ctx), mirrorDir)...); err != nil {
 		return err
 	}
 	if _, err := m.run(ctx, "pack refs", "",

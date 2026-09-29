@@ -332,6 +332,7 @@ func Build(ctx context.Context, o Options, args []string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
+	rewrite.BuildArgs = buildArgsOf(rest)
 	result, err := dockerfile.Rewrite(source, rewrite)
 	if err != nil {
 		return err
@@ -546,4 +547,32 @@ func authorityOf(raw string) string {
 		}
 	}
 	return trimmed
+}
+
+// buildArgsOf collects a docker build's --build-arg values, as Docker would see them: a
+// bare name takes its value from the environment, and is left out when that is unset,
+// which leaves the Dockerfile's default in force.
+func buildArgsOf(args []string) map[string]string {
+	values := map[string]string{}
+	add := func(pair string) {
+		name, value, hasValue := strings.Cut(pair, "=")
+		if !hasValue {
+			env, set := os.LookupEnv(name)
+			if !set {
+				return
+			}
+			value = env
+		}
+		values[name] = value
+	}
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--build-arg" && i+1 < len(args):
+			add(args[i+1])
+			i++
+		case strings.HasPrefix(args[i], "--build-arg="):
+			add(strings.TrimPrefix(args[i], "--build-arg="))
+		}
+	}
+	return values
 }

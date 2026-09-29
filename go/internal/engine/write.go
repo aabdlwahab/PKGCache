@@ -175,7 +175,7 @@ func (e *Engine) Exchange(
 		return resp.StatusCode, resp.Header.Clone(), nil,
 			fmt.Errorf("%w: upstream exchange over %d bytes", ErrTooLarge, maxBytes)
 	}
-	e.pool.CountBytes(req.Eco, req.URL, int64(len(body)))
+	e.pool.CountBytes(req.Eco, servedBy(resp, req.URL), int64(len(body)))
 	return resp.StatusCode, resp.Header.Clone(), body, nil
 }
 
@@ -208,3 +208,12 @@ func (e *Engine) Blobs() *blob.Store { return e.blobs }
 
 // Catalog exposes the metadata store, for the same reason.
 func (e *Engine) Catalog() catalog.Store { return e.cat }
+
+// servedBy is where a response's bytes came from, or the URL asked for when the response
+// cannot say.
+func servedBy(resp *http.Response, asked string) string {
+	if served := upstream.ServedBy(resp); served != "" {
+		return served
+	}
+	return asked
+}

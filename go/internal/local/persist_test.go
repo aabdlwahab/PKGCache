@@ -216,6 +216,60 @@ func TestPersistLeavesExistingSettingsAlone(t *testing.T) {
 	}
 }
 
+// uv is given the cache for `uv pip` only. A default index would reach its project commands
+// as well, and every `uv sync --locked` against a lock made on PyPI would then refuse it,
+// while `uv lock` wrote this machine's loopback address into the lock.
+func TestPersistPointsOnlyUVsPipInterfaceAtTheCache(t *testing.T) {
+	home := t.TempDir()
+	if err := ApplyPersist(PersistOptions{
+		BaseURL: "http://127.0.0.1:41780", Project: "global", Home: home,
+		Available: AvailabilityAccepted, Out: io.Discard,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(filepath.Join(home, ".config", "uv", "uv.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(written)
+	if !strings.Contains(text, "[pip]\nindex-url = \"http://127.0.0.1:41780/global/pypi/root/pypi/+simple/\"") {
+		t.Fatalf("uv.toml does not point uv pip at the cache:\n%s", text)
+	}
+	if strings.Contains(text, "[[index]]") || strings.Contains(text, "default = true") {
+		t.Fatalf("uv.toml sets an index uv's project commands would use:\n%s", text)
+	}
+}
+
+// TOML defines a table once: a second [pip] after the user's own would make uv refuse to
+// read the file at all, and then to run. Their file is left as it is, with the line to add.
+func TestPersistLeavesTheUsersOwnPipTableAlone(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".config", "uv", "uv.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	own := "[pip]\nextra-index-url = [\"https://mirror.example/simple\"]\n"
+	// As an older persist would have left it: its block beside the user's table.
+	stale := own + beginMarker + "\n[[index]]\nurl = \"http://127.0.0.1:41780/global/pypi/root/pypi/+simple/\"\ndefault = true\n" + endMarker + "\n"
+	if err := os.WriteFile(path, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := ApplyPersist(PersistOptions{
+		BaseURL: "http://127.0.0.1:41780", Project: "global", Home: home,
+		Available: AvailabilityAccepted, Out: &out,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != own {
+		t.Fatalf("uv.toml = %q, want the user's own table alone", got)
+	}
+	if !strings.Contains(out.String(), "has a [pip] table of its own") ||
+		!strings.Contains(out.String(), "index-url = \"http://127.0.0.1:41780/global/pypi/root/pypi/+simple/\"") {
+		t.Fatalf("the reason and the line to add were not printed:\n%s", out.String())
+	}
+}
+
 // A file that existed only for us is removed rather than left empty.
 func TestPersistRemovesFilesItCreated(t *testing.T) {
 	home := t.TempDir()

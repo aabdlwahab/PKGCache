@@ -104,6 +104,8 @@ type Ref struct {
 	LastModified string
 	FetchedAt    time.Time
 	TTL          time.Duration
+	// Source is the URL the target's bytes were fetched from, when that is known.
+	Source string
 }
 
 // Fresh reports whether the ref may be used without revalidating upstream.

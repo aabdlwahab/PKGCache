@@ -70,6 +70,14 @@ func newHarness(t *testing.T) *harness {
 		Metrics: m,
 		Events:  obs.NewBus(),
 	})
+	// Registered last, so it runs first: a fetch a test started but did not wait for —
+	// one a HEAD answered from its headers, say — finishes before the catalog closes and
+	// the directory it is writing into is removed.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = e.Drain(ctx)
+	})
 	return &harness{engine: e, blobs: blobs, cat: cat, origin: origin, cfg: cfg}
 }
 
@@ -676,6 +684,35 @@ func TestS2SingleFlightManyReaders(t *testing.T) {
 	}
 }
 
+// A client that leaves part-way is let go at once. Its request used to be held until the
+// whole fetch finished — 28 minutes for the rest of a 2 GB layer — and logged as a 200.
+func TestAClientThatLeavesIsNotHeldUntilTheFetchEnds(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("linger-", 512<<10)
+	h.origin.Handle("/slow.whl", testupstream.Behaviour{
+		Body: body, ChunkSize: 8 << 10, DelayPerChunk: 50 * time.Millisecond, // ~3 s
+	})
+	res := h.resolution("/slow.whl")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		_, _ = h.engine.Serve(httptest.NewRecorder(), get("/slow.whl").WithContext(ctx), res)
+	}()
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-served:
+	case <-time.After(time.Second):
+		t.Fatal("the request was still held a second after its client left")
+	}
+	if h.engine.Inflight().Len() != 1 {
+		t.Fatal("the fetch had already ended: the test no longer outlasts the client")
+	}
+}
+
 // A client disconnecting mid-download must not abort the fetch: other readers and
 // the cache itself still want it. This is why the fetch goroutine runs on a detached
 // context.
@@ -989,6 +1026,70 @@ func choppyOrigin(t *testing.T, body []byte, chunk int) (*httptest.Server, *int6
 	return srv, &requests
 }
 
+// stallingOrigin sends the first cut bytes of body and then nothing, holding the
+// connection open — until asked for a range, which it serves in full.
+func stallingOrigin(t *testing.T, body []byte, cut int) (*httptest.Server, *int64) {
+	t.Helper()
+	var requests int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&requests, 1)
+		start := 0
+		if rng := r.Header.Get("Range"); rng != "" {
+			if _, err := fmt.Sscanf(rng, "bytes=%d-", &start); err != nil || start > len(body) {
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			w.Header().Set("Content-Range",
+				fmt.Sprintf("bytes %d-%d/%d", start, len(body)-1, len(body)))
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)-start))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(body[start:])
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body[:cut])
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &requests
+}
+
+// A transfer whose origin stops sending is picked up again once it has been silent for
+// the idle timeout, not after the whole request's budget — which is sized for the largest
+// artifact on the slowest link, and was spent waiting on a stall.
+func TestAStalledTransferIsPickedUpWithoutWaitingOutTheRequest(t *testing.T) {
+	h := newHarness(t)
+	pool, err := upstream.New(config.Upstream{
+		RequestTimeout: 30 * time.Second, ConnectTimeout: 5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second, BodyIdleTimeout: 200 * time.Millisecond,
+	}, obs.NewMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.engine.pool = pool
+
+	body := testupstream.Repeat("stall-", 4<<20)
+	srv, requests := stallingOrigin(t, body, 1<<20)
+	res := h.resolution("/stalls.layer")
+	res.Upstream = upstream.Request{URL: srv.URL + "/stalls.layer"}
+
+	started := time.Now()
+	rec, _, err := h.serve(t, get("/stalls.layer"), res)
+	if err != nil {
+		t.Fatalf("a stalled transfer that can be resumed failed: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("took %s: the stall was waited out rather than noticed", elapsed)
+	}
+	if !equal(rec.Body.Bytes(), body) {
+		t.Fatalf("delivered %d bytes, want %d", rec.Body.Len(), len(body))
+	}
+	if n := atomic.LoadInt64(requests); n != 2 {
+		t.Fatalf("%d requests to the origin, want the first and one resume", n)
+	}
+}
+
 func TestInterruptedTransferResumesFromWhereItStopped(t *testing.T) {
 	h := newHarness(t)
 	body := testupstream.Repeat("chunk-", 200_000)
@@ -1164,5 +1265,149 @@ func TestACancelBeforeTheTransferStartsIsNotLost(t *testing.T) {
 	}
 	if h.blobs.Exists(digestOf(body)) {
 		t.Error("a download cancelled before it started was kept")
+	}
+}
+
+// headerSpy notes whether the fetch had finished at the moment a response was committed.
+type headerSpy struct {
+	*httptest.ResponseRecorder
+	fetch          *Fetch
+	doneAtHeader   bool
+	headersWritten bool
+}
+
+func (s *headerSpy) WriteHeader(code int) {
+	if !s.headersWritten {
+		_, s.doneAtHeader, _, _ = s.fetch.state()
+		s.headersWritten = true
+	}
+	s.ResponseRecorder.WriteHeader(code)
+}
+
+// A client resuming a broken transfer asks for "bytes=N-". That has to start answering
+// while the download is still running: a chained cache gives up on a response header
+// after a minute, and holding the range until a multi-gigabyte file had fully arrived
+// turned every dropped connection into a failed build.
+func TestOpenEndedRangeRidesAnInFlightFetch(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("resume-", 256<<10)
+	h.origin.Handle("/slow.whl", testupstream.Behaviour{
+		Body: body, ChunkSize: 8 << 10, DelayPerChunk: 5 * time.Millisecond,
+	})
+	res := h.resolution("/slow.whl")
+
+	f, created := h.engine.Inflight().Start("global\x00pypi\x00slow.whl", "pypi")
+	if !created {
+		t.Fatal("expected to create the fetch")
+	}
+	req := res.Upstream
+	req.Eco = "pypi"
+	go h.engine.runFetch(f, req, Expect{}, nil)
+
+	const from = 100_000
+	ranged := get("/slow.whl")
+	ranged.Header.Set("Range", fmt.Sprintf("bytes=%d-", from))
+	spy := &headerSpy{ResponseRecorder: httptest.NewRecorder(), fetch: f}
+	if _, err := h.engine.Serve(spy, ranged, res); err != nil {
+		t.Fatalf("ranged serve: %v", err)
+	}
+	if spy.doneAtHeader {
+		t.Fatal("the range was answered only after the whole download finished")
+	}
+	if spy.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d, want 206", spy.Code)
+	}
+	wantRange := fmt.Sprintf("bytes %d-%d/%d", from, len(body)-1, len(body))
+	if got := spy.Header().Get("Content-Range"); got != wantRange {
+		t.Fatalf("Content-Range = %q, want %q", got, wantRange)
+	}
+	if got := spy.Body.Bytes(); !equal(got, body[from:]) {
+		t.Fatalf("range body is %d bytes, want %d from offset %d", len(got), len(body)-from, from)
+	}
+}
+
+func TestOpenEndedRangeParsing(t *testing.T) {
+	cases := map[string]struct {
+		header string
+		from   int64
+		ok     bool
+	}{
+		"resume":     {"bytes=4096-", 4096, true},
+		"from zero":  {"bytes=0-", 0, true},
+		"bounded":    {"bytes=0-99", 0, false},
+		"suffix":     {"bytes=-500", 0, false},
+		"multi":      {"bytes=0-9,20-", 0, false},
+		"other unit": {"items=5-", 0, false},
+		"none":       {"", 0, false},
+	}
+	for name, c := range cases {
+		req := get("/x")
+		if c.header != "" {
+			req.Header.Set("Range", c.header)
+		}
+		from, ok := openEndedRange(req)
+		if ok != c.ok || from != c.from {
+			t.Errorf("%s: openEndedRange(%q) = %d, %v", name, c.header, from, ok)
+		}
+	}
+	conditional := get("/x")
+	conditional.Header.Set("Range", "bytes=10-")
+	conditional.Header.Set("If-Range", `"etag"`)
+	if _, ok := openEndedRange(conditional); ok {
+		t.Error("a conditional range was treated as unconditional")
+	}
+}
+
+// A HEAD on a file still downloading is answered from the upstream headers, not after
+// the whole file has arrived.
+func TestHeadOnAnInFlightFetchDoesNotWaitForTheBody(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("head-", 256<<10)
+	h.origin.Handle("/slow.whl", testupstream.Behaviour{
+		Body: body, ChunkSize: 8 << 10, DelayPerChunk: 5 * time.Millisecond,
+	})
+	res := h.resolution("/slow.whl")
+	f, created := h.engine.Inflight().Start("global\x00pypi\x00slow.whl", "pypi")
+	if !created {
+		t.Fatal("expected to create the fetch")
+	}
+	req := res.Upstream
+	req.Eco = "pypi"
+	go h.engine.runFetch(f, req, Expect{}, nil)
+
+	head := httptest.NewRequest(http.MethodHead, "/slow.whl", nil)
+	spy := &headerSpy{ResponseRecorder: httptest.NewRecorder(), fetch: f}
+	if _, err := h.engine.Serve(spy, head, res); err != nil {
+		t.Fatalf("HEAD: %v", err)
+	}
+	if spy.doneAtHeader {
+		t.Fatal("the HEAD was answered only after the whole download finished")
+	}
+	if spy.Code != http.StatusOK || spy.Header().Get("Content-Length") != fmt.Sprint(len(body)) ||
+		spy.Body.Len() != 0 {
+		t.Fatalf("HEAD = %d, length %q, %d body bytes", spy.Code,
+			spy.Header().Get("Content-Length"), spy.Body.Len())
+	}
+}
+
+// An origin that keeps dropping a long transfer but moves it megabytes at a time is slow,
+// not hopeless: it is followed to the end however many drops that takes. Counting every
+// drop against it discarded a 1.44 GB layer 650 MB in and began again.
+func TestResumingFollowsAnOriginThatKeepsMakingProgress(t *testing.T) {
+	h := newHarness(t)
+	body := testupstream.Repeat("layer-", 24<<20) // 24 MiB, dropped every 2 MiB
+	srv, requests := choppyOrigin(t, body, 2<<20)
+	res := h.resolution("/big.layer")
+	res.Upstream = upstream.Request{URL: srv.URL + "/big.layer"}
+
+	rec, _, err := h.serve(t, get("/big.layer"), res)
+	if err != nil {
+		t.Fatalf("a transfer that kept making progress failed: %v", err)
+	}
+	if !equal(rec.Body.Bytes(), body) {
+		t.Fatalf("delivered %d bytes, want %d", rec.Body.Len(), len(body))
+	}
+	if n := atomic.LoadInt64(requests); n <= maxResumeAttempts+1 {
+		t.Fatalf("only %d requests: the test no longer needs more drops than the old cap", n)
 	}
 }

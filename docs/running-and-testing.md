@@ -263,7 +263,7 @@ eval "$(./bin/pkgreg-bridge -server https://127.0.0.1:48443 -print-env)"
 # export PKGREG_DOCKER_REGISTRY=127.0.0.1:41999
 # export PKGREG_GIT_URL=http://127.0.0.1:41999/global/git
 # export PIP_INDEX_URL=http://127.0.0.1:41999/global/pypi/root/pypi/+simple/
-# export UV_DEFAULT_INDEX=http://127.0.0.1:41999/global/pypi/root/pypi/+simple/
+# export UV_INDEX_URL=http://127.0.0.1:41999/global/pypi/root/pypi/+simple/
 # export NPM_CONFIG_REGISTRY=http://127.0.0.1:41999/global/npm/
 # export PKGREG_FILES_URL=http://127.0.0.1:41999/global/files/
 ```

@@ -7,6 +7,7 @@ package local
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/aabdlwahab/PKGCache/internal/app"
 	"github.com/aabdlwahab/PKGCache/internal/config"
@@ -92,4 +93,44 @@ func managedUpstreamsFor(
 		}
 	}
 	return managed
+}
+
+// A daemon that has stopped answering can still be draining its transfers, and it holds
+// the store until it has exited. Chain configuration waits for it rather than opening the
+// store beside it: `pkgcache setup` on a sibling serving another machine did not, and its
+// startup sweep deleted nine staging files the old daemon was still writing.
+func TestConfigureChainsWaitsForADrainingDaemon(t *testing.T) {
+	t.Setenv(ProjectEnvVar, "")
+	snap := testSnapshot(t, 0)
+	if err := snap.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	// The draining daemon: it holds its lock, exactly as Run does until it returns.
+	daemon, err := Acquire(LockPath(snap.DataDir), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var set TeamSet
+	set.Set(config.GlobalProject, Team{Server: "https://team", Project: "global", Direct: true})
+	done := make(chan error, 1)
+	go func() {
+		_, err := ConfigureChains(context.Background(), snap, set)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("the store was opened while the daemon still held it (err %v)", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := daemon.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("chain configuration did not proceed once the daemon let go")
+	}
 }

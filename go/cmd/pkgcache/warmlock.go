@@ -23,7 +23,8 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/lockwarm"
 )
 
-// `pkgcache warmlock` — pull a lock file's contents into the cache, and point the lock at it.
+// `pkgcache warmlock` — pull a lock file's contents into the cache, and, with -rewrite, point
+// the lock at it.
 //
 // Five formats: uv.lock, package-lock.json (npm-shrinkwrap.json with it), yarn.lock in
 // both the v1 and berry shapes, and pnpm-lock.yaml. Which one it is is read from the
@@ -33,11 +34,18 @@ import (
 // it the best possible thing to warm a cache from: no resolver to run, no guessing, and
 // the same answer on every machine that shares the lock.
 //
-// Two halves, and the second is the one that pays off later. Warming fills the cache.
-// Rewriting points the lock at the cache, so `uv sync`, `npm ci` or `yarn install` on a
+// Two halves, and only the first is done unless asked for. Warming fills the cache.
+// Rewriting points the lock at the cache, so `uv sync`, `npm ci` or `yarn install` on this
 // machine with no internet still resolves — the URLs in the file are the cache's own. The
 // tools verify hashes either way, and the hashes are untouched, so a rewritten lock
 // installs exactly the artefacts the original named or it fails.
+//
+// The rewrite used to be the default, and the address it writes is this machine's
+// loopback: a lock rewritten that way failed with "Connection refused" in every Docker
+// build, where 127.0.0.1 is the container, and on every other machine once committed. A
+// build and a session route an unmodified lock through the cache already (the uv lock
+// lending in dockerfile.UVWrapper, npm's own registry setting), so leaving the lock alone
+// loses nothing there, and -rewrite remains for installing here with the network gone.
 //
 // Two of the formats cannot be pointed anywhere by editing them: yarn berry and pnpm
 // write no URLs, only a package and a version, and decide the registry at install time
@@ -48,13 +56,40 @@ import (
 // comments and hashes survive byte-for-byte. That is what makes the .old file a diff
 // somebody can read rather than a reformat they have to trust.
 
+// warmlockRequest is what warmlock's command line asked for.
+type warmlockRequest struct {
+	local     config.LocalFlags
+	lockPath  string
+	recursive bool
+	root      string
+	opts      uvOptions
+}
+
 func runWarmlock(ctx context.Context, args []string) error {
+	request, err := parseWarmlock(args)
+	if err != nil {
+		return err
+	}
+	snap, err := config.LoadLocal(request.local)
+	if err != nil {
+		return err
+	}
+	if request.recursive {
+		return warmTree(ctx, snap, request.root, request.opts)
+	}
+	return warmOne(ctx, snap, request.lockPath, request.opts)
+}
+
+// parseWarmlock reads warmlock's flags, apart from anything that needs the cache.
+func parseWarmlock(args []string) (warmlockRequest, error) {
 	fs := flag.NewFlagSet("warmlock", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	collect := bindLocalFlags(fs)
 	lockPath := fs.String("lock", "uv.lock", "the lock file to warm from")
 	workers := fs.Int("workers", 8, "how many files to fetch at once")
-	warmOnly := fs.Bool("warm-only", false, "fill the cache and leave the lock file alone")
+	rewrite := fs.Bool("rewrite", false,
+		"also point the lock at this machine's cache; it then works here only, not in a Docker build or on another machine")
+	warmOnly := fs.Bool("warm-only", false, "fill the cache and leave the lock file alone (the default)")
 	suffix := fs.String("backup-suffix", ".old", "what to call the copy of the original")
 	eager := fs.Bool("eager", false, "fetch the distribution files too, not just the indexes")
 	target := fs.String("target", "auto",
@@ -64,14 +99,18 @@ func runWarmlock(ctx context.Context, args []string) error {
 	recursive := fs.Bool("recursive", false,
 		"warm every lock file below this directory, not just the one here")
 	fs.Usage = func() {
-		_, _ = fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a lock file, and point the lock at it
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache warmlock — warm the cache from a lock file
 
 usage: pkgcache warmlock [flags]
        pkgcache warmlock -recursive [dir]
 
-Makes this machine's cache able to serve everything a lock pins, and then rewrites the
-lock so its URLs name the cache instead of the internet. The original is kept beside it
-as <lock>.old.
+Makes this machine's cache able to serve everything a lock pins, and leaves the lock as it
+is: Docker builds through pkgcache-docker and pkgcache sessions already take an unmodified
+lock through the cache. -rewrite also rewrites the lock so its URLs name this machine's
+cache instead of the internet, keeping the original beside it as <lock>.old — which is
+what installing here with no network needs, and what breaks everywhere else: the address
+is this machine's loopback, so a Docker build or another machine cannot reach it, and a
+rewritten lock must not be committed.
 
 Understands uv.lock, package-lock.json (and npm-shrinkwrap.json), yarn.lock in both its
 v1 and berry forms, and pnpm-lock.yaml. The format is read from the file's contents, so
@@ -100,10 +139,10 @@ network later actually needs. It fetches only the files -target can install:
   -target macos/arm64       every Python, that platform
   -target musllinux/aarch64
 
-uv, npm and yarn v1 write the URL of every artefact into the lock, so those are rewritten.
-Yarn berry and pnpm write no URLs at all — they take the registry from configuration — so
-for those the cache is filled and the setting to change is named, and the lock is left
-exactly as it was.
+uv, npm and yarn v1 write the URL of every artefact into the lock, so those are what
+-rewrite changes. Yarn berry and pnpm write no URLs at all — they take the registry from
+configuration — so for those the cache is filled and the setting to change is named, and
+the lock is left exactly as it was.
 
 Where it rewrites, it touches only URLs. Hashes, versions, ordering, comments and
 formatting are unchanged, so `+"`diff <lock>.old <lock>`"+` shows exactly what moved — and
@@ -116,15 +155,15 @@ at wherever the cache is listening now, keeping the <lock>.old already beside it
 that copy rather than the current file is the original. A lock naming another machine's
 cache is left alone unless -retarget says to move it here.
 
--warm-only fills the cache and writes nothing, which is what a CI job wants when the lock
-in the repository has to stay as it is.
+-warm-only is accepted for scripts written when rewriting was the default; filling the cache
+and writing nothing is what happens now without -rewrite.
 
 flags:
 `)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		return err
+		return warmlockRequest{}, err
 	}
 	chosen := false
 	fs.Visit(func(f *flag.Flag) {
@@ -133,8 +172,12 @@ flags:
 		}
 	})
 	if *recursive && chosen {
-		return errors.New(
+		return warmlockRequest{}, errors.New(
 			"warmlock: -lock names one file and -recursive walks a tree; use one or the other")
+	}
+	if *rewrite && *warmOnly {
+		return warmlockRequest{}, errors.New(
+			"warmlock: -rewrite and -warm-only contradict each other; use one")
 	}
 	if !*recursive && !chosen {
 		// With no -lock, use whichever lock this directory actually has. Defaulting to
@@ -142,26 +185,24 @@ flags:
 		// package-lock.json sitting right there.
 		*lockPath = lockFileHere(*lockPath)
 	}
-	snap, err := config.LoadLocal(collect())
-	if err != nil {
-		return err
+	request := warmlockRequest{
+		local:     collect(),
+		lockPath:  *lockPath,
+		recursive: *recursive,
+		root:      ".",
+		opts: uvOptions{
+			workers:  *workers,
+			warmOnly: !*rewrite,
+			suffix:   *suffix,
+			eager:    *eager,
+			target:   *target,
+			retarget: *retarget,
+		},
 	}
-	opts := uvOptions{
-		workers:  *workers,
-		warmOnly: *warmOnly,
-		suffix:   *suffix,
-		eager:    *eager,
-		target:   *target,
-		retarget: *retarget,
+	if *recursive && fs.NArg() > 0 {
+		request.root = fs.Arg(0)
 	}
-	if *recursive {
-		root := "."
-		if fs.NArg() > 0 {
-			root = fs.Arg(0)
-		}
-		return warmTree(ctx, snap, root, opts)
-	}
-	return warmOne(ctx, snap, *lockPath, opts)
+	return request, nil
 }
 
 // warmOne warms one lock file, choosing the format from its bytes rather than its name,
@@ -361,7 +402,7 @@ func warmUVLock(
 	if len(unknown) > 0 {
 		return fmt.Errorf(
 			"warmlock: this cache serves no index for %s\n"+
-				"  Add it as a PyPI upstream, or use -warm-only and leave the lock alone",
+				"  Add it as a PyPI upstream: this cache cannot warm an index it does not serve",
 			strings.Join(dedupe(unknown), ", "))
 	}
 
@@ -403,6 +444,7 @@ func warmUVLock(
 			tally.failed.Load(), lockPath)
 	}
 	if opts.warmOnly {
+		fmt.Print(leftAlone(lockPath))
 		return nil
 	}
 
@@ -418,6 +460,7 @@ func warmUVLock(
 		opts.suffix, base, len(moved) > 0); err != nil {
 		return err
 	}
+	fmt.Print(rewroteHere(lockPath, base, opts.suffix))
 	if !opts.eager {
 		fmt.Printf("the files themselves are not in the cache yet; " +
 			"the first install pulls them through it\n")
@@ -706,7 +749,7 @@ func warmJSLock(
 	if len(unknown) > 0 {
 		return fmt.Errorf(
 			"warmlock: this cache serves no npm registry for %s\n"+
-				"  Point the npm upstream at it, or use -warm-only and leave the lock alone",
+				"  Point the npm upstream at it: this cache cannot warm a registry it does not serve",
 			strings.Join(dedupe(unknown), ", "))
 	}
 
@@ -744,6 +787,7 @@ func warmJSLock(
 		return nil
 	}
 	if warmOnly {
+		fmt.Print(leftAlone(lockPath))
 		return nil
 	}
 
@@ -752,7 +796,24 @@ func warmJSLock(
 		fmt.Printf("%s already points at this cache\n", lockPath)
 		return nil
 	}
-	return writeRewrittenLock(lockPath, original, rewritten, suffix, base, false)
+	if err := writeRewrittenLock(lockPath, original, rewritten, suffix, base, false); err != nil {
+		return err
+	}
+	fmt.Print(rewroteHere(lockPath, base, suffix))
+	return nil
+}
+
+// leftAlone is what a warm without -rewrite says about the lock it read.
+func leftAlone(lockPath string) string {
+	return fmt.Sprintf("%s is unchanged. -rewrite points it at this machine's cache, for "+
+		"installing here with no network.\n", lockPath)
+}
+
+// rewroteHere is the warning a rewritten lock needs: the address in it is this machine's.
+func rewroteHere(lockPath, base, suffix string) string {
+	return fmt.Sprintf("%s now names %s, this machine's cache: it works here only, not in a "+
+		"Docker build or on another machine, so do not commit it. %s%s is the original.\n",
+		lockPath, base, lockPath, suffix)
 }
 
 // writeRewrittenLock replaces the lock, keeping the original beside it.

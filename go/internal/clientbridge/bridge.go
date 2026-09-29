@@ -542,8 +542,10 @@ func envScript(shell, local, project string) string {
 			{"PKGREG_DOCKER_REGISTRY", local},
 			{"PKGREG_GIT_URL", base + "/" + project + "/git"},
 			{"PIP_INDEX_URL", pypi},
-			{"UV_DEFAULT_INDEX", pypi},
+			{"UV_INDEX_URL", pypi},
 			{"NPM_CONFIG_REGISTRY", npm},
+			{"PNPM_CONFIG_REGISTRY", npm},
+			{"COREPACK_NPM_REGISTRY", strings.TrimSuffix(npm, "/")},
 			{"PKGREG_FILES_URL", files},
 		} {
 			_, _ = fmt.Fprintf(&b, "$env:%s = %q\n", kv[0], kv[1])
@@ -557,8 +559,10 @@ func envScript(shell, local, project string) string {
 		{"PKGREG_DOCKER_REGISTRY", local},
 		{"PKGREG_GIT_URL", base + "/" + project + "/git"},
 		{"PIP_INDEX_URL", pypi},
-		{"UV_DEFAULT_INDEX", pypi},
+		{"UV_INDEX_URL", pypi},
 		{"NPM_CONFIG_REGISTRY", npm},
+		{"PNPM_CONFIG_REGISTRY", npm},
+		{"COREPACK_NPM_REGISTRY", strings.TrimSuffix(npm, "/")},
 		{"PKGREG_FILES_URL", files},
 	} {
 		_, _ = fmt.Fprintf(&b, "export %s=%s\n", kv[0], kv[1])

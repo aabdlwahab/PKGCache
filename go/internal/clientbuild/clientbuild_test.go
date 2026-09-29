@@ -229,6 +229,13 @@ func TestContextDirectorySkipsFlagValues(t *testing.T) {
 }
 
 func TestEnvironmentSuppliesTheSession(t *testing.T) {
+	// pkgcache's names win over pkgreg's, so inside a pkgcache session — `pkgcache run --
+	// go test` — the session's own values would answer instead of the ones set here.
+	for _, name := range []string{
+		"PKGCACHE_BRIDGE_URL", "PKGCACHE_DOCKER_REGISTRY", "PKGCACHE_PROJECT", "PKGCACHE_APT_PROXY",
+	} {
+		t.Setenv(name, "")
+	}
 	t.Setenv("PKGREG_BRIDGE_URL", "http://127.0.0.1:9")
 	t.Setenv("PKGREG_PROJECT", "team-a")
 	t.Setenv("PKGREG_APT_PROXY", "http://cache:3142")
@@ -238,5 +245,22 @@ func TestEnvironmentSuppliesTheSession(t *testing.T) {
 	}
 	if len(options.GitHosts) == 0 {
 		t.Fatal("git rewriting silently disabled by default")
+	}
+}
+
+func TestBuildArgsAreReadAsDockerReadsThem(t *testing.T) {
+	t.Setenv("FROM_ENV", "from-environment")
+	got := buildArgsOf([]string{
+		"build", "--build-arg", "A=1", "--build-arg=B=two=2", "--build-arg", "FROM_ENV",
+		"--build-arg", "UNSET_IN_ENV", "-t", "x", ".",
+	})
+	want := map[string]string{"A": "1", "B": "two=2", "FROM_ENV": "from-environment"}
+	if len(got) != len(want) {
+		t.Fatalf("build args = %v, want %v", got, want)
+	}
+	for name, value := range want {
+		if got[name] != value {
+			t.Fatalf("build args = %v, want %v", got, want)
+		}
 	}
 }

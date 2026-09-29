@@ -53,6 +53,9 @@ type Peers struct {
 	// Ecos answers which ecosystems this instance has, so no row is written for one
 	// this build does not serve.
 	Ecos *eco.Registry
+	// Refresh republishes the relays after the siblings change, so apt and release
+	// assets start going through a sibling the moment it is added. Nil skips it.
+	Refresh func(context.Context) error
 }
 
 var _ controlapi.LocalPeers = (*Peers)(nil)
@@ -275,7 +278,7 @@ func (p *Peers) AddPeer(
 		}
 	}
 	if token == "" || p.Credentials == nil {
-		return state, nil
+		return state, p.refresh(ctx)
 	}
 	for _, ecoID := range digestEcosystems {
 		if _, known := p.Ecos.Get(ecoID); !known {
@@ -298,7 +301,14 @@ func (p *Peers) AddPeer(
 		state.Offline = appendOnce(state.Offline, ecoID)
 	}
 	sort.Strings(state.Offline)
-	return state, nil
+	return state, p.refresh(ctx)
+}
+
+func (p *Peers) refresh(ctx context.Context) error {
+	if p.Refresh == nil {
+		return nil
+	}
+	return p.Refresh(ctx)
 }
 
 // ForgetPeer removes every row a sibling was added as.
@@ -306,7 +316,7 @@ func (p *Peers) AddPeer(
 // Matched on the machine rather than the row, because "stop borrowing from Sam" is what
 // somebody means and it is six rows. The public origins written beside it are left: they
 // are the chain this cache would have had anyway.
-func (p *Peers) ForgetPeer(_ context.Context, project, nameOrURL string) error {
+func (p *Peers) ForgetPeer(ctx context.Context, project, nameOrURL string) error {
 	rows, err := p.Store.Upstreams(project)
 	if err != nil {
 		return err
@@ -335,7 +345,7 @@ func (p *Peers) ForgetPeer(_ context.Context, project, nameOrURL string) error {
 	if removed == 0 {
 		return fmt.Errorf("local: no peer here is called %q", nameOrURL)
 	}
-	return nil
+	return p.refresh(ctx)
 }
 
 // orEmpty keeps a JSON array an array. A nil slice marshals to null, so a reader would

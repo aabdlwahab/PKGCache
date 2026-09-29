@@ -176,7 +176,19 @@ What it does, per platform:
 | CA into OS store | `/usr/local/share/ca-certificates` + `update-ca-certificates` (Debian/Alpine); `/etc/pki/ca-trust/source/anchors` + `update-ca-trust` (RHEL); `/etc/ca-certificates/trust-source/anchors` + `trust extract-compat` (Arch) | `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain` | `Import-Certificate` into `LocalMachine\Root` |
 | Docker | `/etc/docker/certs.d/<host>/ca.crt` | system keychain plus the same daemon path | inherited from `LocalMachine\Root` by Docker Desktop/Windows daemon |
 | Name | append to `/etc/hosts` | `/etc/hosts` | `%SystemRoot%\System32\drivers\etc\hosts` |
-| pip / npm / git / uv | managed project environment loaded through `/etc/profile.d` | managed project environment loaded through `/etc/zprofile` | reversible machine environment values, with previous values saved in `state.json` |
+| pip / npm / git | managed project environment loaded through `/etc/profile.d` | managed project environment loaded through `/etc/zprofile` | reversible machine environment values, with previous values saved in `state.json` |
+| uv | `uv pip` only: a `[pip]` table in `/etc/pkgreg/projects/<project>/xdg/uv/uv.toml`, which the managed environment puts first in `XDG_CONFIG_DIRS` | the same, through `/etc/zprofile` | `uv pip` only: a `[pip]` table in `%ProgramData%\uv\uv.toml` |
+
+uv gets no index in the environment. `UV_INDEX_URL` reaches uv's project commands as well
+as `uv pip`: `uv lock` and `uv sync` then rewrite the project's `uv.lock` to name the
+cache, a lock no machine without it can use, and `uv sync --locked` refuses a lock made
+against PyPI outright. A `[pip]` table is read by `uv pip` alone, so `uv sync`, `uv lock`,
+`uv run` and `uvx` resolve against the project's own index, as they would without the
+cache. A machine-level `uv.toml` the machine already has (`/etc/uv/uv.toml`,
+`/etc/xdg/uv/uv.toml`, `%ProgramData%\uv\uv.toml`) is left in charge; the script prints
+the `index-url` line to add to it. The TLS setting is exported under both of uv's names:
+`UV_SYSTEM_CERTS`, which older releases do not know, and `UV_NATIVE_TLS`, which uv 0.11
+still reads but warns about on every command and says it will drop.
 
 Both variants are idempotent, support dry-run and uninstall modes, manage an optional
 hosts entry (`--cache-ip` / `-CacheIP`), and fail with a clear message unless the

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -302,10 +303,33 @@ func (e *Engine) serveMiss(
 		}, res.Project)
 	}
 
-	// HEAD and Range cannot ride a progressive stream: a range needs random access
-	// into content that does not fully exist yet, and a HEAD has no body to stream.
-	// Both wait for the commit and then hand off to http.ServeContent, which does
-	// them properly.
+	// A range from some byte to the end is what a client resuming a broken transfer
+	// asks for, and it can ride the stream like any other reader, starting further in.
+	// Holding it until the commit instead made a resume of a large file wait for the
+	// whole download — and a chained cache resuming from this one gives up on a
+	// response header after a minute, turning a dropped connection into a failed build.
+	if from, ok := openEndedRange(r); ok {
+		if outcome, served, err := e.serveRangeInFlight(w, r, res, f, from, now); served {
+			return outcome, err
+		}
+	}
+
+	// A HEAD for content with no declared digest needs the headers, not the bytes. uv
+	// sends one for every wheel it installs by URL — a release asset, which nothing hashes
+	// up front — and holding it until a 300 MB wheel had crossed a slow link outlasted uv's
+	// timeout; it is answered as soon as the upstream has said how long the content is.
+	// Where a digest was declared, HEAD keeps its promise to wait for verification, so a
+	// probe for a bad wheel still answers 502 rather than 200.
+	if r.Method == http.MethodHead && res.Expect.Digest == "" {
+		if outcome, served := e.headInFlight(w, r, res, f, now); served {
+			return outcome, nil
+		}
+	}
+
+	// Every other range, and HEAD, cannot ride a progressive stream: a bounded or
+	// multi-part range needs random access into content that does not fully exist yet,
+	// and a HEAD has no body to stream. Both wait for the commit and then hand off to
+	// http.ServeContent, which does them properly.
 	if r.Method == http.MethodHead || r.Header.Get("Range") != "" {
 		if err := f.Wait(r.Context()); err != nil {
 			return OutcomeFail, err
@@ -359,17 +383,102 @@ func (e *Engine) serveMiss(
 	written, copyErr := io.Copy(w, body)
 
 	// The download continues regardless of what happened to this client: the fetch
-	// goroutine is detached, and other readers plus the cache itself still want it.
-	// The entry is published by that goroutine, so nothing is needed here beyond
-	// letting it finish before the request is considered served.
-	_ = f.Wait(context.WithoutCancel(r.Context()))
-
+	// goroutine is detached, and other readers plus the cache itself still want it, and
+	// it publishes the entry itself. Nothing here waits for it. A copy that ended cleanly
+	// read to the end of a finished fetch; one that did not has a client that is gone,
+	// and holding its request until the fetch finished kept it open — and logged it as a
+	// 200 — for as long as the rest of a 2 GB layer took: 28 minutes.
 	if copyErr != nil {
 		e.record(res, OutcomeFail, written, now)
 		return OutcomeFail, copyErr
 	}
 	e.record(res, OutcomeMiss, written, now)
 	return OutcomeMiss, nil
+}
+
+// serveRangeInFlight answers "bytes=from-" from a transfer still in progress. served is
+// false when it cannot — no declared length to state the range against, a start past the
+// end, or a fetch that has already committed — and the caller falls back to waiting for
+// the commit, which is always correct and only slower.
+func (e *Engine) serveRangeInFlight(
+	w http.ResponseWriter, r *http.Request, res Resolution, f *Fetch, from int64, now time.Time,
+) (outcome Outcome, served bool, err error) {
+	body, err := f.ReaderFrom(r.Context(), from)
+	if err != nil {
+		// Committed is served from the blob by the caller; a failure is the caller's to
+		// report, and it will meet the same error on its own path.
+		return "", false, nil
+	}
+	if f.Total <= 0 || from >= f.Total {
+		_ = body.Close()
+		return "", false, nil
+	}
+	defer func() { _ = body.Close() }()
+
+	e.applyHeaders(w, res)
+	if ct := mediaType(res, f.MediaType); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Content-Range",
+		fmt.Sprintf("bytes %d-%d/%d", from, f.Total-1, f.Total))
+	w.Header().Set("Content-Length", strconv.FormatInt(f.Total-from, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.WriteHeader(http.StatusPartialContent)
+
+	written, copyErr := io.Copy(w, body)
+	if copyErr != nil {
+		e.record(res, OutcomeFail, written, now)
+		return OutcomeFail, true, copyErr
+	}
+	e.record(res, OutcomeMiss, written, now)
+	return OutcomeMiss, true, nil
+}
+
+// headInFlight answers a HEAD from a transfer's upstream headers. served is false when it
+// cannot — no declared length, or a fetch that already ended — and the caller falls back
+// to waiting for the commit.
+func (e *Engine) headInFlight(
+	w http.ResponseWriter, r *http.Request, res Resolution, f *Fetch, now time.Time,
+) (Outcome, bool) {
+	select {
+	case <-f.HeadersReady:
+	case <-r.Context().Done():
+		return "", false
+	}
+	if _, done, _, _ := f.state(); done || f.Total < 0 {
+		return "", false
+	}
+	e.applyHeaders(w, res)
+	if ct := mediaType(res, f.MediaType); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(f.Total, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.WriteHeader(http.StatusOK)
+	e.record(res, OutcomeMiss, 0, now)
+	return OutcomeMiss, true
+}
+
+// openEndedRange reports the start of a "bytes=N-" request: one range, running to the
+// end, with no If-Range condition. Those are the only ranges an in-flight transfer can
+// answer before it knows the content's validators.
+func openEndedRange(r *http.Request) (int64, bool) {
+	if r.Method != http.MethodGet || r.Header.Get("If-Range") != "" {
+		return 0, false
+	}
+	spec, ok := strings.CutPrefix(strings.TrimSpace(r.Header.Get("Range")), "bytes=")
+	if !ok {
+		return 0, false
+	}
+	start, ok := strings.CutSuffix(spec, "-")
+	if !ok || start == "" {
+		return 0, false
+	}
+	from, err := strconv.ParseInt(start, 10, 64)
+	if err != nil || from < 0 {
+		return 0, false
+	}
+	return from, true
 }
 
 // inflightKey names one transfer: a project, an ecosystem and a key.

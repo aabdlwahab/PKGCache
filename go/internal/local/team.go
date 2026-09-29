@@ -6,16 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/aabdlwahab/PKGCache/internal/app"
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/control"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
+	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
 	"github.com/aabdlwahab/PKGCache/internal/ociname"
+	"github.com/aabdlwahab/PKGCache/internal/router"
 	"github.com/aabdlwahab/PKGCache/internal/trust"
 )
 
@@ -253,24 +257,12 @@ func ClearTeam(dataDir string) {
 // chainedEcosystems are the ones a team cache can front today.
 //
 // pypi, npm and oci compose an upstream URL as origin plus a package path, so the
-// team's equivalent of an index is a URL this cache can be pointed at directly. The
-// remaining three cannot be chained this way and are absent rather than
-// half-supported: apt and git derive their origin from the request itself, and files
-// has no upstream at all — its content arrives by upload.
-var chainedEcosystems = []struct {
-	eco string
-	// index is the upstream name, and teamURL builds the team's URL for it.
-	index   string
-	teamURL func(server, project string) string
-	public  string
-}{
-	{
-		eco: "pypi", index: "root/pypi",
-		teamURL: func(server, project string) string {
-			return server + "/" + project + "/pypi/root/pypi/+simple"
-		},
-		public: "https://pypi.org/simple",
-	},
+// team's equivalent of an index is a URL this cache can be pointed at directly. apt
+// names its mirror in every request, so it reaches the team through the team's forward
+// proxy instead — see TeamRelays. The remaining two are absent rather than
+// half-supported: git derives its origin from the request itself, and files has no
+// upstream at all — its content arrives by upload.
+var chainedEcosystems = append(pypiIndexes(), []chainedIndex{
 	{
 		eco: "npm", index: "registry",
 		teamURL: func(server, project string) string {
@@ -326,6 +318,51 @@ var chainedEcosystems = []struct {
 			return server + "/v2/" + project
 		},
 	},
+}...)
+
+// chainedIndex is one upstream name a team cache stands in front of.
+type chainedIndex struct {
+	eco string
+	// index is the upstream name, and teamURL builds the team's URL for it.
+	index   string
+	teamURL func(server, project string) string
+	public  string
+}
+
+// pypiIndexes chains every index the pypi adapter serves without configuration, not only
+// PyPI itself.
+//
+// A build names the others directly — `--extra-index-url .../whl/cu126` — and they are
+// where the weight is: torch wheels of several hundred megabytes, and the nvidia-* ones
+// the PyTorch indexes send on to pypi.nvidia.com. Chaining root/pypi alone left all of
+// that fetched by every machine for itself, past a team cache that already had it. Read
+// from the adapter rather than copied, so an index added there is chained here with no
+// second list to forget.
+func pypiIndexes() []chainedIndex {
+	indexes := pypi.New().Descriptor().DefaultUpstreams
+	names := make([]string, 0, len(indexes))
+	for name := range indexes {
+		names = append(names, name)
+	}
+	// PyPI first, then alphabetical: the rows are written in this order, and a stable
+	// order is what makes two runs of setup produce the same configuration.
+	sort.Slice(names, func(i, j int) bool {
+		if (names[i] == "root/pypi") != (names[j] == "root/pypi") {
+			return names[i] == "root/pypi"
+		}
+		return names[i] < names[j]
+	})
+	out := make([]chainedIndex, 0, len(names))
+	for _, name := range names {
+		out = append(out, chainedIndex{
+			eco: "pypi", index: name,
+			teamURL: func(server, project string) string {
+				return server + "/" + project + "/pypi/" + name + "/+simple"
+			},
+			public: indexes[name],
+		})
+	}
+	return out
 }
 
 // ociTeamURL builds the team cache's root for one registry alias.
@@ -393,11 +430,11 @@ func ChainRows(team Team, known func(eco string) bool) []control.Upstream {
 func ConfigureChains(
 	ctx context.Context, snap *config.Snapshot, set TeamSet,
 ) (unknown []string, err error) {
-	instance, err := app.Open(snap) //nolint:contextcheck // single-writer storage; its lifetime is the process's, not a request's
+	instance, release, err := openIdle(ctx, snap)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = instance.Close() }()
+	defer release()
 	known := func(eco string) bool { _, found := instance.Ecos.Get(eco); return found }
 	return ConfigureChainsOn(ctx, instance.Projects, known, set)
 }
@@ -557,6 +594,125 @@ func ApplyTeamTrust(snap *config.Snapshot) error {
 	}
 	snap.Upstream.CAFile = path
 	return nil
+}
+
+// RefreshRelays recomputes how every project's ecosystems with no configured origin reach
+// the caches it borrows from, and publishes it to the running configuration.
+//
+// The chain rows cover everything that composes a URL from a configured origin. apt does
+// not — every request names its own mirror — and neither does a forge's release asset, so
+// those reach a sibling or a team cache through its proxy or at the same path, in the same
+// order a chain would ask them. Computed from the two places that say which caches those
+// are, team.json and the sibling rows, whenever either changes.
+func RefreshRelays(ctx context.Context, dataDir string, store ChainStore, cfg *config.Store) error {
+	set, err := ReadTeams(dataDir)
+	if err != nil {
+		return err
+	}
+	projects, err := store.List()
+	if err != nil {
+		return err
+	}
+	siblings := map[string][]controlapi.PeerState{}
+	lister := &Peers{Store: store}
+	for _, project := range projects {
+		states, err := lister.Peers(ctx, project.Name)
+		if err != nil {
+			return err
+		}
+		if len(states) > 0 {
+			siblings[project.Name] = states
+		}
+	}
+	relays := Relays(set, siblings)
+	return cfg.Apply(func(next *config.Snapshot) error {
+		next.Local.Relays = relays
+		return nil
+	})
+}
+
+// TeamRelays is Relays with no siblings.
+func TeamRelays(set TeamSet) map[string]config.Relay { return Relays(set, nil) }
+
+// Relays is the relay each project's forward-proxy and forge requests take: its siblings,
+// then its team cache, then the origin unless the team configuration said -no-direct.
+//
+// A project with siblings but no team of its own takes the global project's team behind
+// them, as its chain rows do; one with neither is left to fall back to the global
+// project's relay as a whole.
+func Relays(set TeamSet, siblings map[string][]controlapi.PeerState) map[string]config.Relay {
+	projects := map[string]bool{}
+	for project, team := range set.Projects {
+		if team.Server != "" {
+			projects[project] = true
+		}
+	}
+	for project := range siblings {
+		projects[project] = true
+	}
+	relays := map[string]config.Relay{}
+	for project := range projects {
+		relay := config.Relay{Direct: true}
+		for _, sibling := range siblings[project] {
+			if hop, ok := cacheHop(sibling.URL, sibling.TheirProject); ok {
+				// Its proxy as well as its path. A sibling relays apt for a public name
+				// only (see eco.Ctx.OriginAllowed), and an older one relays none: either
+				// answers 403, which the attempt is marked to fall through
+				// (see eco.Ctx.relayFor), so apt reaches the team or the origin as before.
+				hop.Sibling = true
+				relay.Hops = append(relay.Hops, hop)
+			}
+		}
+		if team, ok := set.For(project); ok {
+			if hop, ok := cacheHop(team.Server, team.Project); ok {
+				relay.Hops = append(relay.Hops, hop)
+			}
+			relay.Direct = team.Direct
+		}
+		if len(relay.Hops) > 0 {
+			relays[project] = relay
+		}
+	}
+	return relays
+}
+
+// cacheHop is one cache as a relay reaches it: its proxy with the far project as the
+// username, and its data-plane root for that project.
+func cacheHop(server, project string) (config.Hop, bool) {
+	proxy, ok := teamProxy(server)
+	if !ok {
+		return config.Hop{}, false
+	}
+	if project == "" {
+		project = config.GlobalProject
+	}
+	return config.Hop{
+		Proxy: router.ProxyURLFor(proxy, project),
+		Base:  strings.TrimRight(server, "/") + "/" + project,
+	}, true
+}
+
+// teamProxy is where a team cache answers as a forward proxy: its own port, in the
+// clear.
+//
+// A pkgreg on one port serves TLS and its apt proxy side by side, split on the first
+// byte, and the proxy side is plaintext because apt cannot speak to a TLS proxy. One
+// configured with separate listeners does not answer a proxy request here; that attempt
+// fails at the transport, and the direct fallback behind it runs as it would for a team
+// cache that is down.
+func teamProxy(server string) (string, bool) {
+	parsed, err := url.Parse(server)
+	if err != nil || parsed.Hostname() == "" {
+		return "", false
+	}
+	port := parsed.Port()
+	if port == "" {
+		port = "80"
+		if parsed.Scheme == "https" {
+			port = "443"
+		}
+	}
+	return "http://" + net.JoinHostPort(parsed.Hostname(), port), true
 }
 
 // ReachableTeam reports whether the team cache is answering.

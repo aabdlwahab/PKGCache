@@ -262,3 +262,27 @@ func TestDescriptor(t *testing.T) {
 		t.Fatalf("descriptor = %+v", desc)
 	}
 }
+
+func TestRequestAcceptRelaysEveryAcceptHeader(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "/v2/quay/org/app/manifests/v1", nil)
+	for _, mediaType := range []string{
+		"application/vnd.docker.distribution.manifest.v2+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.oci.image.index.v1+json",
+	} {
+		req.Header.Add("Accept", mediaType)
+	}
+	want := "application/vnd.docker.distribution.manifest.v2+json, " +
+		"application/vnd.docker.distribution.manifest.list.v2+json, " +
+		"application/vnd.oci.image.manifest.v1+json, " +
+		"application/vnd.oci.image.index.v1+json"
+	if got := requestAccept(req); got != want {
+		t.Fatalf("requestAccept = %q, want %q", got, want)
+	}
+
+	req.Header.Set("Accept", "*/*")
+	if got := requestAccept(req); got != manifestAccept {
+		t.Fatalf("wildcard Accept = %q, want the default list", got)
+	}
+}

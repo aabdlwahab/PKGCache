@@ -95,7 +95,13 @@ func (a *App) SinglePortHandler() http.Handler {
 		}
 		a.serveUnified(w, r)
 	})
-	return a.noteActivity(securityHeaders(handler))
+	full := a.noteActivity(securityHeaders(handler))
+	if a.Config.Current().Local.Enabled {
+		// pkgcache: this machine gets everything, other machines only what a sibling
+		// needs. A server's single port has accounts and TLS and is left as it was.
+		return a.localGate(full)
+	}
+	return full
 }
 
 // SinglePortPlainHandler is the cleartext half of a single port that also speaks TLS.
@@ -284,6 +290,11 @@ func (d *DataPlane) ServeProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *DataPlane) dispatch(w http.ResponseWriter, r *http.Request, target router.Target) {
+	if d.config.Current().Log.Access {
+		recorder := &accessWriter{ResponseWriter: w}
+		defer logAccess(recorder, r, target, time.Now())
+		w = recorder
+	}
 	ecosystem, ok := d.ecos.Get(target.Eco)
 	if !ok {
 		writeText(w, http.StatusNotFound, "unknown ecosystem "+target.Eco)

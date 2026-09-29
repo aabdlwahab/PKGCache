@@ -212,8 +212,17 @@ func (s *Snapshot) localPosture() []PostureIssue {
 		ID:       "local_mode",
 		Severity: SeverityInfo,
 		Summary: "local mode: bound to " + s.LocalAddr() + ", with no certificate and no " +
-			"accounts, and refusing to bind an address other machines can reach",
+			"accounts; the console and the control API answer this machine only",
 	}}
+	if s.ServesSiblings() {
+		issues = append(issues, PostureIssue{
+			ID:       "local_serves_siblings",
+			Severity: SeverityWarn,
+			Summary: "serving siblings: other machines that can reach " + s.LocalAddr() +
+				" can fetch packages through this cache, read-only, without a password",
+			Remedy: "bind " + LocalLoopback + " again when no other machine should borrow from it",
+		})
+	}
 	// Binding to loopback limits the network, not the machine. On a shared host every
 	// local user can drive this daemon and spend this cache. The data directory is
 	// created 0700 so its contents stay private, but the socket in front of it is not

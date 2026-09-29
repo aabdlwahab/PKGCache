@@ -31,7 +31,7 @@ func TestHostGatewayCarriesNoCertificateMachinery(t *testing.T) {
 	for _, unwanted := range []string{
 		SecretID, SecretTarget, "type=secret",
 		"PIP_CERT", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
-		"NPM_CONFIG_CAFILE", "GIT_SSL_CAINFO", "UV_NATIVE_TLS",
+		"NPM_CONFIG_CAFILE", "GIT_SSL_CAINFO", "UV_NATIVE_TLS", "UV_SYSTEM_CERTS",
 	} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("HostGateway emitted %q, which only a TLS cache needs:\n%s", unwanted, out)
@@ -41,6 +41,9 @@ func TestHostGatewayCarriesNoCertificateMachinery(t *testing.T) {
 		"FROM host.docker.internal:41780/dockerhub/library/python:3.12-slim",
 		"ARG PIP_INDEX_URL=http://host.docker.internal:41780/global/pypi/root/pypi/+simple/",
 		"ARG NPM_CONFIG_REGISTRY=http://host.docker.internal:41780/global/npm/",
+		// pnpm 11 reads only its own prefix, corepack only its own variable.
+		"ARG PNPM_CONFIG_REGISTRY=http://host.docker.internal:41780/global/npm/",
+		"ARG COREPACK_NPM_REGISTRY=http://host.docker.internal:41780/global/npm\n",
 	} {
 		if !strings.Contains(out, wanted) {
 			t.Errorf("HostGateway did not emit %q:\n%s", wanted, out)
@@ -62,7 +65,7 @@ func TestCacheAddressStillMountsTheCA(t *testing.T) {
 	if !result.NeedsSecret {
 		t.Error("CacheAddress no longer reports that it needs the CA secret")
 	}
-	for _, wanted := range []string{"type=secret", "PIP_CERT=", "UV_NATIVE_TLS=true"} {
+	for _, wanted := range []string{"type=secret", "PIP_CERT=", "UV_NATIVE_TLS=true", "UV_SYSTEM_CERTS=true"} {
 		if !strings.Contains(out, wanted) {
 			t.Errorf("CacheAddress lost %q:\n%s", wanted, out)
 		}

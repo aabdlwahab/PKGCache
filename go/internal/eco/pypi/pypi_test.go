@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/aabdlwahab/PKGCache/internal/blob"
 	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	"github.com/aabdlwahab/PKGCache/internal/eco/ecotest"
 	testupstream "github.com/aabdlwahab/PKGCache/internal/testutil/upstream"
@@ -467,5 +469,64 @@ func TestMetadataSuffixLeavesAPlainURLAlone(t *testing.T) {
 	got := addMetadataSuffix("https://files.pythonhosted.org/x/idna-3.10-py3-none-any.whl")
 	if got != "https://files.pythonhosted.org/x/idna-3.10-py3-none-any.whl.metadata" {
 		t.Errorf("addMetadataSuffix = %s", got)
+	}
+}
+
+// An index that could not be fetched is a server error, not a missing project: a 404 told
+// uv the package did not exist, and told a cache chained behind this one not to look
+// anywhere else. An origin saying the project is not there — 404, or the 403 the PyTorch
+// indexes answer — is still a 404.
+func TestIndexFailureIsNotReportedAsMissing(t *testing.T) {
+	h := pypiHarness(t, func(origin *testupstream.Server) {
+		origin.Handle("/broken/", testupstream.Behaviour{Status: http.StatusServiceUnavailable})
+		origin.Handle("/absent/", testupstream.Behaviour{Status: http.StatusForbidden})
+	})
+	if resp := requestJSON(h, "/root/pypi/+simple/broken/"); resp.Status < 500 {
+		t.Fatalf("an unreachable index answered %d, want a server error", resp.Status)
+	}
+	if resp := requestJSON(h, "/root/pypi/+simple/absent/"); resp.Status != http.StatusNotFound {
+		t.Fatalf("a project the index does not carry answered %d, want 404", resp.Status)
+	}
+}
+
+// A page a fallback served is resolved against the fallback: its relative links name
+// files on that host, and resolving them against the unreachable head sent the file
+// request to the head's host at the fallback's path — a 404, on every file of the page.
+func TestRelativeLinksResolveAgainstTheOriginThatAnswered(t *testing.T) {
+	const wheel = "demo_pkg-1.0-py3-none-any.whl"
+	closed := httptest.NewServer(http.NotFoundHandler())
+	dead := closed.URL
+	closed.Close()
+	h := pypiHarness(t, func(origin *testupstream.Server) {
+		origin.Handle("/demo-pkg/", testupstream.Behaviour{
+			Body:        []byte(`<a href="/packages/` + wheel + `">` + wheel + `</a>`),
+			ContentType: "text/html",
+		})
+		origin.Serve("/packages/"+wheel, []byte("wheel bytes"))
+	})
+	if err := h.Config.Apply(func(s *config.Snapshot) error {
+		s.ProjectUpstreams = map[string]map[string]map[string][]config.Endpoint{
+			// The head is shaped like a team cache's index root, so a link resolved
+			// against it lands outside the chain and nothing can swap it back.
+			config.GlobalProject: {ID: {"root/pypi": {
+				{URL: dead + "/global/pypi/root/pypi/+simple"}, {URL: h.Origin.URL},
+			}}},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 { // fetched, then read back from the cache
+		if resp := h.Get("/root/pypi/+simple/demo-pkg/"); resp.Status != http.StatusOK {
+			t.Fatalf("index = %d %s", resp.Status, resp.Text())
+		}
+		file := h.Get("/root/pypi/+f/demo-pkg/" + wheel)
+		if file.Status != http.StatusOK || file.Text() != "wheel bytes" {
+			t.Fatalf("file = %d %q", file.Status, file.Text())
+		}
+	}
+	if hits := h.Origin.Hits("/packages/" + wheel); hits != 1 {
+		t.Fatalf("the file was fetched from the answering origin %d times, want 1", hits)
 	}
 }

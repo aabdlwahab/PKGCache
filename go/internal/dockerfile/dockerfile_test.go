@@ -209,12 +209,16 @@ func TestCacheAddressModeMountsTheCAIntoEveryRun(t *testing.T) {
 	options.Registry = "cache:8443"
 	options.Base = "https://cache:8443"
 
-	out, result := rewrite(t, "FROM alpine\nRUN pip install six\nRUN npm ci\n", options)
+	// The third RUN continues onto a second line, as most do; the pattern that found RUNs
+	// used to stop at the line break and skip every one of those.
+	out, result := rewrite(t,
+		"FROM alpine\nRUN pip install six\nRUN npm ci\nRUN apk add curl \\\n    && pip install requests\n",
+		options)
 	if !result.NeedsSecret {
 		t.Fatal("cache-address mode did not report needing the secret")
 	}
-	if got := strings.Count(out, "--mount=type=secret,id="+SecretID); got != 2 {
-		t.Fatalf("mounted on %d RUN steps, want 2:\n%s", got, out)
+	if got := strings.Count(out, "--mount=type=secret,id="+SecretID); got != 3 {
+		t.Fatalf("mounted on %d RUN steps, want 3:\n%s", got, out)
 	}
 	// node ignores the OS trust store, so pointing it at the mount is not optional.
 	if !strings.Contains(out, "ARG NODE_EXTRA_CA_CERTS="+SecretTarget) {
@@ -874,5 +878,139 @@ func TestBorrowedImagesAreLeftAloneWhereAFromWouldBe(t *testing.T) {
 	options.LocalImage = func(ref string) bool { return ref == "ghcr.io/astral-sh/uv:0.10.8" }
 	if out, _ := rewrite(t, source, options); !strings.Contains(out, "--from=ghcr.io/astral-sh/uv:0.10.8") {
 		t.Errorf("an image this machine already has was rewritten:\n%s", out)
+	}
+}
+
+// A release asset named by URL goes through the cache's git adapter, for the hosts
+// clones already go through — including when the URL lives in an ARG.
+func TestReleaseDownloadsArePointedAtTheCache(t *testing.T) {
+	options := Options{
+		Project: "global", Base: "http://127.0.0.1:41780", Registry: "127.0.0.1:41780",
+		Mode: Bridge, GitHosts: []string{"github.com"},
+	}
+	source := "FROM python:3.12-slim\n" +
+		"ARG ONECAT_BASE=https://github.com/1CatAI/1Cat-vLLM/releases/download/v1.0.0\n" +
+		"RUN uv pip install \"${ONECAT_BASE}/vllm-1.0.0-cp312-cp312-linux_x86_64.whl\"\n" +
+		"RUN curl -LO https://github.com/${OWNER}/tool/releases/download/v1/tool.tgz\n" +
+		"RUN curl -LO https://gitlab.com/group/tool/releases/download/v1/tool.tgz\n" +
+		"RUN git clone https://github.com/owner/repo\n"
+
+	result, err := Rewrite([]byte(source), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Content)
+	want := "ARG ONECAT_BASE=http://127.0.0.1:41780/global/git/github.com/1CatAI/1Cat-vLLM/" +
+		"releases/download/v1.0.0"
+	if !strings.Contains(body, want) {
+		t.Errorf("the release base was not pointed at the cache:\n%s", body)
+	}
+	for _, untouched := range []string{
+		"https://github.com/${OWNER}/tool/releases/download/v1/tool.tgz",
+		"https://gitlab.com/group/tool/releases/download/v1/tool.tgz",
+		"git clone https://github.com/owner/repo",
+	} {
+		if !strings.Contains(body, untouched) {
+			t.Errorf("%q was rewritten:\n%s", untouched, body)
+		}
+	}
+	var reported bool
+	for _, change := range result.Changes {
+		if strings.Contains(change.From, "1CatAI/1Cat-vLLM/releases/download/") {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("the substitution was not reported: %+v", result.Changes)
+	}
+}
+
+// A vendor's https repository — NVIDIA's, in every nvidia/cuda image — goes through the
+// cache for the length of the stage instead of failing on a refused tunnel, and is handed
+// back as https before the stage stops being able to write it.
+func TestAptHTTPSRepositoriesGoThroughTheCacheForTheStage(t *testing.T) {
+	const source = `FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends python3.12
+USER 1000
+CMD ["python3"]
+`
+	body, _ := rewrite(t, source, bridge())
+	forward := strings.Index(body, `s#https://([A-Za-z0-9.-]+)/#http://\1:443/#g`)
+	install := strings.Index(body, "apt-get install")
+	restore := strings.Index(body, `s#http://([A-Za-z0-9.-]+):443/#https://\1/#g`)
+	user := strings.Index(body, "USER 1000")
+	if forward < 0 || restore < 0 {
+		t.Fatalf("the https repositories were not pointed at the cache and back:\n%s", body)
+	}
+	if forward >= install || install >= restore || restore >= user {
+		t.Errorf("rewrite, install, restore and USER are out of order:\n%s", body)
+	}
+	for _, file := range []string{"/etc/apt/sources.list ", "sources.list.d/*.list", "sources.list.d/*.sources"} {
+		if !strings.Contains(body, file) {
+			t.Errorf("%s is not covered:\n%s", file, body)
+		}
+	}
+}
+
+// Only a stage that runs apt pays for the pair, and a path or a sibling tool is not apt.
+func TestStagesThatNeverRunAptAreLeftAlone(t *testing.T) {
+	const source = `FROM debian:12 AS keys
+RUN apt-key list && cat /etc/apt/sources.list && apt-cache policy
+FROM debian:12
+RUN apt install -y curl
+`
+	body, _ := rewrite(t, source, bridge())
+	stages := strings.Split(body, "\nFROM ")
+	if len(stages) != 2 {
+		t.Fatalf("want two stages, got %d parts:\n%s", len(stages), body)
+	}
+	if strings.Contains(stages[0], "sed -i -E") {
+		t.Errorf("the first stage, which never runs apt, was given the pair:\n%s", body)
+	}
+	if got := strings.Count(stages[1], "sed -i -E"); got != 2 {
+		t.Errorf("want one rewrite and one restore in the stage that runs apt, got %d:\n%s", got, body)
+	}
+}
+
+// apt and apk in one stage each get their repositories back.
+func TestAptAndApkPairsAreBothRestored(t *testing.T) {
+	body, _ := rewrite(t, "FROM alpine:3.20\nRUN apk add curl && (apt-get update || true)\n", bridge())
+	if !strings.Contains(body, "mv "+apkBackup) || !strings.Contains(body, `#https://\1/#g`) {
+		t.Fatalf("one of the restores is missing:\n%s", body)
+	}
+}
+
+// A base named entirely through ARGs — examples/six-repositories does this — resolves as
+// Docker would resolve it and then goes through the cache like any other; it used to be
+// left alone, and the builder pulled it from Docker Hub directly.
+func TestFromBuiltFromArgsIsResolvedAndPointedAtTheCache(t *testing.T) {
+	const source = "ARG BASE_REGISTRY=docker.io\n" +
+		"ARG ALPINE_IMAGE=library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc\n" +
+		"ARG OTHER\n" +
+		"FROM ${BASE_REGISTRY}/${ALPINE_IMAGE} AS rootfs\n" +
+		"FROM $BASE_REGISTRY/library/python:${PY:-3.12}-slim\n" +
+		"FROM ${OTHER}/app:1\n"
+	options := bridge()
+	options.BuildArgs = map[string]string{}
+	body, _ := rewrite(t, source, options)
+	for _, want := range []string{
+		"FROM 127.0.0.1:41999/dockerhub/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc AS rootfs",
+		"FROM 127.0.0.1:41999/dockerhub/library/python:3.12-slim",
+		"FROM ${OTHER}/app:1", // unresolvable: left for Docker, exactly as written
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in:\n%s", want, body)
+		}
+	}
+
+	options.BuildArgs = map[string]string{"BASE_REGISTRY": "quay.io"}
+	if body, _ := rewrite(t, source, options); !strings.Contains(body,
+		"FROM 127.0.0.1:41999/quay/library/alpine:3.20@sha256:") {
+		t.Errorf("a --build-arg override was not honoured:\n%s", body)
+	}
+
+	options.BuildArgs = nil // Compose: the arguments are not known here
+	if body, _ := rewrite(t, source, options); !strings.Contains(body, "FROM ${BASE_REGISTRY}/${ALPINE_IMAGE}") {
+		t.Errorf("a FROM was resolved without knowing the build's arguments:\n%s", body)
 	}
 }

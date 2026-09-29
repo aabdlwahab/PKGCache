@@ -1,12 +1,17 @@
 package engine
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -138,6 +143,44 @@ func TestDocumentServesStaleWhenUpstreamFails(t *testing.T) {
 	}
 	if !got.Stale || string(got.Body) != "good" {
 		t.Fatalf("got %+v, want the stale cached copy", got)
+	}
+}
+
+// A document is read whole before any of it is served, so a transfer that broke off
+// partway can be asked for again. It failed the request instead: the team's uplink went
+// silent for two minutes in the middle of axe-core's packument, the team answered 500,
+// and the machine chained behind it fetched the packument from the registry itself.
+func TestDocumentWhoseTransferBrokeOffIsAskedForAgain(t *testing.T) {
+	h := newHarness(t)
+	body := []byte(strings.Repeat(`{"name":"axe-core"}`, 512))
+	h.origin.Handle("/axe-core", testupstream.Behaviour{
+		Body: body, TruncateAfter: 1000, TruncateTimes: 1,
+	})
+	got, err := h.engine.Document(context.Background(), h.doc("/axe-core", time.Hour))
+	if err != nil {
+		t.Fatalf("a transfer that broke off once failed the document: %v", err)
+	}
+	if string(got.Body) != string(body) {
+		t.Fatalf("got %d bytes, want the whole %d", len(got.Body), len(body))
+	}
+	if hits := h.origin.Hits("/axe-core"); hits != 2 {
+		t.Fatalf("origin asked %d times, want 2", hits)
+	}
+}
+
+// An origin that never finishes the document is given up on after a bounded number of
+// attempts, with the reading error, rather than asked forever.
+func TestDocumentThatNeverArrivesWholeFails(t *testing.T) {
+	h := newHarness(t)
+	h.origin.Handle("/broken", testupstream.Behaviour{
+		Body: []byte(strings.Repeat("x", 4096)), TruncateAfter: 100,
+	})
+	_, err := h.engine.Document(context.Background(), h.doc("/broken", time.Hour))
+	if err == nil || !strings.Contains(err.Error(), "reading document") {
+		t.Fatalf("err = %v, want a reading error", err)
+	}
+	if hits := h.origin.Hits("/broken"); hits != documentAttempts {
+		t.Fatalf("origin asked %d times, want %d", hits, documentAttempts)
 	}
 }
 
@@ -481,5 +524,83 @@ func TestDocumentDistinctNamesDoNotCollide(t *testing.T) {
 		if want := fmt.Sprintf("index-%d", i); string(got.Body) != want {
 			t.Fatalf("pkg%d body = %q, want %q", i, got.Body, want)
 		}
+	}
+}
+
+// A document the cache only reads may travel compressed and is kept decompressed; one it
+// must keep byte for byte is still asked for as it is.
+func TestCompressibleDocumentTravelsCompressed(t *testing.T) {
+	body := []byte(strings.Repeat(`{"filename":"pkg-1.0.tar.gz","url":"x"},`, 2000))
+	var asked []string
+	var mu sync.Mutex
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.Header.Get("Accept-Encoding"))
+		mu.Unlock()
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			zipped := gzip.NewWriter(w)
+			_, _ = zipped.Write(body)
+			_ = zipped.Close()
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(origin.Close)
+	h := newHarness(t)
+
+	for _, compressible := range []bool{true, false} {
+		doc, err := h.engine.Document(context.Background(), DocSpec{
+			Project: "global", Eco: "pypi", Name: fmt.Sprintf("simple/big-%v", compressible),
+			URL: origin.URL + "/simple/big/", TTL: time.Hour, Compressible: compressible,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(doc.Body, body) {
+			t.Fatalf("compressible=%v: stored %d bytes, want the %d decompressed ones",
+				compressible, len(doc.Body), len(body))
+		}
+	}
+	if len(asked) != 2 || asked[0] != "gzip" || asked[1] != "identity" {
+		t.Fatalf("Accept-Encoding asked = %q, want gzip then identity", asked)
+	}
+}
+
+// The shared fetch outlives a caller that stops waiting, and what it fetched is kept: a
+// chained cache giving up after a minute used to cancel the fetch for everybody.
+func TestDocumentFetchOutlivesACallerThatGaveUp(t *testing.T) {
+	var hits atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		time.Sleep(300 * time.Millisecond)
+		_, _ = w.Write([]byte("slow index"))
+	}))
+	t.Cleanup(origin.Close)
+	h := newHarness(t)
+	spec := DocSpec{
+		Project: "global", Eco: "pypi", Name: "simple/slow",
+		URL: origin.URL + "/simple/slow/", TTL: time.Hour,
+	}
+
+	impatient, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := h.engine.Document(impatient, spec); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the impatient caller got %v, want its own deadline", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		doc, err := h.engine.Document(context.Background(), spec)
+		if err == nil && doc.FromCache {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the abandoned fetch was never kept: doc=%+v err=%v", doc, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("origin asked %d times, want the one fetch everybody shared", n)
 	}
 }

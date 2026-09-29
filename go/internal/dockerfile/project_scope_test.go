@@ -29,6 +29,8 @@ func TestEveryRewrittenLineNamesTheSameProject(t *testing.T) {
 		// The two that were already right, asserted so a change to one is a change to all.
 		"ARG PIP_INDEX_URL=http://127.0.0.1:41999/work/pypi/root/pypi/+simple/",
 		"ARG NPM_CONFIG_REGISTRY=http://127.0.0.1:41999/work/npm/",
+		"ARG PNPM_CONFIG_REGISTRY=http://127.0.0.1:41999/work/npm/",
+		"ARG COREPACK_NPM_REGISTRY=http://127.0.0.1:41999/work/npm\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

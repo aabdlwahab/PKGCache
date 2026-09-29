@@ -260,9 +260,17 @@ log:
   access: true
 
 upstream:
-  # Generous on purpose: the largest artifact seen in production is a 2.5 GB CUDA
-  # wheel, which over a slow uplink takes many minutes.
-  request_timeout: 20m
+  # One whole request. Generous on purpose: the largest artifact seen in production is
+  # a 2.5 GB CUDA wheel, which over a slow uplink takes many minutes, and a laptop
+  # behind this cache waits as long as this cache's own fetch takes.
+  request_timeout: 2h
+  # How long a download may receive nothing before it is abandoned and picked up again
+  # from the byte it reached. This, not request_timeout, is what catches a stall.
+  body_idle_timeout: 2m
+  # HTTP/1.1 to origins, a connection per request, unless this is true. One shared
+  # HTTP/2 connection per host is slower on a congested uplink and fails every transfer
+  # on it together when the connection is reset.
+  http2: false
 
 git:
   refs_ttl: 1m

@@ -102,8 +102,25 @@ func startSession(
 		// every caller gets it without having to remember.
 		bridgeStops = append(bridgeStops, stop)
 	}
-	environment := session.Environment(os.Environ(), sessionOptions(state, flags))
+	options := sessionOptions(state, flags)
+	options.Shims = sessionShims()
+	environment := session.Environment(os.Environ(), options)
 	return snap, state, environment, fs.Args(), nil
+}
+
+// sessionShims writes the programs a session stands in front of and returns where they
+// are. A failure leaves them out, with a note: uv's project commands then see the
+// session's index, and release downloads go to the forge, as they always used to.
+func sessionShims() string {
+	dir, err := session.ShimDir()
+	if err == nil {
+		dir, err = session.WriteShims(dir, os.Getenv("PATH"))
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pkgcache: uv's project commands will see the cache's index, and release downloads will not go through it: %v\n", err)
+		return ""
+	}
+	return dir
 }
 
 // bridgeStops holds the shutdown for a bridge started by this process, closed once the
@@ -157,7 +174,7 @@ func runRun(ctx context.Context, args []string) error {
 	// Everything after `--` is the command, and must not be parsed as ours: `pkgcache
 	// run -- npm ci --no-audit` has to reach npm with its flags intact.
 	ours, theirs := splitAtDoubleDash(args)
-	snap, _, environment, rest, err := startSession(ctx, "run", ours,
+	snap, state, environment, rest, err := startSession(ctx, "run", ours,
 		`pkgcache run — run one command with its package tools pointed at the cache
 
 usage: pkgcache run [flags] -- <command> [arguments]
@@ -184,7 +201,9 @@ flags:
 	// here as well would race the shutdown it is already performing.
 	child.Cancel = func() error { return nil }
 
+	release := local.HoldDaemon(ctx, state.BaseURL())
 	err = child.Run()
+	release()
 	closeBridges()
 	// A full cache is reported whatever happened, and the child's own failure still
 	// wins the exit status: `npm ci` exiting 1 must surface as 1, never masked by
@@ -242,7 +261,9 @@ Type exit to return to your previous environment.
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	child.Cancel = func() error { return nil }
 
+	release := local.HoldDaemon(ctx, state.BaseURL())
 	err = child.Run()
+	release()
 	closeBridges()
 	full := reportFull(snap.DataDir)
 	if err == nil {

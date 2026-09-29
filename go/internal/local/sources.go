@@ -42,6 +42,9 @@ type Sources struct {
 	Pool *upstream.Pool
 	// Snapshot is the running configuration, for the CA file path the pool reads.
 	Snapshot *config.Snapshot
+	// Config is the live configuration, which carries the relays forward-proxy
+	// ecosystems take to the team cache.
+	Config *config.Store
 }
 
 // probeTimeout bounds the reachability check a listing performs. Short: it runs while
@@ -190,9 +193,9 @@ func (s *Sources) Adopt(ctx context.Context, _ string) error {
 	return s.apply(ctx, set)
 }
 
-// apply writes the record, rewrites every chain, and reloads outbound trust.
+// apply writes the record, rewrites every chain and relay, and reloads outbound trust.
 //
-// In that order, and all three every time. A record written without the chain leaves a
+// In that order, and all of them every time. A record written without the chain leaves a
 // project resolving the old way; a chain written without the reload leaves it unable to
 // verify the cache it now points at.
 func (s *Sources) apply(ctx context.Context, set TeamSet) error {
@@ -202,6 +205,11 @@ func (s *Sources) apply(ctx context.Context, set TeamSet) error {
 	known := func(id string) bool { _, found := s.Ecos.Get(id); return found }
 	if _, err := ConfigureChainsOn(ctx, s.Store, known, set); err != nil {
 		return err
+	}
+	if s.Config != nil {
+		if err := RefreshRelays(ctx, s.DataDir, s.Store, s.Config); err != nil {
+			return err
+		}
 	}
 	caFile := TeamCAPath(s.DataDir)
 	if _, err := os.Stat(caFile); err != nil {

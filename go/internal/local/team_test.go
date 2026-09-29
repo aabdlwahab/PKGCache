@@ -3,10 +3,13 @@ package local
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
+	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
 )
 
 const (
@@ -292,4 +295,85 @@ func read(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// apt reaches a team cache through its forward proxy: the same port in the clear, with
+// the team's project as the username and the global project as none.
+func TestTeamRelaysNameTheTeamsProxy(t *testing.T) {
+	relays := TeamRelays(TeamSet{Projects: map[string]Team{
+		config.GlobalProject: {Server: "https://10.0.0.13:8443", Direct: true},
+		"work":               {Server: "https://cache.internal", Project: "work"},
+		"unconfigured":       {},
+	}})
+	want := map[string]config.Relay{
+		config.GlobalProject: {Direct: true, Hops: []config.Hop{{
+			Proxy: "http://10.0.0.13:8443", Base: "https://10.0.0.13:8443/global",
+		}}},
+		"work": {Hops: []config.Hop{{
+			Proxy: "http://work@cache.internal:443", Base: "https://cache.internal/work",
+		}}},
+	}
+	if !reflect.DeepEqual(relays, want) {
+		t.Fatalf("relays = %+v, want %+v", relays, want)
+	}
+}
+
+// Every index the pypi adapter serves by default reaches the team's copy of it, not only
+// PyPI: an --extra-index-url for a CUDA torch build is where the gigabytes are.
+func TestEveryDefaultPyPIIndexIsChained(t *testing.T) {
+	chained := map[string][2]string{}
+	for _, row := range ChainRows(Team{Server: "https://team", Direct: true}, nil) {
+		if row.Eco != "pypi" {
+			continue
+		}
+		pair := chained[row.Name]
+		if row.Priority == teamPriority {
+			pair[0] = row.URL
+		} else {
+			pair[1] = row.URL
+		}
+		chained[row.Name] = pair
+	}
+	defaults := pypi.New().Descriptor().DefaultUpstreams
+	if len(chained) != len(defaults) {
+		t.Fatalf("chained %d pypi indexes, the adapter serves %d", len(chained), len(defaults))
+	}
+	for name, public := range defaults {
+		want := [2]string{"https://team/global/pypi/" + name + "/+simple", public}
+		if chained[name] != want {
+			t.Fatalf("%s chains to %v, want %v", name, chained[name], want)
+		}
+	}
+	if got := chained["root/pypi"][0]; got != "https://team/global/pypi/root/pypi/+simple" {
+		t.Fatalf("PyPI itself moved: %s", got)
+	}
+}
+
+// Siblings come before the team, as their chain rows do, and only by path — they do not
+// relay apt; a project with siblings and no team of its own takes the global team behind
+// them; siblings alone keep the origin.
+func TestRelaysPutSiblingsBeforeTheTeam(t *testing.T) {
+	teams := TeamSet{Projects: map[string]Team{
+		config.GlobalProject: {Server: "https://team.internal:8443", Direct: false},
+	}}
+	siblings := map[string][]controlapi.PeerState{
+		"work": {{URL: "http://172.17.21.107:41780", TheirProject: "shared"}},
+	}
+	relays := Relays(teams, siblings)
+	work := relays["work"]
+	if len(work.Hops) != 2 || work.Direct ||
+		work.Hops[0] != (config.Hop{
+			Proxy: "http://shared@172.17.21.107:41780", Base: "http://172.17.21.107:41780/shared", Sibling: true,
+		}) ||
+		work.Hops[1].Base != "https://team.internal:8443/global" || work.Hops[1].Sibling {
+		t.Fatalf("work relay = %+v", work)
+	}
+
+	alone := Relays(TeamSet{}, map[string][]controlapi.PeerState{
+		config.GlobalProject: {{URL: "http://172.17.21.107:41780", TheirProject: config.GlobalProject}},
+	})[config.GlobalProject]
+	if len(alone.Hops) != 1 || !alone.Direct || alone.Hops[0].Proxy != "http://172.17.21.107:41780" ||
+		!alone.Hops[0].Sibling || alone.Hops[0].Base != "http://172.17.21.107:41780/global" {
+		t.Fatalf("sibling-only relay = %+v", alone)
+	}
 }

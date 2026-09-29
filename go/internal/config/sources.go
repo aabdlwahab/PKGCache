@@ -46,13 +46,16 @@ func Defaults() Snapshot {
 			CacheSize:     4096,
 		},
 		Upstream: Upstream{
-			RequestTimeout: 20 * time.Minute,
+			RequestTimeout: 2 * time.Hour,
 			ConnectTimeout: 30 * time.Second,
 			// Generous for an index a slow origin has to generate, and still two orders
 			// of magnitude below the request timeout.
 			ResponseHeaderTimeout: 60 * time.Second,
-			MaxIdlePerHost:        32,
-			UserAgent:             "pkgreg/1",
+			// apt's own read timeout, and long enough that a congested link which is
+			// still moving is never mistaken for one that stopped.
+			BodyIdleTimeout: 2 * time.Minute,
+			MaxIdlePerHost:  32,
+			UserAgent:       "pkgreg/1",
 		},
 		Git: Git{
 			RefsTTL:        60 * time.Second,
@@ -275,6 +278,7 @@ func applyEnv(s *Snapshot) error {
 		{"TRUST_PROXY", &s.Server.TrustProxy},
 		{"LOG_ACCESS", &s.Log.Access},
 		{"OFFLINE", &s.Upstream.Offline},
+		{"UPSTREAM_HTTP2", &s.Upstream.HTTP2},
 		{"ANON_READ", &s.Auth.AnonRead},
 		{"GUEST_READ", &s.Auth.GuestRead},
 	} {
@@ -301,6 +305,7 @@ func applyEnv(s *Snapshot) error {
 		{"REQUEST_TIMEOUT", &s.Upstream.RequestTimeout},
 		{"CONNECT_TIMEOUT", &s.Upstream.ConnectTimeout},
 		{"RESPONSE_HEADER_TIMEOUT", &s.Upstream.ResponseHeaderTimeout},
+		{"BODY_IDLE_TIMEOUT", &s.Upstream.BodyIdleTimeout},
 		{"GIT_REFS_TTL", &s.Git.RefsTTL},
 		{"GC_INTERVAL", &s.Maintenance.GCInterval},
 		{"GC_GRACE", &s.Maintenance.GCGrace},

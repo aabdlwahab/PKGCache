@@ -9,10 +9,12 @@
 // package moves that knowledge into the tool, so the file on disk stays the file the
 // author would have written with no cache at all.
 //
-// The rewrite is deliberately small: declare build arguments, and repoint FROM. It
-// never adds a RUN, never reorders, never removes. Anything larger would make the
-// generated file something a reader could not predict from the original, and a build
-// nobody can predict is worse than one flag they have to remember.
+// The rewrite is deliberately small: declare build arguments, repoint FROM and the
+// package addresses a RUN names itself, bend apt's and apk's repositories for a stage
+// and hand them back, and wrap a RUN's uv project commands. It never reorders and never
+// removes, and every substitution is reported. Anything larger would make the generated
+// file something a reader could not predict from the original, and a build nobody can
+// predict is worse than one flag they have to remember.
 package dockerfile
 
 import (
@@ -85,6 +87,12 @@ type Options struct {
 	// rewrite nobody needs is a parsing risk nobody needs.
 	SkipFrom bool
 
+	// BuildArgs are this build's --build-arg values. Non-nil means they are known, so a FROM
+	// that names its image through ARGs declared before the first stage can be resolved
+	// the way Docker resolves it and pointed at the cache; nil — a Compose build, whose
+	// arguments live in the Compose file — leaves such a FROM exactly as written.
+	BuildArgs map[string]string
+
 	// Indexes maps an upstream package index's origin URL to the cache's name for it,
 	// so a Dockerfile that names one directly is served from here instead.
 	//
@@ -125,6 +133,10 @@ type Result struct {
 var (
 	// A FROM line, with its optional flags (--platform=…) kept intact.
 	fromRE = regexp.MustCompile(`(?i)^(\s*FROM\s+)((?:--\S+\s+)*)(\S+)(.*)$`)
+	// An ARG instruction and what follows it.
+	argRE = regexp.MustCompile(`(?i)^\s*ARG\s+(.+)$`)
+	// $NAME, ${NAME} and ${NAME:-default}, the forms a FROM can use.
+	varRE = regexp.MustCompile(`\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}|([A-Za-z_][A-Za-z0-9_]*))`)
 	// AS <name> at the end of a FROM.
 	userRE = regexp.MustCompile(`(?i)^\s*USER\s+(\S+)`)
 	// The frontend a build parses itself with. An image reference like any other,
@@ -136,9 +148,15 @@ var (
 	// apk as a command, not as the path component in /etc/apk/repositories: the
 	// character after it decides which one it is.
 	apkRE = regexp.MustCompile(`\bapk([^\w/.]|$)`)
+	// apt or apt-get as a command: followed by whitespace, which /etc/apt/..., apt-key
+	// and apt-cache are not.
+	aptRE = regexp.MustCompile(`\bapt(-get)?\s`)
 	asRE  = regexp.MustCompile(`(?i)\sAS\s+(\S+)\s*$`)
-	// A RUN line, with any flags it already carries.
-	runRE = regexp.MustCompile(`(?i)^(\s*RUN\s+)(.*)$`)
+	// A RUN line, with any flags it already carries — and its continuation lines, which
+	// are most of the RUNs anybody writes. Without s the pattern stopped at the first
+	// line break and matched no multi-line RUN at all, so in CacheAddress mode none of
+	// them was given the CA.
+	runRE = regexp.MustCompile(`(?is)^(\s*RUN\s+)(.*)$`)
 	// A heredoc opener, e.g. RUN <<EOF or COPY <<-'EOF'. Everything up to the
 	// terminator is data, not instructions.
 	heredocRE = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
@@ -219,10 +237,36 @@ func Rewrite(source []byte, options Options) (Result, error) {
 	)
 	// apk is only worth touching when there is a proxy for it to reach.
 	proxied := options.AptProxy != ""
-	inStage := false
+	// What the current stage has to hand back, in order: one restore per package
+	// manager whose repositories were bent at its start.
+	var restores []string
+	// The ARGs declared before the first FROM, which are the only ones a FROM can use,
+	// resolved as this build will resolve them. Nil when the build's arguments are not
+	// known.
+	var globalArgs map[string]string
+	if options.BuildArgs != nil {
+		globalArgs = map[string]string{}
+	}
 	// Where in the current stage to put the repositories back: the line of the first
 	// USER that drops privileges, or -1 for "nowhere yet, so the end of the stage".
 	restoreAt := -1
+	// Whether the stage's RUNs are a POSIX shell, which the uv wrapper is written in. A
+	// SHELL instruction can make them something else until the next FROM.
+	posix := true
+	// wrapRun gives a RUN the uv wrapper when it runs a uv project command.
+	wrapRun := func(line string) string {
+		if !posix || !isRun(line) {
+			return line
+		}
+		wrapped, ok := wrapUV(line, options)
+		if ok {
+			result.Changes = append(result.Changes, Change{
+				From: "uv.lock files on " + strings.Join(lockFileHosts, ", "),
+				To:   strings.TrimRight(options.Base, "/") + "/" + options.Project + "/pypi/+files/<host>/",
+			})
+		}
+		return wrapped
+	}
 
 	// insertLine puts a line at an earlier position without disturbing what follows.
 	insertLine := func(at int, line string) {
@@ -233,15 +277,17 @@ func Rewrite(source []byte, options Options) (Result, error) {
 	// closeStage hands the repositories back at the last point the build can still
 	// write them.
 	closeStage := func() {
-		if !inStage {
+		if len(restores) == 0 {
 			return
 		}
 		if restoreAt >= 0 {
-			insertLine(restoreAt, apkRestore())
+			for i := len(restores) - 1; i >= 0; i-- {
+				insertLine(restoreAt, restores[i])
+			}
 		} else {
-			rewritten = append(rewritten, apkRestore())
+			rewritten = append(rewritten, restores...)
 		}
-		restoreAt, inStage = -1, false
+		restoreAt, restores = -1, nil
 	}
 
 	items := parse(string(source))
@@ -263,16 +309,20 @@ func Rewrite(source []byte, options Options) (Result, error) {
 		// The restore has to run while the stage can still write /etc/apk. A stage that
 		// ends with `USER node` cannot, so the spot is remembered here and the line is
 		// inserted there when the stage closes.
-		if inStage && restoreAt < 0 && dropsPrivileges(item.text) {
+		if len(restores) > 0 && restoreAt < 0 && dropsPrivileges(item.text) {
 			restoreAt = len(rewritten)
 		}
 
+		if result.Stages == 0 && options.BuildArgs != nil {
+			collectGlobalArg(item.text, options.BuildArgs, globalArgs)
+		}
 		switch {
 		case isFrom(item.text):
 			// The stage that is ending gets its repositories back before the next one
 			// starts, or the change would ship in whichever stage happened to be last.
 			closeStage()
-			replaced, change := rewriteFrom(item.text, stages, options)
+			posix = true
+			replaced, change := rewriteFrom(item.text, stages, options, globalArgs)
 			rewritten = append(rewritten, replaced)
 			if change != nil {
 				result.Changes = append(result.Changes, *change)
@@ -286,26 +336,36 @@ func Rewrite(source []byte, options Options) (Result, error) {
 			// do nothing in the rest — the failure people report as "works locally".
 			rewritten = append(rewritten, args...)
 			// Only where the stage runs apk. The pair is a shell step, and a base
-			// image with no shell cannot run it at all — see stageRunsApk.
-			if proxied && stageRunsApk(items, index+1) {
+			// image with no shell cannot run it at all — see stageRuns.
+			if proxied && stageRuns(items, index+1, apkRE) {
 				rewritten = append(rewritten, apkToPlainHTTP())
-				inStage = true
+				restores = append(restores, apkRestore())
+			}
+			if proxied && stageRuns(items, index+1, aptRE) {
+				rewritten = append(rewritten, aptToPlainProxyForm())
+				restores = append(restores, aptRestore())
 			}
 		case options.Mode == CacheAddress && isRun(item.text):
 			replaced, mounted := mountCA(item.text)
 			replaced, indexed := rewriteIndexURLs(replaced, options)
+			replaced, released := rewriteReleaseURLs(replaced, options)
 			replaced, borrowed := rewriteBorrowedImages(replaced, stages, options)
-			rewritten = append(rewritten, replaced)
+			// Last, so none of the rewrites above reads the wrapper's own addresses.
+			rewritten = append(rewritten, wrapRun(replaced))
 			result.NeedsSecret = result.NeedsSecret || mounted
 			result.Changes = append(result.Changes, indexed...)
+			result.Changes = append(result.Changes, released...)
 			result.Changes = append(result.Changes, borrowed...)
 		default:
+			posix = posixShell(item.text, posix)
 			// An index URL is worth replacing wherever it appears: an ARG default, an
 			// --extra-index-url written inline, a pip.conf written by a RUN.
 			replaced, indexed := rewriteIndexURLs(item.text, options)
+			replaced, released := rewriteReleaseURLs(replaced, options)
 			replaced, borrowed := rewriteBorrowedImages(replaced, stages, options)
-			rewritten = append(rewritten, replaced)
+			rewritten = append(rewritten, wrapRun(replaced))
 			result.Changes = append(result.Changes, indexed...)
+			result.Changes = append(result.Changes, released...)
 			result.Changes = append(result.Changes, borrowed...)
 		}
 	}
@@ -360,7 +420,7 @@ func dropsPrivileges(text string) bool {
 	return name != "root" && name != "0"
 }
 
-// stageRunsApk reports whether the stage starting at items[from] runs apk.
+// stageRuns reports whether the stage starting at items[from] runs command.
 //
 // The repositories rewrite is a RUN, and a RUN is /bin/sh. A base image that has no
 // shell cannot run it — distroless, scratch, and the images built on them, which is
@@ -373,7 +433,7 @@ func dropsPrivileges(text string) bool {
 // less. A stage that never runs apk had nothing to gain from the pair anyway. The cost
 // of being wrong is one uncached apk in a stage that hid its package installs inside a
 // script — a slower build, not a broken one.
-func stageRunsApk(items []chunk, from int) bool {
+func stageRuns(items []chunk, from int, command *regexp.Regexp) bool {
 	for _, item := range items[from:] {
 		if !item.code {
 			continue
@@ -381,7 +441,7 @@ func stageRunsApk(items []chunk, from int) bool {
 		if isFrom(item.text) {
 			return false
 		}
-		if isRun(item.text) && apkRE.MatchString(item.text) {
+		if isRun(item.text) && command.MatchString(item.text) {
 			return true
 		}
 	}
@@ -402,9 +462,38 @@ func apkRestore() string {
 		" /etc/apk/repositories; fi"
 }
 
+// aptSources are the files apt reads its repositories from, one-line and deb822 alike.
+const aptSources = "/etc/apt/sources.list /etc/apt/sources.list.d/*.list " +
+	"/etc/apt/sources.list.d/*.sources"
+
+// aptToPlainProxyForm points the stage's https repositories at the proxy for its length.
+//
+// apt reaches an https repository through a proxy only by tunnelling, which the cache
+// refuses, so under the cache every vendor repository in a base image — NVIDIA's in every
+// nvidia/cuda image — was skipped with a warning, and a build that installed from one
+// failed where a plain docker build did not. https://host/ becomes http://host:443/, the
+// form the cache fetches over TLS itself; see router.PlainProxyForm.
+//
+// Unlike apk's, the restore is a reverse rewrite rather than a copy put back: nothing is
+// written as http://host:443/ except by this, so reversing it touches no other line, and a
+// source the Dockerfile edits or adds later in the stage is handed back as the Dockerfile
+// left it. Files this user cannot write are left alone, and the restore skips them too.
+func aptToPlainProxyForm() string {
+	return aptSourcesRewrite(`s#https://([A-Za-z0-9.-]+)/#http://\1:443/#g`)
+}
+
+func aptRestore() string {
+	return aptSourcesRewrite(`s#http://([A-Za-z0-9.-]+):443/#https://\1/#g`)
+}
+
+func aptSourcesRewrite(expression string) string {
+	return "RUN for f in " + aptSources + `; do if [ -f "$f" ] && [ -w "$f" ]; then ` +
+		"sed -i -E '" + expression + `' "$f"; fi; done`
+}
+
 // rewriteIndexURLs points a directly named package index at the cache.
 //
-// The injected PIP_INDEX_URL and UV_DEFAULT_INDEX cover the default index and nothing
+// The injected PIP_INDEX_URL and UV_INDEX_URL cover the default index and nothing
 // else. A Dockerfile that writes an index URL itself — `--extra-index-url` on a uv or pip
 // command, or an ARG holding one — has named a second index that those variables do not
 // touch, and it went straight to the internet. For a CUDA torch wheel that is several
@@ -438,6 +527,37 @@ func rewriteIndexURLs(line string, o Options) (string, []Change) {
 	return line, changes
 }
 
+// rewriteReleaseURLs points a forge's release downloads at the cache's git adapter, for
+// the same hosts clones are already sent through.
+//
+// A release asset is fetched by URL — `uv pip install https://github.com/o/r/releases/
+// download/v1/x.whl`, a curl, an ARG holding the base — so no index variable reaches it,
+// and a 300 MB patched wheel went to the internet on every build. The owner and
+// repository must be literal: a URL assembled from variables is left alone rather than
+// guessed at. Everything from the tag on is kept as written, variables included.
+func rewriteReleaseURLs(line string, o Options) (string, []Change) {
+	if len(o.GitHosts) == 0 || o.Base == "" || o.Project == "" {
+		return line, nil
+	}
+	var changes []Change
+	for _, host := range o.GitHosts {
+		prefix := "https://" + host + "/"
+		if !strings.Contains(line, prefix) {
+			continue
+		}
+		pattern := regexp.MustCompile(regexp.QuoteMeta(prefix) +
+			`([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/releases/download/`)
+		line = pattern.ReplaceAllStringFunc(line, func(found string) string {
+			parts := pattern.FindStringSubmatch(found)
+			target := strings.TrimRight(o.Base, "/") + "/" + o.Project + "/git/" + host + "/" +
+				parts[1] + "/" + parts[2] + "/releases/download/"
+			changes = append(changes, Change{From: found, To: target})
+			return target
+		})
+	}
+	return line, changes
+}
+
 // slowFetchSeconds is how long a client should wait for one artifact through the cache.
 //
 // It bounds a single request, not a build: ten minutes of no progress on one file is a
@@ -457,8 +577,16 @@ func buildArgs(o Options) []string {
 
 	args := []string{
 		"ARG PIP_INDEX_URL=" + index,
-		"ARG UV_DEFAULT_INDEX=" + index,
+		// UV_INDEX_URL rather than UV_DEFAULT_INDEX, which uv lets override an explicit
+		// --index-url: `uv pip install --index-url <cu128 channel> torch` in a build was
+		// silently resolved against PyPI instead. UV_INDEX_URL yields to either flag.
+		"ARG UV_INDEX_URL=" + index,
 		"ARG NPM_CONFIG_REGISTRY=" + npm,
+		// pnpm 11 ignores npm's variable and corepack reads neither, so a `pnpm install`
+		// or a `corepack enable` in a build went to registry.npmjs.org. corepack appends
+		// /<name>/<version> itself, hence no trailing slash.
+		"ARG PNPM_CONFIG_REGISTRY=" + npm,
+		"ARG COREPACK_NPM_REGISTRY=" + strings.TrimSuffix(npm, "/"),
 		"ARG GOPROXY=" + goproxy,
 		// The checksum database is not served by this cache — see the gomod adapter,
 		// which explains why an append-only transparency log is not a thing to cache.
@@ -533,7 +661,10 @@ func buildArgs(o Options) []string {
 			"ARG NODE_EXTRA_CA_CERTS="+SecretTarget,
 			"ARG NPM_CONFIG_CAFILE="+SecretTarget,
 			"ARG GIT_SSL_CAINFO="+SecretTarget,
-			"ARG UV_NATIVE_TLS=true")
+			// Both spellings: uv 0.11 renamed UV_NATIVE_TLS, and older releases know
+			// only that one.
+			"ARG UV_NATIVE_TLS=true",
+			"ARG UV_SYSTEM_CERTS=true")
 	}
 	return args
 }
@@ -582,7 +713,9 @@ func hostOf(value string) string {
 	return trimmed
 }
 
-func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Change) {
+func rewriteFrom(
+	line string, stages map[string]bool, o Options, args map[string]string,
+) (string, *Change) {
 	match := fromRE.FindStringSubmatch(line)
 	if match == nil {
 		return line, nil
@@ -590,6 +723,15 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 	prefix, flags, ref, tail := match[1], match[2], match[3], match[4]
 	if o.SkipFrom {
 		return line, nil
+	}
+	// A name built from ARGs — `FROM ${BASE_REGISTRY}/${IMAGE}` — is resolved from the
+	// values this build will give them, and then treated like any other name. Only when
+	// every variable resolves: a guess would build a different image than the author's.
+	written := ref
+	if name, _ := splitTag(ref); strings.Contains(name, "$") && args != nil {
+		if expanded, ok := expandArgs(ref, args); ok {
+			ref = expanded
+		}
 	}
 	// A FROM naming an earlier stage is not an image. Rewriting it produces a
 	// reference to something that has never existed, and the build fails with a
@@ -616,7 +758,53 @@ func rewriteFrom(line string, stages map[string]bool, o Options) (string, *Chang
 	if mapped == "" {
 		return line, nil
 	}
-	return prefix + flags + mapped + tail, &Change{From: ref, To: mapped}
+	return prefix + flags + mapped + tail, &Change{From: written, To: mapped}
+}
+
+// collectGlobalArg records the ARGs one line declares before the first FROM: the value a
+// --build-arg gives it, or else its default, resolved against the ARGs before it. An ARG
+// with neither is left out, so a FROM using it stays unresolved.
+func collectGlobalArg(line string, overrides, args map[string]string) {
+	match := argRE.FindStringSubmatch(line)
+	if match == nil {
+		return
+	}
+	for _, field := range strings.Fields(match[1]) {
+		name, value, hasDefault := strings.Cut(field, "=")
+		if override, ok := overrides[name]; ok {
+			args[name] = override
+			continue
+		}
+		if !hasDefault {
+			continue
+		}
+		value = strings.Trim(value, `"'`)
+		if expanded, ok := expandArgs(value, args); ok {
+			args[name] = expanded
+		}
+	}
+}
+
+// expandArgs substitutes $NAME, ${NAME} and ${NAME:-default}, reporting whether every
+// variable resolved.
+func expandArgs(text string, args map[string]string) (string, bool) {
+	resolved := true
+	out := varRE.ReplaceAllStringFunc(text, func(found string) string {
+		parts := varRE.FindStringSubmatch(found)
+		name, fallback := parts[1], parts[2]
+		if name == "" {
+			name = parts[3]
+		}
+		if value, ok := args[name]; ok && value != "" {
+			return value
+		}
+		if strings.Contains(found, ":-") {
+			return fallback
+		}
+		resolved = false
+		return found
+	})
+	return out, resolved
 }
 
 // rewriteSyntax points a `# syntax=` parser directive at the cache.

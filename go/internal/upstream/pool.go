@@ -12,11 +12,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
@@ -48,12 +51,25 @@ type Request struct {
 	// only the ecosystem layer knows which origins are interchangeable for a given
 	// path — the pool knows how to try them, not which they are.
 	Fallbacks []Fallback
+	// Proxy is an HTTP forward proxy this attempt is sent through, with the URL left as
+	// it is. Empty means a direct connection.
+	//
+	// This is how an apt request reaches a team's cache: apt names the mirror itself, so
+	// there is no origin to swap for the team's — the request has to travel through the
+	// team's own forward proxy instead. Per attempt, because the fallback behind it is
+	// the same URL fetched directly.
+	Proxy string
+	// Optional marks an attempt that may decline: its 403 moves on to the next attempt
+	// instead of being the answer. See openChain.
+	Optional bool
 }
 
-// Fallback is an alternate origin for a request, with its own credential.
+// Fallback is an alternate origin for a request, with its own credential and route.
 type Fallback struct {
 	URL        string
 	Credential *Credential
+	Proxy      string
+	Optional   bool
 }
 
 // Pool issues outbound requests.
@@ -71,6 +87,7 @@ type Pool struct {
 	metrics *obs.Metrics
 	ua      string
 	timeout time.Duration
+	idle    time.Duration
 	tokens  *tokenCache
 }
 
@@ -86,7 +103,8 @@ func New(cfg config.Upstream, m *obs.Metrics) (*Pool, error) {
 		ua = "pkgreg/1"
 	}
 	pool := &Pool{
-		cfg: cfg, metrics: m, ua: ua, timeout: cfg.RequestTimeout, tokens: newTokenCache(),
+		cfg: cfg, metrics: m, ua: ua, timeout: cfg.RequestTimeout, idle: cfg.BodyIdleTimeout,
+		tokens: newTokenCache(),
 	}
 	client, err := pool.build(cfg.CAFile)
 	if err != nil {
@@ -139,12 +157,24 @@ func (p *Pool) build(caFile string) (*http.Client, error) {
 		TLSHandshakeTimeout: cfg.ConnectTimeout,
 		// Bounds the wait for a response *header*, not the body. Without it, an origin
 		// that accepts a connection and then says nothing holds the request for the
-		// whole 20-minute request timeout before any fallback is tried — and 20 minutes
-		// is a budget that exists so a 2.5 GB wheel can finish, not so a stalled index
-		// can. The body still gets unlimited time.
+		// whole request timeout before any fallback is tried — a budget that exists so a
+		// 2.5 GB wheel can finish, not so a stalled index can. The body's silences are
+		// bounded separately, by BodyIdleTimeout; see watchIdle.
 		ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
-		ForceAttemptHTTP2:     true,
+		// HTTP/1.1 unless configured otherwise: a connection per request, so one slow or
+		// reset connection holds up one transfer rather than every one to that host.
+		// See config.Upstream.HTTP2 for the measurements.
+		ForceAttemptHTTP2: cfg.HTTP2,
+		// Chosen per request, never from the environment. An http_proxy inherited by a
+		// daemon would silently reroute every origin it fetches from; a relay has to be
+		// something this cache was configured with.
+		Proxy: proxyFromContext,
+	}
+	if !cfg.HTTP2 {
+		// An empty map rather than nil is what keeps HTTP/2 off even where a TLS config
+		// would otherwise let the transport negotiate it.
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	}
 	if caFile != "" {
 		caPEM, err := os.ReadFile(caFile)
@@ -190,6 +220,7 @@ func (p *Pool) Open(ctx context.Context, r Request) (*http.Response, context.Can
 	if resp.StatusCode >= 400 {
 		p.observeError(r, strconv.Itoa(resp.StatusCode))
 	}
+	resp.Body = watchIdle(resp.Body, p.idle, cancel)
 	return resp, cancel, nil
 }
 
@@ -206,7 +237,10 @@ func (p *Pool) Open(ctx context.Context, r Request) (*http.Response, context.Can
 //   - A 404 is NOT. A cache in deliberate offline mode answers exactly that, and
 //     falling through would quietly reach the internet that somebody switched off.
 //   - A 401 or 403 is NOT. That is a misconfigured credential, and going around it hides
-//     a problem that will otherwise be found once rather than never.
+//     a problem that will otherwise be found once rather than never. The exception is an
+//     attempt marked Optional: a sibling's proxy, which carries no credential and relays
+//     apt for public names only — and relays nothing at all on an older pkgcache. Its 403
+//     means "not through me", and the next attempt is the answer.
 //
 // The last attempt's answer is returned whatever it is, so a chain that fails everywhere
 // reports the final origin's error rather than a synthetic one.
@@ -217,6 +251,8 @@ func (p *Pool) openChain(ctx context.Context, method string, r Request) (*http.R
 		next := r
 		next.URL = fallback.URL
 		next.Credential = fallback.Credential
+		next.Proxy = fallback.Proxy
+		next.Optional = fallback.Optional
 		next.Fallbacks = nil
 		attempts = append(attempts, next)
 	}
@@ -231,7 +267,7 @@ func (p *Pool) openChain(ctx context.Context, method string, r Request) (*http.R
 			if last {
 				return nil, err
 			}
-		case resp.StatusCode >= 500 && !last:
+		case (resp.StatusCode >= 500 || resp.StatusCode == http.StatusForbidden && attempt.Optional) && !last:
 			// Drained and closed before moving on: an unread body holds the connection
 			// out of the pool until the transport gives up on it.
 			_ = resp.Body.Close()
@@ -246,9 +282,25 @@ func (p *Pool) openChain(ctx context.Context, method string, r Request) (*http.R
 	return nil, lastErr
 }
 
+// transportRetries is how many more times a request is sent after its connection failed
+// before any response arrived.
+const transportRetries = 2
+
 // openOne is a single origin's attempt, including the bearer-token dance.
 func (p *Pool) openOne(ctx context.Context, method string, r Request) (*http.Response, error) {
 	resp, err := p.do(ctx, method, r)
+	for retry := 1; err != nil && retry <= transportRetries && retryable(ctx, method, r, err); retry++ {
+		// A CDN resetting a connection before it answered — pypi.nvidia.com did, twice in
+		// one build, while the same request a minute later took 0.2 s — failed the whole
+		// fetch, and every build asking for that wheel with it. Nothing had arrived, so
+		// asking again, on a fresh connection, repeats nothing.
+		select {
+		case <-time.After(time.Duration(retry) * time.Second):
+		case <-ctx.Done():
+			return nil, err
+		}
+		resp, err = p.do(ctx, method, r)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +320,26 @@ func (p *Pool) openOne(ctx context.Context, method string, r Request) (*http.Res
 	return resp, nil
 }
 
+// retryable reports a request whose connection failed before it was answered: reset or
+// closed by the other side. Only for a request that is safe to repeat, and not for a
+// timeout — an origin that is not answering is the fallback chain's business, and waiting
+// out its timeout twice more would only delay that.
+func retryable(ctx context.Context, method string, r Request, err error) bool {
+	if ctx.Err() != nil || len(r.Body) > 0 || (method != http.MethodGet && method != http.MethodHead) {
+		return false
+	}
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.EOF)
+}
+
 func (p *Pool) do(ctx context.Context, method string, r Request) (*http.Response, error) {
+	if r.Proxy != "" {
+		proxy, err := url.Parse(r.Proxy)
+		if err != nil || proxy.Host == "" {
+			return nil, fmt.Errorf("upstream: invalid proxy %q for %s", r.Proxy, r.URL)
+		}
+		ctx = context.WithValue(ctx, proxyKey{}, proxy)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, r.URL, bytes.NewReader(r.Body))
 	if err != nil {
 		return nil, fmt.Errorf("upstream: build request for %s: %w", r.URL, err)
@@ -296,6 +367,14 @@ func (p *Pool) do(ctx context.Context, method string, r Request) (*http.Response
 	return resp, nil
 }
 
+// proxyKey carries one attempt's forward proxy from do to the transport.
+type proxyKey struct{}
+
+func proxyFromContext(req *http.Request) (*url.URL, error) {
+	proxy, _ := req.Context().Value(proxyKey{}).(*url.URL)
+	return proxy, nil
+}
+
 func (p *Pool) observeError(r Request, code string) {
 	if p.metrics == nil {
 		return
@@ -303,12 +382,29 @@ func (p *Pool) observeError(r Request, code string) {
 	p.metrics.UpstreamErrors.WithLabelValues(hostOf(r.URL), code).Inc()
 }
 
+// ServedBy names where a response actually came from, for the metrics that say where
+// bytes were fetched: the proxy it was relayed through, or else the URL it was finally
+// fetched from — a fallback's rather than the first one tried, and past any redirect.
+//
+// Counting against the URL first asked for put every byte of a chain on its head, so a
+// dashboard read "all from the team cache" on a day the team cache was down and every
+// byte had come from the public registry behind it.
+func ServedBy(resp *http.Response) string {
+	if resp == nil || resp.Request == nil {
+		return ""
+	}
+	if proxy, ok := resp.Request.Context().Value(proxyKey{}).(*url.URL); ok && proxy != nil {
+		return proxy.String()
+	}
+	return resp.Request.URL.String()
+}
+
 // CountBytes records bytes pulled from an upstream, for the bytes-saved calculation.
-func (p *Pool) CountBytes(eco, url string, n int64) {
+func (p *Pool) CountBytes(eco, rawURL string, n int64) {
 	if p.metrics == nil || n <= 0 {
 		return
 	}
-	p.metrics.UpstreamBytes.WithLabelValues(eco, hostOf(url)).Add(float64(n))
+	p.metrics.UpstreamBytes.WithLabelValues(eco, hostOf(rawURL)).Add(float64(n))
 }
 
 // Client exposes the shared client for callers that must drive a request themselves

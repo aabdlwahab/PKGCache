@@ -8,6 +8,7 @@ package npm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -80,14 +81,23 @@ func (r *Repo) Routes() []eco.Route {
 		// "@scope%2Fname" packument request.
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/{scope}/{pkg}/-/{filename}", Handler: r.tarball},
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/{pkg}/-/{filename}", Handler: r.tarball},
+		{Methods: []string{http.MethodGet}, Pattern: "/{scope}/{pkg}/{version}", Handler: r.metadata},
 		{Methods: []string{http.MethodGet}, Pattern: "/{scope}/{pkg}", Handler: r.metadata},
 		{Methods: []string{http.MethodGet}, Pattern: "/{pkg}", Handler: r.metadata},
 	}
 }
 
+// metadata answers a packument, or one version of it.
+//
+// The one-version form — /name/1.0.0, /name/latest — is npm's per-version document, and
+// it is what corepack asks for: it resolves "latest" and finds a pinned package manager's
+// tarball and signatures that way, and nothing else. It answered 404, so a Dockerfile's
+// `corepack enable pnpm` fetched pnpm past the cache. The entry is taken from the
+// packument this cache already holds for the tarball path, which carries everything
+// corepack reads, so a version costs no request of its own and is there offline.
 func (r *Repo) metadata(w http.ResponseWriter, req *http.Request, p router.Params) {
 	c := eco.CtxFrom(w, req, p)
-	name, ok := packageName(p)
+	name, selector, ok := packageRequest(p)
 	if !ok {
 		_ = c.NotFound("invalid package name")
 		return
@@ -95,11 +105,7 @@ func (r *Repo) metadata(w http.ResponseWriter, req *http.Request, p router.Param
 
 	body, err := r.loadPackument(c, name)
 	if err != nil {
-		if c.Offline() {
-			c.WriteError(err)
-		} else {
-			_ = c.NotFound("no cached metadata for " + name)
-		}
+		c.WriteLookupError(err, "no metadata for "+name)
 		return
 	}
 	rewritten, err := rewritePackument(body, name, c.ExternalBase())
@@ -107,9 +113,63 @@ func (r *Repo) metadata(w http.ResponseWriter, req *http.Request, p router.Param
 		_ = c.Text(http.StatusBadGateway, "upstream returned an invalid npm packument")
 		return
 	}
+	if selector != "" {
+		entry, found := versionEntry(rewritten, selector)
+		if !found {
+			_ = c.NotFound("no version or tag " + selector + " of " + name)
+			return
+		}
+		rewritten = entry
+	}
 	if err := c.ServeBytes(http.StatusOK, "application/json", rewritten); err != nil {
 		c.WriteError(err)
 	}
+}
+
+// packageRequest reads a metadata request in every spelling npm clients use:
+//
+//	/name   /@scope%2Fname   /@scope/name                        the packument
+//	/name/1.0.0   /@scope%2Fname/latest   /@scope/name/1.0.0     one version
+//
+// Two segments are ambiguous only in appearance: a scope starts with "@", a name never
+// does, so /@scope/name is a packument and /name/1.0.0 a version.
+func packageRequest(p router.Params) (name, selector string, ok bool) {
+	scope := p.Unescape("scope")
+	switch {
+	case p.Has("version"): // /@scope/name/1.0.0
+		name, ok = packageName(p)
+		selector = p.Unescape("version")
+	case p.Has("scope") && (!strings.HasPrefix(scope, "@") || strings.Contains(scope, "/")):
+		// /name/1.0.0, or /@scope%2Fname/1.0.0
+		name, ok = validName(scope)
+		selector = p.Unescape("pkg")
+	default: // /name, /@scope%2Fname, /@scope/name
+		name, ok = packageName(p)
+		return name, "", ok
+	}
+	if !ok || selector == "" || strings.Contains(selector, "/") {
+		return "", "", false
+	}
+	return name, selector, true
+}
+
+// versionEntry is one version of a packument, found by version or by dist-tag.
+func versionEntry(packument []byte, selector string) ([]byte, bool) {
+	var root struct {
+		DistTags map[string]string          `json:"dist-tags"`
+		Versions map[string]json.RawMessage `json:"versions"`
+	}
+	if json.Unmarshal(packument, &root) != nil {
+		return nil, false
+	}
+	if entry, ok := root.Versions[selector]; ok {
+		return entry, true
+	}
+	if version, ok := root.DistTags[selector]; ok {
+		entry, found := root.Versions[version]
+		return entry, found
+	}
+	return nil, false
 }
 
 func (r *Repo) tarball(w http.ResponseWriter, req *http.Request, p router.Params) {
@@ -125,6 +185,34 @@ func (r *Repo) tarball(w http.ResponseWriter, req *http.Request, p router.Params
 		return
 	}
 
+	key := name + "/-/" + filename
+	// The conventional address, and where its fetch went, relay included: the address
+	// an upstream error names.
+	conventional, triedAt := "", ""
+
+	// Straight to the registry's own path first. A tarball used to be found through its
+	// packument, and that turned every tarball into two fetches at every tier: a
+	// frozen-lockfile install asks for tarballs and no packuments, so each one cost a
+	// multi-megabyte document nobody requested before a byte of the tarball moved — and
+	// behind a team cache, twice. On a congested link a 168 KB tarball took 73 s that
+	// way and pnpm gave up on it. Every registry in common use — npmjs, a team cache,
+	// Verdaccio, Nexus, Artifactory, GitLab — keeps a tarball at <name>/-/<file>; one
+	// that keeps it elsewhere answers 404 there and says where in its packument.
+	if version, ok := tarballVersion(name, filename); ok {
+		if origin, ok := c.SingleUpstream(); ok {
+			conventional = eco.JoinURL(origin, packagePath(name)+"/-/"+url.PathEscape(filename))
+			triedAt = c.UpstreamRequest(conventional, nil).URL
+			err := r.serveTarball(c, key, name, version, conventional, nil)
+			if status, isStatus := engine.UpstreamStatus(err); err == nil ||
+				!isStatus || status != http.StatusNotFound {
+				if err != nil {
+					c.WriteError(err)
+				}
+				return
+			}
+		}
+	}
+
 	body, err := r.loadPackument(c, name)
 	if err != nil {
 		c.WriteError(err)
@@ -135,9 +223,41 @@ func (r *Repo) tarball(w http.ResponseWriter, req *http.Request, p router.Params
 		_ = c.NotFound("unknown tarball " + filename)
 		return
 	}
+	if upstreamURL == conventional {
+		// The packument names the address that just answered 404: that is the answer.
+		_ = c.NotFound("tarball " + filename + " is missing from the registry")
+		return
+	}
+	// Both addresses are fetched under the tarball's one key, so this request can meet
+	// another's first try, still asking the conventional path, and be handed its 404 —
+	// an answer about the wrong address. Twelve clients asking for one tarball at once
+	// did exactly that. That fetch is over by the time its error arrives, so asking again
+	// joins the fetch of the right address, or starts it.
+	for attempt := 1; ; attempt++ {
+		err := r.serveTarball(c, key, name, version, upstreamURL, extra)
+		if triedAt != "" && missedAt(err) == triedAt && attempt < 5 {
+			continue
+		}
+		if err != nil {
+			c.WriteError(err)
+		}
+		return
+	}
+}
 
-	key := name + "/-/" + filename
-	err = c.Serve(engine.Resolution{
+// missedAt is the address an upstream answered 404 for, or "" for any other outcome.
+func missedAt(err error) string {
+	var status *engine.UpstreamHTTPError
+	if errors.As(err, &status) && status.Status == http.StatusNotFound {
+		return status.URL
+	}
+	return ""
+}
+
+func (r *Repo) serveTarball(
+	c *eco.Ctx, key, name, version, upstreamURL string, extra map[string]any,
+) error {
+	return c.Serve(engine.Resolution{
 		Key:       key,
 		Upstream:  c.UpstreamRequest(upstreamURL, nil),
 		MediaType: "application/octet-stream",
@@ -146,9 +266,19 @@ func (r *Repo) tarball(w http.ResponseWriter, req *http.Request, p router.Params
 		},
 		AccessName: name,
 	})
-	if err != nil {
-		c.WriteError(err)
+}
+
+// tarballVersion reads the version from a tarball's conventional name, <name>-<version>.tgz
+// with the scope left off. Found by its prefix rather than by the last hyphen, which is
+// inside the version whenever the version is a prerelease: react-19.0.0-rc-1.tgz.
+func tarballVersion(name, filename string) (string, bool) {
+	unscoped := name[strings.LastIndex(name, "/")+1:]
+	version, ok := strings.CutPrefix(filename, unscoped+"-")
+	if !ok {
+		return "", false
 	}
+	version, ok = strings.CutSuffix(version, ".tgz")
+	return version, ok && version != ""
 }
 
 func (r *Repo) loadPackument(c *eco.Ctx, name string) ([]byte, error) {
@@ -159,11 +289,12 @@ func (r *Repo) loadPackument(c *eco.Ctx, name string) ([]byte, error) {
 	headers := http.Header{}
 	headers.Set("Accept", "application/vnd.npm.install-v1+json, application/json")
 	doc, err := c.Document(engine.DocSpec{
-		Name:    "packument/" + name,
-		Key:     "packument/" + name,
-		URL:     eco.JoinURL(origin, packagePath(name)),
-		TTL:     r.ttl,
-		Headers: headers,
+		Name:         "packument/" + name,
+		Key:          "packument/" + name,
+		URL:          eco.JoinURL(origin, packagePath(name)),
+		TTL:          r.ttl,
+		Headers:      headers,
+		Compressible: true,
 	})
 	if err != nil {
 		return nil, err
@@ -184,7 +315,11 @@ func packageName(p router.Params) (string, bool) {
 		}
 		return scope + "/" + pkg, true
 	}
-	name := p.Unescape("pkg")
+	return validName(p.Unescape("pkg"))
+}
+
+// validName accepts "name" and "@scope/name", decoded.
+func validName(name string) (string, bool) {
 	if name == "" {
 		return "", false
 	}
@@ -303,6 +438,9 @@ func parseArtifactKey(key string) (name, version, arch string, ok bool) {
 	name, filename, found := strings.Cut(key, "/-/")
 	if !found || name == "" || filename == "" {
 		return "", "", "", false
+	}
+	if version, ok := tarballVersion(name, filename); ok {
+		return name, version, "", true
 	}
 	stem := strings.TrimSuffix(filename, ".tgz")
 	if i := strings.LastIndex(stem, "-"); i >= 0 && i+1 < len(stem) {

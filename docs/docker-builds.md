@@ -26,25 +26,62 @@ and never removes. Anything larger would produce a file a reader could not predi
 the original, and a build nobody can predict is worse than a flag somebody has to
 remember.
 
-It adds a `RUN` in exactly one case: a stage that runs `apk`, whose repositories are
-moved to plain HTTP so the proxy can see them, and put back before the stage ends. A
-stage that never runs `apk` is left untouched — that step is a shell step, and a base
-image with no shell (distroless, `scratch`, and most final stages of a Go or Rust
-service) cannot run one at all.
+It adds a `RUN` in two cases, each a pair that bends something for the stage and hands
+it back before the stage ends: a stage that runs `apk`, whose repositories are moved to
+plain HTTP so the proxy can see them; and a stage that runs `apt`, whose https
+repositories are moved to the proxy's plain form, `http://host:443/`, which the cache
+fetches over TLS itself. A stage that runs neither is left untouched — those steps are
+shell steps, and a base image with no shell (distroless, `scratch`, and most final stages
+of a Go or Rust service) cannot run one at all. A `RUN` that runs a uv project command
+also gets a shell function in front of it; see [uv lockfiles](#uv-lockfiles).
 
 The arguments it declares are the ones the tools already read:
 
 | tool | argument |
 |---|---|
 | pip | `PIP_INDEX_URL` |
-| uv | `UV_DEFAULT_INDEX` |
+| uv | `UV_INDEX_URL` for `uv pip` (not `UV_DEFAULT_INDEX`, which uv lets override an explicit `--index-url`); `uv sync` is [below](#uv-lockfiles) |
 | npm | `NPM_CONFIG_REGISTRY` |
+| pnpm 11 | `PNPM_CONFIG_REGISTRY` (it no longer reads npm's) |
+| corepack | `COREPACK_NPM_REGISTRY` — the pnpm or yarn a `packageManager` field pins |
 | git | `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n` |
 | apt, apk | `http_proxy`, `no_proxy` |
 
 They are `ARG`, never `ENV`. An `ENV` is written into the shipped image, and an image
 whose `PIP_INDEX_URL` points at somebody's laptop is a broken image the moment it leaves
 that laptop.
+
+### uv lockfiles
+
+`uv sync` and `uv run` are the one place those arguments cannot reach. A `uv.lock`
+records the address of every file it pins — `https://files.pythonhosted.org/…` — and
+`uv sync --frozen` or `--locked` fetches exactly those addresses whatever `UV_INDEX_URL`
+says. Worse, `UV_INDEX_URL` makes `uv sync --locked` reject the lock, because it names a
+different index from the one the lock was made against, so a Dockerfile that builds on
+its own failed under the cache. uv has no mirror setting that would do this instead
+([astral-sh/uv#19625](https://github.com/astral-sh/uv/issues/19625)).
+
+So a `RUN` that runs a uv project command gets a small shell function in front of it,
+reported with the other substitutions. For the length of each `uv sync` or `uv run`, it
+points the file addresses in the nearest `uv.lock` — on files.pythonhosted.org,
+download.pytorch.org and its download-r2 mirror, pypi.nvidia.com and flashinfer.ai, the
+hosts of the indexes the cache fronts — at the cache's `/+files/<host>/<path>`, and then
+points them back byte for byte. Each file's `sha256` from the lock goes along as
+`?sha256=`, so a file the cache already holds under any other name is served without
+being fetched again, and one it does fetch is checked. The lock's `source` lines are never
+touched, so `--locked` still accepts it, and uv still checks every file against the lock's
+hash: what is installed cannot change, only where it comes from. The function also
+withholds the build's `UV_INDEX_URL` from uv's project commands, so none of them rejects
+the lock or writes the cache's address into it. `uv pip` keeps it.
+
+uv's own Docker pattern bind-mounts the lock into the step
+(`--mount=type=bind,source=uv.lock,target=uv.lock`), and a bind mount is read-only; the
+rewrite adds `rw` to that mount so the lock can be lent. BuildKit discards the write when
+the step ends, so neither the build context nor the image sees it.
+
+What it cannot see still downloads directly: a `uv sync` inside a script the `RUN` calls,
+an exec-form `RUN ["uv", "sync"]`, and files on a host outside that list, such as a
+private index.
 
 `FROM` lines are repointed for any registry the reference names — Docker Hub, ghcr,
 quay, `nvcr.io`, `gcr.io`, `public.ecr.aws` and the rest — because the cache discovers a

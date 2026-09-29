@@ -50,6 +50,87 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+// holdNextBatch makes the next flush stop between detaching its batch and writing it,
+// and returns a channel that is closed once one has, and the function that lets it go.
+func holdNextBatch(db *DB) (held <-chan struct{}, release func()) {
+	reached, gate := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	db.beforeWrite = func() {
+		once.Do(func() {
+			close(reached)
+			<-gate
+		})
+	}
+	return reached, func() { close(gate) }
+}
+
+// A Flush guards every read that must see a complete picture — listings, snapshots, GC —
+// and has to cover a batch the background loop is already writing. It returned as soon
+// as it found nothing pending instead, so a checkpoint taken while a batch was in the
+// air left those entries out of its manifest, and rolling back to it lost them
+// (TestPhase8JobsCheckpointRollbackAndExport failed one run in four under -race).
+func TestFlushWaitsForABatchAlreadyBeingWritten(t *testing.T) {
+	db := newDB(t)
+	e := entry("global", "files", "one", "one")
+	if err := db.PutEntry(e); err != nil {
+		t.Fatal(err)
+	}
+	held, release := holdNextBatch(db)
+	background := make(chan error, 1)
+	go func() { background <- db.flushLocked() }()
+	<-held
+
+	flushed := make(chan error, 1)
+	go func() { flushed <- db.Flush() }()
+	select {
+	case err := <-flushed:
+		release()
+		<-background
+		t.Fatalf("Flush returned (%v) while a batch was still being written", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	if err := <-background; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-flushed; err != nil {
+		t.Fatal(err)
+	}
+	entries, err := db.ListEntries(EntryQuery{Project: "global"})
+	if err != nil || len(entries) != 1 || entries[0].Key != "one" {
+		t.Fatalf("entries = %+v, %v", entries, err)
+	}
+}
+
+// A delete that ran while a batch holding the same key was between its detaching and its
+// write was undone when the batch landed: the row came back.
+func TestDeleteIsNotUndoneByABatchBeingWritten(t *testing.T) {
+	db := newDB(t)
+	e := entry("global", "npm", "left-pad/-/left-pad-1.3.0.tgz", "tarball")
+	if err := db.PutEntry(e); err != nil {
+		t.Fatal(err)
+	}
+	held, release := holdNextBatch(db)
+	background := make(chan error, 1)
+	go func() { background <- db.flushLocked() }()
+	<-held
+
+	deleted := make(chan error, 1)
+	go func() { deleted <- db.DeleteEntry(e.EntryKey) }()
+	// Let the delete run now if it is going to: that is the ordering that loses it.
+	time.Sleep(50 * time.Millisecond)
+	release()
+	if err := <-background; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-deleted; err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := db.ListEntries(EntryQuery{Project: "global"}); err != nil || len(entries) != 0 {
+		t.Fatalf("a deleted entry came back: %+v, %v", entries, err)
+	}
+}
+
 // The batch queue must not be observable: a read immediately after a write has to
 // see it, or a second request for a just-cached artifact would re-fetch it.
 func TestPutEntryIsImmediatelyReadable(t *testing.T) {

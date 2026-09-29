@@ -11,6 +11,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aabdlwahab/PKGCache/internal/clientbuild"
 	"github.com/aabdlwahab/PKGCache/internal/eco"
 	aptrepo "github.com/aabdlwahab/PKGCache/internal/eco/apt"
 	"github.com/aabdlwahab/PKGCache/internal/eco/ecotest"
@@ -40,6 +42,14 @@ const (
 
 func TestDockerPull(t *testing.T) {
 	docker := requireDocker(t)
+	// The pull names the harness by loopback, which a daemon in a virtual machine —
+	// Docker Desktop, on every Mac — resolves to itself. The product reaches such a daemon
+	// through the host gateway instead, which needs `docker-setup`; a test cannot assume
+	// that was run, so it says why it is not running rather than failing on a refusal.
+	if clientbuild.GatewayDefault(context.Background(), docker) {
+		t.Skip("this Docker daemon cannot see the test's loopback (a VM such as Docker Desktop); " +
+			"the pull is exercised on a native Linux daemon")
+	}
 	layer, diffID := dockerLayer(t)
 	configBody := dockerConfig(t, diffID)
 	configDigest := sha256Hex(configBody)

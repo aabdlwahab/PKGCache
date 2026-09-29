@@ -341,7 +341,8 @@ func TestEnvScriptPointsEveryToolAtTheBridge(t *testing.T) {
 	for _, shell := range []string{"sh", "powershell"} {
 		script := envScript(shell, "127.0.0.1:41999", "team-a")
 		for _, want := range []string{
-			"PIP_INDEX_URL", "UV_DEFAULT_INDEX", "NPM_CONFIG_REGISTRY",
+			"PIP_INDEX_URL", "UV_INDEX_URL", "NPM_CONFIG_REGISTRY",
+			"PNPM_CONFIG_REGISTRY", "COREPACK_NPM_REGISTRY",
 			"http://127.0.0.1:41999/team-a/pypi/root/pypi/+simple/",
 		} {
 			if !strings.Contains(script, want) {

@@ -7,6 +7,7 @@
 package ecotest
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +82,13 @@ func New(t *testing.T, build func(*testupstream.Server) eco.Ecosystem) *Harness 
 		Events:  obs.NewBus(),
 	})
 
+	// Registered after the catalog and origin, so it runs before them: a fetch a test
+	// started but never waited for finishes before its directory is removed.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = e.Drain(ctx)
+	})
 	h := &Harness{
 		T: t, Engine: e, Blobs: blobs, Catalog: cat,
 		Origin: origin, Config: cfg, project: config.GlobalProject,

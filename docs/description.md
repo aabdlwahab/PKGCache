@@ -105,6 +105,7 @@ build for a reason:
   with `gh attestation verify` and is not the same thing.
 - **The desktop app is not a static binary.** pkgcache and pkgreg are CGO-free and have no
   runtime dependencies; the app links GTK and WebKit on Linux and AppKit on macOS.
-- **apt and git are not chained through a team cache.** Chaining covers pypi, npm and OCI.
-  apt and git derive their origin from the request itself, and `files` has no upstream at
-  all, so those three are absent from a chain rather than half-supported.
+- **git is not chained through a team cache.** Chaining covers pypi, npm, OCI and gomod,
+  and apt is relayed through the team cache's forward proxy instead. git derives its
+  origin from the request itself, and `files` has no upstream at all, so those two are
+  absent from a chain rather than half-supported.

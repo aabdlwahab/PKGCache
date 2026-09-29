@@ -187,16 +187,24 @@ type Catalog struct {
 
 // Upstream tunes outbound fetching.
 type Upstream struct {
-	// RequestTimeout is generous on purpose: the largest artifact measured in a real
-	// deployment is a 2.5 GB CUDA wheel, which over a slow uplink takes many minutes.
+	// RequestTimeout bounds one whole request, and is generous on purpose: the largest
+	// artifact measured in a real deployment is a 2.5 GB CUDA wheel, which over a slow
+	// uplink takes many minutes — and behind a team cache takes as long as the team's own
+	// fetch does. A 2 GB layer took 57 minutes that way, and the 20 minutes this used to
+	// be cut it twice while it was still arriving. Stalls are BodyIdleTimeout's to catch,
+	// so this only has to be longer than the slowest transfer that is still moving.
 	RequestTimeout time.Duration `yaml:"request_timeout"`
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 	// ResponseHeaderTimeout bounds the wait for response headers, not for the body.
 	// It is what makes a stalled origin fail over in seconds rather than after
 	// RequestTimeout, which is sized for a multi-gigabyte body.
 	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout"`
-	MaxIdlePerHost        int           `yaml:"max_idle_per_host"`
-	UserAgent             string        `yaml:"user_agent"`
+	// BodyIdleTimeout bounds how long a response body may deliver nothing. A transfer
+	// cut by it is picked up from the byte it reached, so a stall costs this long rather
+	// than the rest of RequestTimeout. Zero turns it off.
+	BodyIdleTimeout time.Duration `yaml:"body_idle_timeout"`
+	MaxIdlePerHost  int           `yaml:"max_idle_per_host"`
+	UserAgent       string        `yaml:"user_agent"`
 	// Offline makes every ecosystem serve from cache only and never touch upstream.
 	// This is the air-gap hard mode: it overrides every per-project soft flag.
 	Offline bool `yaml:"offline"`
@@ -208,6 +216,13 @@ type Upstream struct {
 	// cannot verify it from the system store — and the last tier in the same chain is a
 	// public registry that must keep verifying normally.
 	CAFile string `yaml:"ca_file"`
+	// HTTP2 lets outbound requests share one HTTP/2 connection per host. Off by default:
+	// every request to a host then rides one TCP connection, which on a congested uplink
+	// gets one connection's share of it — 30 concurrent index pages from pypi.org took
+	// 103-105 s that way against 30-55 s over HTTP/1.1 — and a response's headers queue
+	// behind other responses' data, which is how whole batches of index requests hit the
+	// header timeout together. One reset also fails every transfer on the connection.
+	HTTP2 bool `yaml:"http2"`
 }
 
 // Git tunes managed mirror freshness and CPU-heavy upload-pack negotiation.

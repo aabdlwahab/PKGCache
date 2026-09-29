@@ -181,6 +181,10 @@ func runBuild(
 		}
 	}
 	options = clientbuild.FromEnvironment(options)
+	// Held for the whole build: see local.HoldDaemon. The last layers BuildKit fetches
+	// can come long after the last request anything else made.
+	release := local.HoldDaemon(ctx, state.BaseURL())
+	defer release()
 	// The verb itself is not an argument to the builder: clientbuild adds it.
 	if err := clientbuild.Build(ctx, options, without(args, "build")); err != nil {
 		return fail(err)

@@ -54,7 +54,7 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
 | `pkgcache pull <image>` | pull an image through the cache, and keep the name you asked for |
 | `pkgcache crate` | run the crate orchestrator with its builds served from the cache |
-| `pkgcache warmlock` | fill the cache from a lock file, and point the lock at it |
+| `pkgcache warmlock` | fill the cache from a lock file; `-rewrite` also points the lock at this machine's cache, which then works on this machine only |
 | `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
 | `pkgcache project` | the projects this cache serves: `ls`, `create`, `rm`, `use` |
 | `pkgcache limit 25G \| none` | change the budget later |
@@ -212,10 +212,11 @@ addressed by its hash and the store is content-addressed across every project on
 machine, so a peer token grants any blob it holds, wherever it came from. Worth knowing
 before handing one to somebody.
 
-One command, on one side. `add` asks the sibling for its own token, which works because a
-cache with no accounts allows the control plane to whoever can reach it — the same fact
-`pkgcache project create` relies on. Where that is not true, `pkgcache peer token` on the
-other machine prints one to pass with `-token`.
+One command, on one side. `add` asks the sibling for its own token, which works when the
+sibling is on this machine: a cache with no accounts allows its control plane to this
+machine. A sibling on another machine refuses that — minting a token is a write, and its
+control plane answers only itself — so run `pkgcache peer token` over there and pass the
+result with `-token`. Without one, everything but the offline half works.
 
 It writes two things, because a sibling is useful in two different ways.
 
@@ -236,6 +237,21 @@ So: everything works through a sibling; two of them work with the network off.
 A cache listens on loopback unless it was told otherwise, so a sibling is reachable only
 if it was started with `PKGCACHE_ADDR=0.0.0.0:41780`. `pkgcache peer add` says so when
 nothing answers, rather than storing rows that point at nothing.
+
+What another machine reaches there is the **sibling surface**, and only that: packages and
+images, read-only; the `/peer/v1` digest protocol; the list of projects `peer add` offers;
+apt through the forward proxy, for public host names; and health. The console, the control
+API and uploads still answer this machine alone — a connection is this machine only when
+it arrives over loopback — and nothing is tunnelled. A forge, a registry or an apt mirror
+that another machine names has to be a public host name (not an IP literal, not
+`localhost`, not a bare hostname), so lending a cache to the network does not lend this
+machine's view of the network behind it. Release assets are asked of a sibling at the same
+path, apt through its proxy; a sibling asks its own siblings for neither, so two machines
+that borrow from each other cannot pass a miss back and forth. A sibling that declines —
+one on an older pkgcache relays no apt at all — answers 403, and the request moves on to
+the team cache or the mirror; either way the files are cached here too. The cache logs a warning at
+startup while it serves siblings. (This used to be refused outright — local mode would not
+bind anything but loopback, which made every sibling on another machine unreachable.)
 
 ## Three tiers
 
@@ -267,10 +283,27 @@ otherwise, and `pkgcache project ls` marks an inherited chain with `*`. Two team
 mean two self-minted CAs, so the file the outbound pool trusts is a bundle assembled
 from those records; removing a project's configuration removes its CA with it.
 
-Chained ecosystems today are **pypi, npm, oci and gomod**. apt and git derive their
-origin from the request itself rather than from configuration, and `files` has no
-upstream at all — its content arrives by upload. Those three are absent rather than
-half-supported.
+Chained ecosystems today are **pypi, npm, oci and gomod**. For pypi that is every index
+the cache serves by default — the PyTorch CUDA channels and FlashInfer as well as PyPI —
+because an `--extra-index-url` for a torch build is where the gigabytes are. A machine
+set up before this chained PyPI alone; running `setup` again adds the rest. git derives its origin from
+the request itself rather than from configuration, and `files` has no upstream at all —
+its content arrives by upload. Those two are absent rather than half-supported.
+
+**apt is relayed rather than chained.** It names the mirror in every request, so there is
+no origin for the team's to replace. Instead the request travels, URL unchanged, through
+the team cache's own forward proxy — the cleartext side of its port, with the team
+project as the proxy username — and the team cache fetches and keeps the `.deb`. The
+fallback is the same URL asked directly, under the same rules as a chain: on a team
+cache that is down or answering 5xx, never on a 404 or 403, and not at all with
+`-no-direct`. A team cache run with separate listeners rather than one port does not
+answer the relay there, so its apt traffic goes direct. Siblings come first, as in a chain,
+for public names; a sibling's refusal is the one 403 that moves on to the next attempt.
+
+**Release assets are asked of the team by path.** A forge's release download —
+`github.com/<owner>/<repo>/releases/download/<tag>/<file>` — is fetched from the team
+cache's git adapter at the same path, with the forge behind it under the same fallback
+rules. See [git-cache.md](git-cache.md#release-assets).
 
 OCI is the one whose URLs do not look like the others'. The distribution spec fixes
 `/v2` as the API root, so a chained origin has to name it — the team's root for Docker
@@ -303,8 +336,8 @@ looking at the directory afterwards.
 
 | Ecosystem | How | Anything privileged? |
 |---|---|---|
-| **pypi** (pip, uv) | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX` | no |
-| **npm** (npm, yarn, pnpm) | `NPM_CONFIG_REGISTRY` | no |
+| **pypi** (pip, uv) | `PIP_INDEX_URL`, `UV_INDEX_URL` | no |
+| **npm** (npm, yarn, pnpm) | `NPM_CONFIG_REGISTRY`; `PNPM_CONFIG_REGISTRY` for pnpm 11, which reads no other; `COREPACK_NPM_REGISTRY` for the package manager corepack fetches | no |
 | **git** | `GIT_CONFIG_*` `insteadOf` — an unmodified `git clone https://github.com/…` is served from the cache | no |
 | **files** | `PKGCACHE_FILES_URL` | no |
 | **oci** (docker) | native Linux: works over loopback. Docker Desktop and remote daemons: their loopback is not yours | **yes** — one `docker-setup` |
@@ -313,6 +346,27 @@ looking at the directory afterwards.
 `http_proxy` is deliberately never exported: the forward proxy relays `http://` only, so
 setting it would send curl, wget and every HTTPS client through something that cannot
 serve them.
+
+**uv's project commands are the exception to "every tool".** `UV_INDEX_URL` is what
+`uv pip` reads, and `uv sync`, `uv lock` and `uv add` read it too: `uv sync --locked` then
+refuses a lock made against PyPI, and the others write the cache's loopback address into
+`uv.lock`, a file that gets committed. So a session puts a small `uv` in front of the real
+one (under your user cache directory, first on `PATH`) that withholds the session's
+index from those commands and passes everything else through. They fetch from PyPI
+directly — slower, never wrong — and your lock is never touched. Not on Windows, which
+has no shim. `pkgcache persist` sets the index for `uv pip` only, for the same reason. In
+a Docker build the lock can be lent to the cache for the length of the sync, so there
+`uv sync` is cached too: see [docker-builds.md](docker-builds.md#uv-lockfiles).
+
+**A release download is fetched by URL**, so no variable reaches it: a script's
+`curl -L https://github.com/<owner>/<repo>/releases/download/<tag>/<file>` would go to the
+forge. A session puts a `curl` and a `wget` in front of the real ones as well, which send
+exactly that form of URL, for the hosts clones already go through, to the cache's git
+adapter, the way a Docker build's release URLs are rewritten. Every other URL, and a
+download given credentials (`-u`, `-H`, `--netrc`, `--user=`, `--header=`…), reaches the
+real program unchanged: the cache fetches release assets with its own credentials, not
+yours. A shim is written only for a program you have, so `command -v wget` still answers
+truthfully.
 
 ## Docker
 
@@ -357,7 +411,10 @@ pkgcache persist
 
 writes `~/.npmrc`, `~/.config/pip/pip.conf`, `~/.config/uv/uv.toml` and `~/.gitconfig`,
 each fenced by markers so `-uninstall` removes exactly what it added and leaves your own
-settings byte for byte. Nothing under `/etc`, no root.
+settings byte for byte. Nothing under `/etc`, no root. uv is given the cache in a `[pip]`
+table, which `uv pip` reads and `uv sync` and `uv lock` do not, so no lockfile ever records
+the cache's address. A `uv.toml` that already has a `[pip]` table of its own is left alone —
+TOML allows a table once — and the line to add to it is printed instead.
 
 It also installs **socket activation**, and refuses to install without it unless you
 pass `-anyway`. That is the point rather than a precaution: a `.npmrc` naming a port
@@ -550,6 +607,11 @@ instead.
 and `team-ca.crt` (the team cache and the CAs it is verified against), `shuttle/in` and
 `shuttle/out` (packs, when you do not give a path of your own), `daemon.json` (the running
 daemon), `daemon.log`.
+
+`daemon.log` records starts, warnings and failures, not requests. A daemon started with
+`PKGCACHE_LOG_ACCESS=true` also writes one line per request it answers — project,
+ecosystem, URL, status, bytes, milliseconds and the caller's address — which is how to
+tell which of a build's requests this cache served and which went elsewhere.
 
 ## Moving it to another disk
 

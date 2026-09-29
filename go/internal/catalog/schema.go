@@ -176,6 +176,16 @@ var migrations = []struct {
 			 ) WITHOUT ROWID`,
 		},
 	},
+	{
+		version: 3,
+		stmts: []string{
+			// Where a document's bytes actually came from: the URL that answered, after any
+			// fallback or redirect. An index page's relative links resolve against it, and
+			// resolving them against the URL first asked for sent a cache whose team was
+			// down to fetch files from the team's host at the origin's paths.
+			`ALTER TABLE refs ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // schemaVersion is the version a fresh database is migrated to.

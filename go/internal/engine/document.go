@@ -1,18 +1,21 @@
 package engine
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/singleflight"
 
 	"github.com/aabdlwahab/PKGCache/internal/blob"
 	"github.com/aabdlwahab/PKGCache/internal/catalog"
+	"github.com/aabdlwahab/PKGCache/internal/obs"
 	"github.com/aabdlwahab/PKGCache/internal/upstream"
 )
 
@@ -32,6 +35,9 @@ import (
 // with ten thousand files in it, so the cap must be generous — but unbounded would
 // let a broken or hostile origin exhaust memory.
 const defaultDocMaxBytes = 64 << 20
+
+// documentAttempts is how many times a document whose transfer breaks off is asked for.
+const documentAttempts = 3
 
 // DocSpec describes a document to fetch, cache and keep fresh.
 type DocSpec struct {
@@ -61,10 +67,23 @@ type DocSpec struct {
 	// for first, so a chain whose middle tier could not serve indexes would fall back
 	// for tarballs and fail for the packument that names them.
 	Fallbacks []upstream.Fallback
+	// Proxy routes the first attempt through a forward proxy. See upstream.Request.
+	Proxy string
+	// Optional marks that first attempt as one that may decline. See upstream.Request.
+	Optional bool
 	// Credential authenticates to a private index.
 	Credential *upstream.Credential
 	// MaxBytes overrides the buffering cap.
 	MaxBytes int64
+	// Compressible lets the document travel gzip-compressed, decompressed on arrival.
+	//
+	// Only for documents the cache reads rather than keeps byte for byte — a pypi index,
+	// an npm packument. Those are large, highly compressible JSON, and asking for them
+	// uncompressed was measured at 100 s for duckdb's index and 134 s for typescript's
+	// packument over a slow link, against 1.4 s and 1.9 s compressed: long enough for every
+	// cache chained behind this one to give up. Never for a file whose bytes are checked
+	// against a digest or a signed hash list, like apt's indexes.
+	Compressible bool
 }
 
 func (d DocSpec) key() string {
@@ -88,6 +107,10 @@ type Document struct {
 	// copy. Serving it is deliberate: an index a few minutes old beats a failed
 	// build when the origin has a blip.
 	Stale bool
+	// Source is the URL the bytes came from — the fallback that answered, past any
+	// redirect — which is what a relative link in them is relative to. Empty when it was
+	// not recorded; callers then use the URL they asked for.
+	Source string
 }
 
 // Document fetches, caches and revalidates an upstream document.
@@ -105,15 +128,26 @@ type Document struct {
 // immediately requests each of its files, and the previous implementation re-fetched
 // and re-parsed the index along the way. For grpcio — 6 MB, ten thousand entries —
 // that stalled the event loop under a concurrent CUDA install and timed clients out.
+//
+// The shared fetch belongs to no one caller. It used to run on the first caller's
+// context, so a client that gave up — a chained cache waiting a minute for headers
+// while a slow origin sent a large index — cancelled it for every caller waiting on it,
+// and nothing was cached for the next attempt either. Now it runs to completion under the
+// upstream timeout, and a caller that stops waiting only stops waiting.
 func (e *Engine) Document(ctx context.Context, spec DocSpec) (*Document, error) {
 	sfKey := spec.Project + "\x00" + spec.Eco + "\x00" + spec.Name
-	v, err, _ := e.docs.Do(sfKey, func() (any, error) {
-		return e.document(ctx, spec)
+	done := e.docs.DoChan(sfKey, func() (any, error) {
+		return e.document(context.WithoutCancel(ctx), spec)
 	})
-	if err != nil {
-		return nil, err
+	select {
+	case result := <-done:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(*Document), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return v.(*Document), nil
 }
 
 func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) {
@@ -123,6 +157,9 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 
 	ref, haveRef := e.lookupRef(refKey)
 	cached, haveCached := e.loadDocument(entryKey)
+	if haveCached && haveRef {
+		cached.Source = ref.Source
+	}
 
 	// Digest-addressed documents are permanent. They do not need a mutable ref and
 	// must not contact upstream again once the verified bytes are present.
@@ -152,6 +189,11 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 		Credential: spec.Credential,
 		Eco:        spec.Eco,
 		Fallbacks:  spec.Fallbacks,
+		Proxy:      spec.Proxy,
+		Optional:   spec.Optional,
+	}
+	if spec.Compressible && req.Headers.Get("Accept-Encoding") == "" {
+		req.Headers.Set("Accept-Encoding", "gzip")
 	}
 	// 3. conditional revalidation — cheap, and the common case for a stable index.
 	if haveRef && haveCached {
@@ -167,13 +209,18 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 	if err != nil {
 		return e.staleOr(cached, haveCached, err)
 	}
-	defer cancel()
-	defer func() { _ = resp.Body.Close() }()
+	// Through the variables rather than their first values: a transfer that breaks off
+	// is asked for again below, on a new response.
+	defer func() {
+		cancel()
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusNotModified && haveCached {
 		// Unchanged: keep the bytes, restart the freshness clock. This is what makes
 		// a short TTL cheap rather than wasteful.
-		e.putRef(refKey, ref.Target, cached.MediaType, resp, spec.TTL, now)
+		// The bytes kept are the ones fetched before, from wherever they came from then.
+		e.putRef(refKey, ref.Target, cached.MediaType, ref.Source, resp, spec.TTL, now)
 		cached.Revalidated = true
 		return cached, nil
 	}
@@ -187,10 +234,38 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 	if limit <= 0 {
 		limit = defaultDocMaxBytes
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	body, err := readDocument(resp, spec.Compressible, limit)
+	// A document is read whole before any of it is served, so a transfer that broke off
+	// partway can simply be asked for again. It used to fail the request: the team's
+	// uplink went silent for two minutes in the middle of axe-core's 4.5 MB packument, the
+	// team answered 500, and the machine chained behind it fetched the packument from the
+	// registry itself.
+	for attempt := 2; err != nil && attempt <= documentAttempts && ctx.Err() == nil; attempt++ {
+		obs.LoggerFrom(e.baseCtx).Warn("asking again for a document whose transfer broke off", //nolint:contextcheck // the engine's own logger, whose lifetime is the engine's, not this fetch's
+			"url", spec.URL, "eco", spec.Eco, "attempt", attempt, "of", documentAttempts,
+			"reason", err.Error())
+		retry := req
+		retry.Headers = cloneHeader(req.Headers)
+		// The first answer was a 200, so the document has changed: no 304 is wanted now.
+		retry.Headers.Del("If-None-Match")
+		retry.Headers.Del("If-Modified-Since")
+		next, nextCancel, openErr := e.pool.Open(ctx, retry)
+		if openErr != nil {
+			return e.staleOr(cached, haveCached, openErr)
+		}
+		cancel()
+		_ = resp.Body.Close()
+		resp, cancel = next, nextCancel
+		if resp.StatusCode != http.StatusOK {
+			return e.staleOr(cached, haveCached,
+				&UpstreamHTTPError{URL: spec.URL, Status: resp.StatusCode})
+		}
+		body, err = readDocument(resp, spec.Compressible, limit)
+	}
 	if err != nil {
 		return e.staleOr(cached, haveCached, fmt.Errorf("engine: reading document %s: %w", spec.URL, err))
 	}
+	source := resp.Request.URL.String()
 	if int64(len(body)) > limit {
 		return nil, fmt.Errorf("engine: document %s exceeds the %d byte cap", spec.URL, limit)
 	}
@@ -216,11 +291,25 @@ func (e *Engine) document(ctx context.Context, spec DocSpec) (*Document, error) 
 		MediaType: mediaType, CachedAt: now, LastAccess: now,
 	})
 	if !spec.Immutable {
-		e.putRef(refKey, digest.String(), mediaType, resp, spec.TTL, now)
+		e.putRef(refKey, digest.String(), mediaType, source, resp, spec.TTL, now)
 	}
-	e.pool.CountBytes(spec.Eco, spec.URL, int64(len(body)))
+	e.pool.CountBytes(spec.Eco, servedBy(resp, spec.URL), int64(len(body)))
 
-	return &Document{Body: body, MediaType: mediaType, Digest: digest}, nil
+	return &Document{Body: body, MediaType: mediaType, Digest: digest, Source: source}, nil
+}
+
+// readDocument reads a document's body whole, decompressing what was sent compressed.
+func readDocument(resp *http.Response, compressible bool, limit int64) ([]byte, error) {
+	var content io.Reader = resp.Body
+	if compressible && strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		unzipped, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("decompressing: %w", err)
+		}
+		defer func() { _ = unzipped.Close() }()
+		content = unzipped
+	}
+	return io.ReadAll(io.LimitReader(content, limit+1))
 }
 
 // staleOr serves the last known copy when upstream fails, or surfaces the failure
@@ -264,7 +353,8 @@ func (e *Engine) loadDocument(k catalog.EntryKey) (*Document, bool) {
 }
 
 func (e *Engine) putRef(
-	k catalog.RefKey, target, mediaType string, resp *http.Response, ttl time.Duration, now time.Time,
+	k catalog.RefKey, target, mediaType, source string, resp *http.Response, ttl time.Duration,
+	now time.Time,
 ) {
 	_ = e.cat.PutRef(catalog.Ref{
 		RefKey:       k,
@@ -274,6 +364,7 @@ func (e *Engine) putRef(
 		LastModified: resp.Header.Get("Last-Modified"),
 		FetchedAt:    now,
 		TTL:          ttl,
+		Source:       source,
 	})
 }
 

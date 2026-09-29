@@ -119,8 +119,14 @@ func (r *Repo) Descriptor() eco.Descriptor {
 		Storage:   eco.StorageManagedDir,
 		Listener:  eco.ListenerPathPrefixed,
 		Upstreams: eco.UpstreamNone,
-		Freshness: func(string) eco.Freshness { return eco.Revalidate(r.refsTTL) },
-		Setup:     setupSteps,
+		Freshness: func(key string) eco.Freshness {
+			if strings.HasPrefix(key, releasePrefix) {
+				return eco.Immutable
+			}
+			return eco.Revalidate(r.refsTTL)
+		},
+		ParseArtifact: parseArtifactKey,
+		Setup:         setupSteps,
 	}
 }
 
@@ -133,6 +139,10 @@ func (r *Repo) Routes() []eco.Route {
 		{Methods: []string{http.MethodGet}, Pattern: "/{repo...}/info/refs", Handler: r.infoRefs},
 		{Methods: []string{http.MethodPost}, Pattern: "/{repo...}/git-upload-pack", Handler: r.uploadPack},
 		{Methods: []string{http.MethodGet, http.MethodPost}, Pattern: "/{repo...}/git-receive-pack", Handler: r.receivePack},
+		{
+			Methods: []string{http.MethodGet, http.MethodHead},
+			Pattern: "/{repo...}/releases/download/{tag}/{file}", Handler: r.release,
+		},
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/{path...}", Handler: r.dumb},
 	}
 }
@@ -153,6 +163,9 @@ func (r *Repo) resolveRepo(c *eco.Ctx, raw string) (repoRoute, error) {
 		return repoRoute{}, fmt.Errorf("repository path must begin with a DNS host")
 	}
 	parts[0] = strings.ToLower(parts[0])
+	if !c.OriginAllowed(parts[0]) {
+		return repoRoute{}, fmt.Errorf("%s is not a public host", parts[0])
+	}
 	for _, part := range parts {
 		if !safeRepoSegment(part) {
 			return repoRoute{}, fmt.Errorf("unsafe repository path")

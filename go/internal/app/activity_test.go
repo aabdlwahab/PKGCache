@@ -16,6 +16,8 @@ func TestActivityExcludesProbes(t *testing.T) {
 		{"/global/npm/left-pad", true},
 		{"/v2/dockerhub/library/alpine/manifests/3.20", true},
 		{"/api/v1/projects", true},
+		// What local.HoldDaemon sends to keep a daemon up while a build runs.
+		{"/api/v1/me", true},
 		{"/console", true},
 		{"/healthz", false},
 		{"/readyz", false},

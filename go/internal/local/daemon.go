@@ -93,6 +93,11 @@ func Run(ctx context.Context, o RunOptions) error {
 	}
 	defer func() { _ = a.Close() }()
 	guard.attach(a.Blobs)
+	// Before the listener answers anything: apt and release assets go through the same
+	// siblings and team cache the chains do from the first request.
+	if err := RefreshRelays(ctx, snap.DataDir, a.Projects, a.Config); err != nil { //nolint:contextcheck // startup, bounded by the daemon's own context
+		return err
+	}
 
 	var lastActivity atomic.Int64
 	lastActivity.Store(time.Now().UnixNano())
@@ -119,6 +124,7 @@ func Run(ctx context.Context, o RunOptions) error {
 	// here, above the API.
 	a.API.Sources = &Sources{
 		DataDir: snap.DataDir, Store: a.Projects, Ecos: a.Ecos, Pool: a.Pool, Snapshot: snap,
+		Config: a.Config,
 	}
 	// And the choice the switcher in that window is making. It writes the same file
 	// `pkgcache project use` writes, because a project switched in the app that only the
@@ -132,7 +138,12 @@ func Run(ctx context.Context, o RunOptions) error {
 	// And the machines this one borrows from. Handed the project service and the
 	// credential store because a sibling is rows plus a sealed token, and both halves
 	// have to be written or neither is.
-	a.API.Peers = &Peers{Store: a.Projects, Credentials: a.Credentials, Ecos: a.Ecos}
+	a.API.Peers = &Peers{
+		Store: a.Projects, Credentials: a.Credentials, Ecos: a.Ecos,
+		Refresh: func(ctx context.Context) error {
+			return RefreshRelays(ctx, snap.DataDir, a.Projects, a.Config)
+		},
+	}
 	// And the cache's own directory, so the window can move it to another disk. Told
 	// whether systemd started this daemon, because then the process doing the move has
 	// to be started as systemd's too: stopping the service kills everything in its
@@ -162,6 +173,9 @@ func Run(ctx context.Context, o RunOptions) error {
 	if bound == "" {
 		bound = snap.LocalAddr()
 	}
+	// Loopback for this machine's clients even when the socket is on every interface
+	// for siblings: a setting naming 0.0.0.0 would work here by accident and nowhere else.
+	bound = config.ClientAddr(bound)
 	state := State{
 		PID:     os.Getpid(),
 		Addr:    bound,

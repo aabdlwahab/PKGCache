@@ -152,6 +152,7 @@ func TestEnvParsing(t *testing.T) {
 	t.Setenv("PKGREG_TRUST_PROXY", "ON")
 	t.Setenv("PKGREG_SINGLE_PORT", "0")
 	t.Setenv("PKGREG_REQUEST_TIMEOUT", "45m")
+	t.Setenv("PKGREG_BODY_IDLE_TIMEOUT", "90s")
 	t.Setenv("PKGREG_BATCH_SIZE", "250")
 	t.Setenv("PKGREG_GIT_REFS_TTL", "2m")
 	t.Setenv("PKGREG_GIT_MAX_UPLOAD_PACKS", "12")
@@ -166,8 +167,8 @@ func TestEnvParsing(t *testing.T) {
 		t.Fatalf("boolean parsing: offline=%v trust=%v single=%v",
 			s.Upstream.Offline, s.Server.TrustProxy, s.Server.SinglePort)
 	}
-	if s.Upstream.RequestTimeout != 45*time.Minute {
-		t.Fatalf("duration = %v", s.Upstream.RequestTimeout)
+	if s.Upstream.RequestTimeout != 45*time.Minute || s.Upstream.BodyIdleTimeout != 90*time.Second {
+		t.Fatalf("durations = %v, %v", s.Upstream.RequestTimeout, s.Upstream.BodyIdleTimeout)
 	}
 	if s.Catalog.BatchSize != 250 {
 		t.Fatalf("int = %d", s.Catalog.BatchSize)

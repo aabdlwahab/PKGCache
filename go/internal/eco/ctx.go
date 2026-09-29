@@ -2,13 +2,19 @@ package eco
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/aabdlwahab/PKGCache/internal/blob"
 	"github.com/aabdlwahab/PKGCache/internal/catalog"
@@ -102,19 +108,75 @@ func (c *Ctx) Document(spec engine.DocSpec) (*engine.Document, error) {
 	}
 	if spec.Fallbacks == nil {
 		spec.Fallbacks = c.fallbacksFor(spec.URL)
+		if first, rest, ok := c.relayFor(spec.URL); ok && spec.Proxy == "" {
+			spec.URL, spec.Proxy, spec.Optional = first.URL, first.Proxy, first.Optional
+			spec.Fallbacks = append(rest, spec.Fallbacks...)
+		}
 	}
 	return c.engine.Document(c.Context(), spec)
 }
 
+// WriteLookupError answers a failed index or metadata lookup.
+//
+// The origin saying the name is not there — any 4xx; the PyTorch indexes answer 403 for a
+// project they do not carry — is a 404 of this cache's own, which a client and a chained
+// cache both take as final. Anything else is a failure to find out and stays one. Both
+// adapters used to answer 404 for every failure: a timeout told uv the package did not
+// exist, and told the cache chained behind this one not to try anywhere else.
+func (c *Ctx) WriteLookupError(err error, notFound string) {
+	if status, ok := engine.UpstreamStatus(err); ok && status >= 400 && status < 500 {
+		_ = c.NotFound(notFound)
+		return
+	}
+	c.WriteError(err)
+}
+
 // ServeBytes writes a generated response body.
+//
+// A 200 carries a validator and answers a matching If-None-Match with 304 and no body. The
+// documents that come through here — packuments, index pages, go.mod files, Release files —
+// are what a cache chained behind this one revalidates each time its short TTL runs out,
+// and with no validator every revalidation was the whole document again: a warm field-test run
+// in which every package was a hit still moved 256 MB of npm packuments and 178 MB of PyPI
+// indexes from the team to the machine behind it. The validator is a hash of exactly the
+// bytes sent, after any rewriting, unless the adapter set one of its own — an image
+// manifest's digest, or the origin's for a byte-exact Release file.
 func (c *Ctx) ServeBytes(status int, contentType string, body []byte) error {
 	c.W.Header().Set("Content-Type", contentType)
+	if status == http.StatusOK && (c.R.Method == http.MethodGet || c.R.Method == http.MethodHead) {
+		etag := c.W.Header().Get("ETag")
+		if etag == "" {
+			sum := sha256.Sum256(body)
+			etag = `"` + hex.EncodeToString(sum[:]) + `"`
+			c.W.Header().Set("ETag", etag)
+		}
+		if noneMatch(c.R.Header.Get("If-None-Match"), etag) {
+			c.W.Header().Del("Content-Length")
+			c.W.WriteHeader(http.StatusNotModified)
+			return nil
+		}
+	}
 	c.W.WriteHeader(status)
 	if c.R.Method == http.MethodHead {
 		return nil
 	}
 	_, err := c.W.Write(body)
 	return err
+}
+
+// noneMatch reports whether an If-None-Match header names etag, or any representation at
+// all. The comparison is the weak one RFC 9110 specifies for it: a W/ prefix is ignored.
+func noneMatch(header, etag string) bool {
+	if header == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == strings.TrimPrefix(etag, "W/") {
+			return true
+		}
+	}
+	return false
 }
 
 // JSON writes a JSON response.
@@ -253,6 +315,9 @@ func (c *Ctx) ProxyHostAllowed(host string) bool {
 // A registry that is a configured upstream never reaches here: it was named by the
 // operator, which is the strongest allowlist there is.
 func (c *Ctx) RegistryAllowed(reg ociname.Registry) bool {
+	if c.fromSibling() && !reg.Public {
+		return false // see OriginAllowed
+	}
 	allowed := c.cfg.Server.RegistryAllowlist
 	if len(allowed) == 0 {
 		return reg.Public
@@ -396,6 +461,29 @@ func (c *Ctx) ExternalBase() string {
 // Centralised so every ecosystem answers an offline miss the same way, with a reason
 // a human can act on rather than a bare 404.
 func (c *Ctx) WriteError(err error) {
+	if err == nil {
+		return
+	}
+	// A response that has begun cannot become an error: writing one then only appended
+	// "cache error" to a body the client was already reading as a success, and made
+	// net/http log a superfluous WriteHeader. The failure is logged; the client sees the
+	// stream end short and its own length or digest check says so.
+	if tracked, ok := c.W.(*startedWriter); ok && tracked.started {
+		if !clientGone(err) {
+			slog.Warn("response failed after it started", "eco", c.Eco,
+				"project", c.Project, "url", c.R.URL.String(), "error", err)
+		}
+		return
+	}
+	// Every answer below that is a failure of the cache or of what it fetched from — a
+	// 502, or the bare 500 — tells the client nothing it can act on. The cause has to be
+	// written somewhere, or a build failing on "500 cache error" leaves nothing to find
+	// it by.
+	if !errors.Is(err, engine.ErrNotCached) && !errors.Is(err, catalog.ErrQuota) &&
+		!errors.Is(err, engine.ErrCancelled) && !clientGone(err) {
+		slog.Warn("request failed", "eco", c.Eco, "project", c.Project,
+			"url", c.R.URL.String(), "error", err)
+	}
 	switch {
 	case err == nil:
 		return
@@ -447,7 +535,94 @@ func (c *Ctx) UpstreamRequest(url string, headers http.Header) upstream.Request 
 	request := upstream.Request{URL: url, Headers: headers, Eco: c.Eco}
 	request.Credential = c.credentialForURL(url)
 	request.Fallbacks = c.fallbacksFor(url)
+	if first, rest, ok := c.relayFor(url); ok {
+		request.URL, request.Proxy, request.Optional = first.URL, first.Proxy, first.Optional
+		request.Fallbacks = append(rest, request.Fallbacks...)
+	}
 	return request
+}
+
+// CachesFirst puts this project's caches — siblings, then the team cache — in front of a
+// request the ecosystem derived from the request itself, by asking each for the same path
+// under its own root.
+//
+// path is the request's path within this ecosystem, as the other caches' adapters will
+// read it. The original request is the last attempt when the relay allows reaching the
+// origin directly; with `-no-direct` it is dropped. With no caches configured the request
+// is returned unchanged.
+func (c *Ctx) CachesFirst(request upstream.Request, path string) upstream.Request {
+	relay, found := c.cfg.RelayFor(c.Project)
+	var bases []string
+	for _, hop := range relay.Hops {
+		if hop.Sibling && c.fromSibling() {
+			continue // see config.Hop.Sibling
+		}
+		if hop.Base != "" {
+			bases = append(bases, strings.TrimRight(hop.Base, "/")+"/"+c.Eco+"/"+
+				strings.TrimLeft(path, "/"))
+		}
+	}
+	if !found || len(bases) == 0 {
+		return request
+	}
+	first := request
+	first.URL, first.Credential, first.Proxy, first.Fallbacks = bases[0], nil, "", nil
+	for _, next := range bases[1:] {
+		first.Fallbacks = append(first.Fallbacks, upstream.Fallback{URL: next})
+	}
+	if relay.Direct {
+		first.Fallbacks = append(first.Fallbacks, upstream.Fallback{
+			URL: request.URL, Credential: request.Credential, Proxy: request.Proxy,
+		})
+		first.Fallbacks = append(first.Fallbacks, request.Fallbacks...)
+	}
+	return first
+}
+
+// relayFor turns the project's caches into the attempts for one forward-proxy URL: each
+// cache's proxy in order, asked for the URL in plain proxy form — a cache's proxy refuses
+// a tunnel — and then the real URL directly, when the relay allows it.
+//
+// Only for ecosystems that are forward proxies themselves: their requests are already
+// absolute URLs a proxy can take as they are. Relaying anything else — a git LFS call,
+// an index composed from a configured origin — through a cache's proxy would reach the
+// wrong adapter on the other side; those chain by origin instead.
+func (c *Ctx) relayFor(url string) (first upstream.Fallback, rest []upstream.Fallback, ok bool) {
+	if c.desc.Listener != ListenerForwardProxy {
+		return first, nil, false
+	}
+	relay, found := c.cfg.RelayFor(c.Project)
+	if !found {
+		return first, nil, false
+	}
+	form := router.PlainProxyForm(url)
+	host := ""
+	if parsed, err := neturl.Parse(url); err == nil {
+		host = parsed.Hostname()
+	}
+	var attempts []upstream.Fallback
+	for _, hop := range relay.Hops {
+		if hop.Proxy == "" {
+			continue
+		}
+		if hop.Sibling {
+			// A sibling relays a public name only, and never one a sibling sent here: the
+			// first would be refused anyway, the second could go round in a circle.
+			if c.fromSibling() || !publicName(host) {
+				continue
+			}
+			attempts = append(attempts, upstream.Fallback{URL: form, Proxy: hop.Proxy, Optional: true})
+			continue
+		}
+		attempts = append(attempts, upstream.Fallback{URL: form, Proxy: hop.Proxy})
+	}
+	if len(attempts) == 0 {
+		return first, nil, false
+	}
+	if relay.Direct {
+		attempts = append(attempts, upstream.Fallback{URL: url})
+	}
+	return attempts[0], attempts[1:], true
 }
 
 // fallbacksFor finds the chain a URL was composed from and re-composes the same path
@@ -560,6 +735,39 @@ func Bind(r *http.Request, c *Ctx) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, c))
 }
 
+// siblingKey marks a request that came from another machine's cache.
+type siblingKey struct{}
+
+// FromSibling marks a request as one another machine's cache sent to a pkgcache's
+// sibling surface, which narrows what it may make this cache fetch; see OriginAllowed.
+func FromSibling(ctx context.Context) context.Context {
+	return context.WithValue(ctx, siblingKey{}, true)
+}
+
+func (c *Ctx) fromSibling() bool {
+	marked, _ := c.R.Context().Value(siblingKey{}).(bool)
+	return marked
+}
+
+// OriginAllowed reports whether a request may make this cache fetch from a host it named
+// itself — a forge in a git path, a registry discovered from an image name.
+//
+// Anything goes for this machine's own clients. For another machine's cache the host has
+// to be a public name — not an IP literal, not localhost, not a bare hostname — the rule
+// registry discovery already applies on a pkgreg: lending a cache to the network must not
+// also lend this machine's view of the network behind it.
+func (c *Ctx) OriginAllowed(host string) bool {
+	return !c.fromSibling() || publicName(host)
+}
+
+// publicName reports whether host is a public DNS name: not an IP literal, not localhost,
+// not a bare hostname only a local resolver knows.
+func publicName(host string) bool {
+	host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[]")
+	return host != "" && host != "localhost" && net.ParseIP(host) == nil &&
+		strings.Contains(host, ".")
+}
+
 // CtxFrom recovers the bound Ctx and completes it for this handler.
 //
 // Panicking on an unbound request is deliberate: it can only happen if an ecosystem
@@ -571,6 +779,58 @@ func CtxFrom(w http.ResponseWriter, r *http.Request, p router.Params) *Ctx {
 		panic("eco: handler reached without a bound Ctx — mount it through the project router")
 	}
 	c := *base
-	c.W, c.R, c.Params = w, r, p
+	c.W, c.R, c.Params = trackStarted(w), r, p
 	return &c
+}
+
+// startedWriter notes whether a response has begun, so WriteError never writes an error
+// into a response that is already a success halfway through. It keeps Flush and ReadFrom
+// in the path, so progressive delivery and sendfile are untouched.
+type startedWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func trackStarted(w http.ResponseWriter) http.ResponseWriter {
+	if _, tracked := w.(*startedWriter); tracked {
+		return w
+	}
+	return &startedWriter{ResponseWriter: w}
+}
+
+// WriteHeader marks the response as begun.
+func (w *startedWriter) WriteHeader(status int) {
+	w.started = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+// Write marks the response as begun.
+func (w *startedWriter) Write(p []byte) (int, error) {
+	w.started = true
+	return w.ResponseWriter.Write(p)
+}
+
+// ReadFrom keeps the connection's own ReadFrom, and with it sendfile, in the path.
+func (w *startedWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.started = true
+	if from, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		return from.ReadFrom(r)
+	}
+	return io.Copy(w.ResponseWriter, r)
+}
+
+// Flush passes through, for a response streamed as it arrives.
+func (w *startedWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the connection underneath.
+func (w *startedWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// clientGone reports an error that only says the client stopped listening.
+func clientGone(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, net.ErrClosed)
 }

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -318,5 +320,208 @@ func TestPoolRefusesAnUnreadableCA(t *testing.T) {
 	}
 	if _, err := New(config.Upstream{CAFile: bad}, obs.NewMetrics()); err == nil {
 		t.Fatal("a ca_file with no certificate in it was accepted")
+	}
+}
+
+// A relayed attempt keeps its URL and changes only its route; the fallback behind it is
+// the same URL asked directly. What falls through is decided exactly as for origins.
+func TestProxyRoutesOneAttemptAndNotItsFallback(t *testing.T) {
+	var seen []string
+	var user string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.RequestURI)
+		asked := http.Request{Header: http.Header{
+			"Authorization": {r.Header.Get("Proxy-Authorization")},
+		}}
+		user, _, _ = asked.BasicAuth()
+		_, _ = w.Write([]byte("via team"))
+	}))
+	t.Cleanup(proxy.Close)
+	origin, originHits := answering(t, http.StatusOK, "direct")
+	target := origin + "/debian/pool/demo.deb"
+	teamProxy := "http://work@" + strings.TrimPrefix(proxy.URL, "http://")
+
+	response, err := open(t, chainPool(t), Request{
+		URL: target, Proxy: teamProxy, Fallbacks: []Fallback{{URL: target}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := readAll(t, response); body != "via team" {
+		t.Fatalf("relayed body = %q", body)
+	}
+	if len(seen) != 1 || seen[0] != target || user != "work" || *originHits != 0 {
+		t.Fatalf("proxy saw %v as %q, origin hits %d", seen, user, *originHits)
+	}
+
+	response, err = open(t, chainPool(t), Request{
+		URL: target, Proxy: unreachable(t), Fallbacks: []Fallback{{URL: target}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := readAll(t, response); body != "direct" || *originHits != 1 {
+		t.Fatalf("fallback body = %q, origin hits %d", body, *originHits)
+	}
+
+	notFound, _ := answering(t, http.StatusNotFound, "missing")
+	response, err = open(t, chainPool(t), Request{
+		URL: target, Proxy: notFound, Fallbacks: []Fallback{{URL: target}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusNotFound || *originHits != 1 {
+		t.Fatalf("a relayed 404 went around the team cache: %d, origin hits %d",
+			response.StatusCode, *originHits)
+	}
+}
+
+func readAll(t *testing.T, response *http.Response) string {
+	t.Helper()
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// Bytes are credited to whoever actually sent them: the relay, the fallback that answered
+// after the head was unreachable, the host a redirect ended at.
+func TestServedByNamesTheSourceThatAnswered(t *testing.T) {
+	origin, _ := answering(t, http.StatusOK, "body")
+	proxy, _ := answering(t, http.StatusOK, "via proxy")
+	target := origin + "/pool/x.deb"
+
+	relayed, err := open(t, chainPool(t), Request{URL: target, Proxy: proxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readAll(t, relayed)
+	if got := ServedBy(relayed); got != proxy {
+		t.Errorf("relayed: ServedBy = %s, want the proxy %s", got, proxy)
+	}
+
+	fellBack, err := open(t, chainPool(t), Request{
+		URL: unreachable(t) + "/pool/x.deb", Fallbacks: []Fallback{{URL: target}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readAll(t, fellBack)
+	if got := ServedBy(fellBack); got != target {
+		t.Errorf("fallback: ServedBy = %s, want %s", got, target)
+	}
+
+	redirector := httptest.NewServer(http.RedirectHandler(target, http.StatusFound))
+	t.Cleanup(redirector.Close)
+	redirected, err := open(t, chainPool(t), Request{URL: redirector.URL + "/x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readAll(t, redirected)
+	if got := ServedBy(redirected); got != target {
+		t.Errorf("redirect: ServedBy = %s, want %s", got, target)
+	}
+}
+
+// A connection reset before any response is asked again on a fresh connection; the same
+// failure every time still fails, after the retries, rather than hanging.
+func TestResetBeforeAnyResponseIsRetried(t *testing.T) {
+	var attempts atomic.Int64
+	flaky := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close() // gone before a single byte of response
+			}
+			return
+		}
+		_, _ = w.Write([]byte("second time"))
+	}))
+	t.Cleanup(flaky.Close)
+	response, err := open(t, chainPool(t), Request{URL: flaky.URL + "/x.whl"})
+	if err != nil {
+		t.Fatalf("a reset before the response was not retried: %v", err)
+	}
+	if body := readAll(t, response); body != "second time" || attempts.Load() != 2 {
+		t.Fatalf("body %q after %d attempts", body, attempts.Load())
+	}
+
+	var always atomic.Int64
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		always.Add(1)
+		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(broken.Close)
+	if _, err := open(t, chainPool(t), Request{URL: broken.URL + "/x.whl"}); err == nil {
+		t.Fatal("an origin that always resets answered")
+	}
+	if n := always.Load(); n != 1+transportRetries {
+		t.Fatalf("asked %d times, want %d", n, 1+transportRetries)
+	}
+}
+
+// Upstream requests use HTTP/1.1 unless HTTP/2 is asked for, even against a server that
+// offers it.
+func TestHTTP2IsOptIn(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.Proto))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct {
+		http2 bool
+		proto string
+	}{{false, "HTTP/1.1"}, {true, "HTTP/2.0"}} {
+		pool := mustPool(t, config.Upstream{
+			RequestTimeout: 10 * time.Second, ConnectTimeout: 2 * time.Second,
+			ResponseHeaderTimeout: 2 * time.Second, CAFile: caFile, HTTP2: want.http2,
+		})
+		response, err := open(t, pool, Request{URL: server.URL + "/x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, response); got != want.proto {
+			t.Errorf("http2=%v: the origin saw %s, want %s", want.http2, got, want.proto)
+		}
+	}
+}
+
+// A 403 is final — a wrong credential is found by failing, not by going around it —
+// except from an attempt marked Optional: a sibling's proxy, which declines what it will
+// not relay (and relays nothing on an older pkgcache). There the next attempt answers.
+func TestOptionalAttemptFallsThroughARefusal(t *testing.T) {
+	refusing, refused := answering(t, http.StatusForbidden, "not through me")
+	serving, served := answering(t, http.StatusOK, "from the next place")
+	for _, optional := range []bool{true, false} {
+		response, err := open(t, chainPool(t), Request{
+			URL: refusing, Eco: "apt", Optional: optional,
+			Fallbacks: []Fallback{{URL: serving}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		want, wantBody := http.StatusForbidden, "not through me"
+		if optional {
+			want, wantBody = http.StatusOK, "from the next place"
+		}
+		if response.StatusCode != want || string(body) != wantBody {
+			t.Errorf("optional=%v: %d %q, want %d %q", optional, response.StatusCode, body, want, wantBody)
+		}
+	}
+	if *refused != 2 || *served != 1 {
+		t.Fatalf("refused %d, served %d; want 2 and 1", *refused, *served)
 	}
 }

@@ -86,11 +86,11 @@ machine-wide and nothing is left behind when the shell exits.
 
 | ecosystem | reached as | chains to a team cache |
 |---|---|---|
-| PyPI | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX` | yes |
-| npm | `NPM_CONFIG_REGISTRY` | yes |
+| PyPI | `PIP_INDEX_URL`, `UV_INDEX_URL` | yes |
+| npm | `NPM_CONFIG_REGISTRY`; pnpm 11 `PNPM_CONFIG_REGISTRY`; corepack `COREPACK_NPM_REGISTRY` | yes |
 | OCI images | a registry on `127.0.0.1` — any upstream registry, named in the path | yes |
-| apt / apk | an HTTP proxy | no — the origin comes from the request |
-| git | a path-prefixed mirror | no — same reason |
+| apt / apk | an HTTP proxy | relayed — through the team cache's own proxy |
+| git | a path-prefixed mirror; release downloads, including a session's `curl` and `wget` of one | release downloads yes; clones no — each cache keeps its own mirror |
 | files | upload and download | no — nothing upstream to chain to |
 
 Chaining means ordered upstreams: the team cache first, the public origin second, and

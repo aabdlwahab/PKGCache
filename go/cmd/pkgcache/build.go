@@ -126,11 +126,13 @@ flags:
 	options = clientbuild.FromEnvironment(options)
 
 	arguments := append(fs.Args(), theirs...)
+	release := local.HoldDaemon(ctx, state.BaseURL())
 	if compose {
 		err = clientbuild.Compose(ctx, options, arguments)
 	} else {
 		err = clientbuild.Build(ctx, options, arguments)
 	}
+	release()
 	if err != nil {
 		return err
 	}

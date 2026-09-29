@@ -15,8 +15,6 @@ import (
 func TestLocalRefusesAddressesOtherMachinesCanReach(t *testing.T) {
 	refused := []string{
 		":41780",
-		"0.0.0.0:41780",
-		"[::]:41780",
 		"192.168.1.10:41780",
 		"cache.internal:41780",
 		"*:41780",
@@ -53,6 +51,30 @@ func TestLocalRefusesAddressesOtherMachinesCanReach(t *testing.T) {
 				t.Fatalf("Validate rejected loopback address %q: %v", address, err)
 			}
 		})
+	}
+}
+
+// Every interface is accepted for the single socket, for siblings: other machines are
+// served the sibling surface only, and this machine's clients are still pointed at loopback.
+func TestLocalServesSiblingsOnEveryInterface(t *testing.T) {
+	for _, address := range []string{"0.0.0.0:41780", "[::]:41780"} {
+		t.Run(address, func(t *testing.T) {
+			s := LocalDefaults()
+			s.DataDir = t.TempDir()
+			s.Server.UnifiedAddr, s.Server.ProxyAddr, s.Server.AdminAddr = address, address, address
+			if err := s.Validate(); err != nil {
+				t.Fatalf("Validate refused %q: %v", address, err)
+			}
+			if !s.ServesSiblings() || s.LocalClientAddr() != "127.0.0.1:41780" ||
+				s.LocalBaseURL() != "http://127.0.0.1:41780" {
+				t.Fatalf("siblings=%v client=%s base=%s", s.ServesSiblings(), s.LocalClientAddr(),
+					s.LocalBaseURL())
+			}
+		})
+	}
+	s := LocalDefaults()
+	if s.ServesSiblings() || s.LocalClientAddr() != s.LocalAddr() {
+		t.Fatal("a loopback cache claims to serve siblings")
 	}
 }
 
@@ -150,6 +172,15 @@ func TestLocalDefaultsDifferFromServerDefaultsOnlyWhereIntended(t *testing.T) {
 	if local.Upstream.RequestTimeout != server.Upstream.RequestTimeout {
 		t.Error("upstream timeouts should be inherited from the server profile")
 	}
+	// A laptop's first upstream is usually a team cache, which reads its own origin with
+	// the server's patience. Waiting less than the team does gives up on transfers the
+	// team is about to pick up again.
+	if local.Upstream.BodyIdleTimeout <= server.Upstream.BodyIdleTimeout ||
+		local.Upstream.ResponseHeaderTimeout <= server.Upstream.ResponseHeaderTimeout {
+		t.Errorf("a local cache must outwait the team in front of it: idle %v vs %v, headers %v vs %v",
+			local.Upstream.BodyIdleTimeout, server.Upstream.BodyIdleTimeout,
+			local.Upstream.ResponseHeaderTimeout, server.Upstream.ResponseHeaderTimeout)
+	}
 	if local.Auth.SessionTTL != server.Auth.SessionTTL ||
 		local.Auth.MaxJSONBytes != server.Auth.MaxJSONBytes {
 		t.Error("auth bounds should be inherited from the server profile")
@@ -217,8 +248,14 @@ func TestLoadLocalIgnoresServerEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.DataDir != filepath.Join(home, "pkgcache") {
-		t.Fatalf("data dir = %q, want the per-user directory", snap.DataDir)
+	// The per-user directory is the platform's — XDG on Linux, Application Support on
+	// macOS — so it is asked for rather than spelled out, which passed on Linux alone.
+	want, err := LocalDefaultDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.DataDir != want || !strings.HasPrefix(snap.DataDir, home) {
+		t.Fatalf("data dir = %q, want the per-user directory %q", snap.DataDir, want)
 	}
 	if snap.Server.UnifiedAddr != "127.0.0.1:41780" {
 		t.Fatalf("address = %q, want the loopback default", snap.Server.UnifiedAddr)
@@ -258,9 +295,19 @@ func TestLoadLocalAddressForms(t *testing.T) {
 		}
 	})
 
-	t.Run("routable is refused", func(t *testing.T) {
-		if _, err := LoadLocal(LocalFlags{Addr: "0.0.0.0:45002"}); err == nil {
+	t.Run("one routable address is refused", func(t *testing.T) {
+		if _, err := LoadLocal(LocalFlags{Addr: "192.168.1.10:45002"}); err == nil {
 			t.Fatal("LoadLocal accepted a routable address")
+		}
+	})
+
+	t.Run("every interface serves siblings", func(t *testing.T) {
+		snap, err := LoadLocal(LocalFlags{Addr: "0.0.0.0:45002"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snap.ServesSiblings() || snap.LocalBaseURL() != "http://127.0.0.1:45002" {
+			t.Fatalf("siblings=%v base=%s", snap.ServesSiblings(), snap.LocalBaseURL())
 		}
 	})
 
@@ -279,6 +326,7 @@ func TestLoadLocalEnvironmentOverrides(t *testing.T) {
 	t.Setenv(LocalEnvPrefix+"ADDR", "45100")
 	t.Setenv(LocalEnvPrefix+"OFFLINE", "yes")
 	t.Setenv(LocalEnvPrefix+"IDLE_TIMEOUT", "3m")
+	t.Setenv(LocalEnvPrefix+"LOG_ACCESS", "true")
 
 	snap, err := LoadLocal(LocalFlags{})
 	if err != nil {
@@ -289,6 +337,9 @@ func TestLoadLocalEnvironmentOverrides(t *testing.T) {
 	}
 	if !snap.Upstream.Offline {
 		t.Fatal("PKGCACHE_OFFLINE did not take effect")
+	}
+	if !snap.Log.Access {
+		t.Fatal("PKGCACHE_LOG_ACCESS did not take effect")
 	}
 	if snap.Local.IdleTimeout != 3*time.Minute {
 		t.Fatalf("idle timeout = %v, want 3m", snap.Local.IdleTimeout)

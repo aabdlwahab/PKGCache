@@ -275,6 +275,12 @@ func (f *Fetch) bindCancel(cancel context.CancelCauseFunc) {
 // the caller serves the committed blob — which is both simpler and better, since
 // http.ServeContent can then handle Range and conditional requests.
 func (f *Fetch) Reader(ctx context.Context) (io.ReadCloser, error) {
+	return f.ReaderFrom(ctx, 0)
+}
+
+// ReaderFrom is Reader starting at byte offset: the content from there on, as it
+// arrives. An offset beyond what has landed so far simply waits for it.
+func (f *Fetch) ReaderFrom(ctx context.Context, offset int64) (io.ReadCloser, error) {
 	select {
 	case <-f.HeadersReady:
 	case <-ctx.Done():
@@ -294,16 +300,23 @@ func (f *Fetch) Reader(ctx context.Context) (io.ReadCloser, error) {
 	if !f.acquire() {
 		return nil, errCommitted
 	}
-	return &follower{fetch: f, ctx: ctx}, nil
+	return &follower{fetch: f, ctx: ctx, pos: offset}, nil
 }
 
-// maxResumeAttempts bounds how many times one artifact may be picked up again.
+// maxResumeAttempts bounds how many times in a row a transfer may be picked up again
+// without getting anywhere.
 //
 // Five, because the failure this exists for is an origin that drops a long transfer
 // partway, and each attempt keeps everything that arrived. An origin dropping it five
 // times in a row is not having a bad minute, it is unusable, and saying so beats
-// retrying until somebody notices.
+// retrying until somebody notices. An attempt that moved the transfer by resumeProgress
+// or more does not count against it.
 const maxResumeAttempts = 5
+
+// resumeProgress is how much an attempt has to deliver to count as getting somewhere. A
+// trickle that drops again after a few kilobytes is the hopeless origin; a burst of
+// megabytes is a slow one on a long transfer.
+const resumeProgress = 1 << 20
 
 // resumable reports whether an interrupted transfer is worth picking up again.
 //
@@ -311,8 +324,8 @@ const maxResumeAttempts = 5
 // body that has genuinely ended, and re-requesting a complete response would append it to
 // itself. And only when something arrived — an attempt that read nothing is a connection
 // problem, not a transfer to continue.
-func (e *Engine) resumable(total, written int64, attempt int) bool {
-	return total > 0 && written > 0 && written < total && attempt < maxResumeAttempts
+func (e *Engine) resumable(total, written int64, stalls int) bool {
+	return total > 0 && written > 0 && written < total && stalls <= maxResumeAttempts
 }
 
 // resume re-opens an artifact from the byte the last attempt reached.
@@ -607,8 +620,16 @@ func (e *Engine) stream(
 	// the origin it is standing in front of, which is most of the point of having one:
 	// each attempt keeps what arrived, and the digest check below still decides whether
 	// the result is real.
+	// stalls counts consecutive attempts that delivered less than resumeProgress. An
+	// origin that keeps dropping a long transfer but keeps moving it is not hopeless, and
+	// counting every drop against it used to throw away real progress: a 1.44 GB CUDA layer
+	// was dropped by Docker Hub six times over the fifty minutes it took on a busy link —
+	// 16, 34, 96 and 464 MB between drops — and the sixth discarded 650 MB and began again.
+	stalls := 0
 	for attempt := 0; ; attempt++ {
+		mark := w.Written()
 		stopped := false
+		var readErr error
 		for {
 			n, rerr := resp.Body.Read(buf)
 			if n > 0 {
@@ -635,17 +656,25 @@ func (e *Engine) stream(
 				}
 				if errors.Is(rerr, io.EOF) {
 					stopped = true
-				} else if !e.resumable(total, w.Written(), attempt) {
-					return "", 0, fmt.Errorf("engine: reading %s: %w", req.URL, rerr)
+				} else {
+					readErr = rerr
 				}
 				break
 			}
+		}
+		if w.Written()-mark >= resumeProgress {
+			stalls = 0
+		} else {
+			stalls++
 		}
 		// A clean EOF at the declared length, or a length nobody declared, is the end.
 		if stopped && (total < 0 || w.Written() >= total) {
 			break
 		}
-		if !e.resumable(total, w.Written(), attempt) {
+		if !e.resumable(total, w.Written(), stalls) {
+			if readErr != nil {
+				return "", 0, fmt.Errorf("engine: reading %s: %w", req.URL, readErr)
+			}
 			if stopped {
 				// Short and out of attempts. Said plainly rather than left for the
 				// digest check, so the log names the origin that keeps stopping.
@@ -657,9 +686,14 @@ func (e *Engine) stream(
 
 		// Worth a line: a transfer that needs picking up says something about the origin,
 		// and without this the only visible symptom is a fetch that takes minutes.
+		reason := "the origin closed it early"
+		if readErr != nil {
+			reason = readErr.Error()
+		}
 		obs.LoggerFrom(e.baseCtx).Warn("resuming an interrupted transfer", //nolint:contextcheck // the engine's own logger, whose lifetime is the engine's, not this fetch's
 			"url", req.URL, "eco", f.Eco, "at", w.Written(), "total", total,
-			"attempt", attempt+1, "of", maxResumeAttempts)
+			"attempt", attempt+1, "stalled", stalls, "of", maxResumeAttempts,
+			"reason", reason)
 
 		resumed, resumedCancel, rerr := e.resume(ctx, req, w.Written())
 		if rerr != nil {
@@ -693,6 +727,6 @@ func (e *Engine) stream(
 	if err != nil {
 		return "", 0, err
 	}
-	e.pool.CountBytes(f.Eco, req.URL, size)
+	e.pool.CountBytes(f.Eco, servedBy(resp, req.URL), size)
 	return digest, size, nil
 }
