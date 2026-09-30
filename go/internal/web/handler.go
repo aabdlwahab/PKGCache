@@ -34,6 +34,7 @@ type asset struct {
 // team's server, or this machine's cache.
 type Mark string
 
+// The two marks, each named after the binary it belongs to and the files in icons/.
 const (
 	MarkServer Mark = "pkgreg"
 	MarkLocal  Mark = "pkgcache"
