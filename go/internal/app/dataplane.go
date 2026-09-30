@@ -202,7 +202,7 @@ func consolePath(name string) bool {
 	case "/", "/landing", "/landing.html", "/tutorial", "/tutorial.html",
 		"/console", "/widget", "/theme.js", "/coords.js", "/tokens.css",
 		"/landing.js", "/landing.css",
-		"/tutorial.js", "/tutorial.css", "/favicon.ico":
+		"/tutorial.js", "/tutorial.css", "/favicon.ico", "/favicon.svg":
 		return true
 	}
 	return strings.HasPrefix(name, "/console/") || strings.HasPrefix(name, "/fonts/")

@@ -29,6 +29,16 @@ type asset struct {
 	contentType string
 }
 
+// Mark names the icon a browser shows for this binary. The console is one tree for
+// both, so the favicon is the one thing that says which of them a tab belongs to: the
+// team's server, or this machine's cache.
+type Mark string
+
+const (
+	MarkServer Mark = "pkgreg"
+	MarkLocal  Mark = "pkgcache"
+)
+
 // Handler serves the embedded console.
 type Handler struct {
 	assets  map[string]asset
@@ -37,8 +47,9 @@ type Handler struct {
 }
 
 // New builds the static handler. Pass enabled=false for --headless, where every
-// console path answers 404 and only the API and operational endpoints remain.
-func New(enabled bool) *Handler {
+// console path answers 404 and only the API and operational endpoints remain. mark
+// picks what /favicon.svg and /favicon.ico answer with.
+func New(enabled bool, mark Mark) *Handler {
 	h := &Handler{assets: make(map[string]asset), enabled: enabled}
 	root := assetFS()
 	walk := func(name string, entry fs.DirEntry, err error) error {
@@ -64,6 +75,16 @@ func New(enabled bool) *Handler {
 		// Reading a compiled-in filesystem cannot fail for any reason an operator
 		// could act on; a failure here is a build defect.
 		panic("web: reading embedded assets: " + err.Error())
+	}
+	// Aliases rather than a lookup at request time, so the favicon gets the same ETag
+	// and 304 as every other asset. The pages link /favicon.svg; /favicon.ico is what a
+	// browser asks for on its own, and what a bookmark or a link preview reads.
+	for _, ext := range []string{".svg", ".ico"} {
+		icon, ok := h.assets["icons/"+string(mark)+ext]
+		if !ok {
+			panic("web: no embedded icon for " + string(mark) + ext)
+		}
+		h.assets["favicon"+ext] = icon
 	}
 	return h
 }

@@ -364,7 +364,7 @@ func (d *diagnosis) checkGit(ctx context.Context) {
 // without the console, so this cannot fail — it exists to show that the binary is
 // self-contained, and to catch an embed that silently picked up nothing.
 func (d *diagnosis) checkConsole() {
-	files, bytes := consoleweb.New(true).Assets()
+	files, bytes := consoleweb.New(true, consoleweb.MarkServer).Assets()
 	if files == 0 {
 		d.warn("console", "no assets embedded — the dist tree is empty")
 		return

@@ -25,7 +25,7 @@ func get(t *testing.T, h *Handler, path string, header http.Header) *httptest.Re
 // anyone reintroduces a toolchain step.
 func TestConsoleIsEmbeddedWithoutAnyBuildTag(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	files, bytes := handler.Assets()
 	if files == 0 || bytes == 0 {
 		t.Fatalf("nothing embedded: %d files, %d bytes", files, bytes)
@@ -45,7 +45,7 @@ func TestConsoleIsEmbeddedWithoutAnyBuildTag(t *testing.T) {
 // error nobody sees, so the graph is checked here instead.
 func TestEveryConsoleImportResolves(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	pattern := regexp.MustCompile(`(?:from\s+|src=|<link[^>]*href=)["']([^"']+)["']`)
 
 	for name, asset := range handler.assets {
@@ -70,7 +70,7 @@ func TestEveryConsoleImportResolves(t *testing.T) {
 
 func TestPublicSetupGuidanceKeepsTLSVerificationEnabled(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	tutorial := string(handler.assets["tutorial.html"].body)
 	landing := string(handler.assets["landing.html"].body)
 
@@ -129,7 +129,7 @@ func TestPublicSetupGuidanceKeepsTLSVerificationEnabled(t *testing.T) {
 // the literal placeholder. Guard all three substitution paths.
 func TestTutorialFillsInEveryPlaceholderFromPublicData(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	page := string(handler.assets["tutorial.html"].body)
 	script := string(handler.assets["tutorial.js"].body)
 	coords := string(handler.assets["coords.js"].body)
@@ -164,7 +164,7 @@ func TestTutorialFillsInEveryPlaceholderFromPublicData(t *testing.T) {
 // letting the reader discover it as an error with no visible cause.
 func TestSetupSurfacesFlagAnInstanceServingPlainHTTP(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	page := string(handler.assets["tutorial.html"].body)
 	script := string(handler.assets["tutorial.js"].body)
 	connect := string(handler.assets["console/views/connect.js"].body)
@@ -190,7 +190,7 @@ func TestSetupSurfacesFlagAnInstanceServingPlainHTTP(t *testing.T) {
 
 func TestTutorialInstructionsRemainVisibleWithJavaScript(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	page := string(handler.assets["tutorial.html"].body)
 	landingPosition := strings.Index(page, `href="/landing.css"`)
 	tutorialPosition := strings.Index(page, `href="/tutorial.css"`)
@@ -206,7 +206,7 @@ func TestTutorialInstructionsRemainVisibleWithJavaScript(t *testing.T) {
 
 func TestHeadlessAnswers404OnEveryConsolePath(t *testing.T) {
 	t.Parallel()
-	handler := New(false)
+	handler := New(false, MarkServer)
 	if handler.Enabled() {
 		t.Fatal("handler reports enabled")
 	}
@@ -228,7 +228,7 @@ func TestHeadlessAnswers404OnEveryConsolePath(t *testing.T) {
 
 func TestETagRevalidationReturns304(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 
 	first := get(t, handler, "/landing.css", nil)
 	etag := first.Header().Get("ETag")
@@ -264,7 +264,7 @@ func TestETagRevalidationReturns304(t *testing.T) {
 // will be told the other is unchanged.
 func TestETagsAreContentDistinct(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	css := get(t, handler, "/landing.css", nil).Header().Get("ETag")
 	js := get(t, handler, "/landing.js", nil).Header().Get("ETag")
 	if css == js {
@@ -276,7 +276,7 @@ func TestETagsAreContentDistinct(t *testing.T) {
 // The table has to answer the same way regardless of what is installed around us.
 func TestContentTypesDoNotDependOnTheHost(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	for path, want := range map[string]string{
 		"/":            "text/html; charset=utf-8",
 		"/landing.css": "text/css; charset=utf-8",
@@ -290,7 +290,7 @@ func TestContentTypesDoNotDependOnTheHost(t *testing.T) {
 
 func TestSecurityHeadersAndMissingAssets(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 
 	if got := get(t, handler, "/", nil).Header().Get("Content-Security-Policy"); got != ContentSecurityPolicy {
 		t.Fatalf("CSP = %q", got)
@@ -311,7 +311,7 @@ func TestSecurityHeadersAndMissingAssets(t *testing.T) {
 
 func TestHeadCarriesLengthWithoutBody(t *testing.T) {
 	t.Parallel()
-	handler := New(true)
+	handler := New(true, MarkServer)
 	request := httptest.NewRequest(http.MethodHead, "/landing.css", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -323,5 +323,37 @@ func TestHeadCarriesLengthWithoutBody(t *testing.T) {
 	}
 	if response.Header().Get("Content-Length") == "0" {
 		t.Fatal("HEAD reported zero length")
+	}
+}
+
+// The pages link /favicon.svg and never name a binary, so the handler is the only place
+// the two marks are told apart. A server tab showing the machine cache's mark, or no
+// mark at all, is what this catches.
+func TestEachBinaryServesItsOwnMark(t *testing.T) {
+	t.Parallel()
+	bodies := map[Mark]map[string]string{}
+	for _, mark := range []Mark{MarkServer, MarkLocal} {
+		handler := New(true, mark)
+		bodies[mark] = map[string]string{}
+		for name, contentType := range map[string]string{
+			"/favicon.svg": "image/svg+xml", "/favicon.ico": "image/x-icon",
+		} {
+			response := get(t, handler, name, nil)
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s %s = %d", mark, name, response.Code)
+			}
+			if got := response.Header().Get("Content-Type"); got != contentType {
+				t.Fatalf("%s %s Content-Type = %q, want %q", mark, name, got, contentType)
+			}
+			if want := handler.assets["icons/"+string(mark)+path.Ext(name)].body; response.Body.String() != string(want) {
+				t.Fatalf("%s %s is not icons/%s%s", mark, name, mark, path.Ext(name))
+			}
+			bodies[mark][name] = response.Body.String()
+		}
+	}
+	for _, name := range []string{"/favicon.svg", "/favicon.ico"} {
+		if bodies[MarkServer][name] == bodies[MarkLocal][name] {
+			t.Fatalf("%s is the same for both binaries", name)
+		}
 	}
 }

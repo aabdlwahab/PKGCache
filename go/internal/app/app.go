@@ -220,13 +220,17 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 	}
 	jobs.SetMetrics(metrics)
 
+	mark := consoleweb.MarkServer
+	if snap.Local.Enabled {
+		mark = consoleweb.MarkLocal
+	}
 	a := &App{
 		Config: cfg, Log: logger, Metrics: metrics, Events: events,
 		Blobs: blobs, Catalog: cat, Control: controlDB, Pool: pool, Engine: cacheEngine,
 		Ecos: ecosystems, Accounts: accounts, Sessions: sessions, Tokens: tokens,
 		Projects: projects, Credentials: credentials, Jobs: jobs, cancel: cancel,
 		Peer:    peerService,
-		Console: consoleweb.New(!snap.Server.Headless),
+		Console: consoleweb.New(!snap.Server.Headless, mark),
 	}
 	a.Data = NewDataPlane(cfg, cacheEngine, ecosystems, tokens)
 	a.Ops = &ops.Service{
