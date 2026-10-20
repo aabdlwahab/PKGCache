@@ -55,10 +55,19 @@ export default {
         panel("Access tokens", { note: local ? "only for file uploads" : "for protected projects, file uploads and image pushes" }, tokens.node)),
     );
 
+    // The secret of a token just created, held here rather than on the form. Creating a
+    // token reloads the project, and the reload redraws this panel with a new form before
+    // the answer comes back: a secret put on the old form went out with it, and was never
+    // seen. Kept until it is dismissed, the project changes, or the view is left.
+    let revealed = null;
+    const drawTokens = () => tokens.set(renderTokens(revealed, (next) => {
+      revealed = next;
+      drawTokens();
+    }));
     const draw = () => {
       endpoints.set(renderEndpoints());
       start.set(local ? renderLocal() : renderServer());
-      tokens.set(renderTokens());
+      drawTokens();
     };
     // "projects" is in this list because both the setup command and the token notice
     // depend on whether the selected project requires one. It used to be missing, so a
@@ -319,7 +328,9 @@ function addToMachine(scope) {
       : el("p", { class: "note", text: "A read token lets the machine download. To push images from it as well, create a write token instead." }));
 }
 
-function renderTokens() {
+// renderTokens draws the token panel. revealed is a secret to show, if one was just
+// created; reveal replaces it and redraws, and takes null once the secret has been copied.
+function renderTokens(revealed, reveal) {
   const rows = store.state.tokens || [];
   const canOperate = store.canOperate();
   const project = store.state.projects.find((item) => item.name === store.state.project);
@@ -341,11 +352,13 @@ function renderTokens() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(form);
+    const target = store.state.project;
+    const scope = String(data.get("scope"));
     const result = await store.mutate(
       () => api.createToken({
-        project: store.state.project,
+        project: target,
         eco: String(data.get("eco") || ""),
-        scope: String(data.get("scope")),
+        scope,
         label: String(data.get("label")),
         ttl_seconds: Number(data.get("ttl_hours")) * 3600,
         rate_limit: 0,
@@ -353,16 +366,18 @@ function renderTokens() {
       }),
       "Token created",
     );
-    if (result?.secret) {
-      // Shown once, never stored. Say so plainly rather than letting someone assume
-      // they can come back for it.
-      form.prepend(el("div", { class: "secret" },
-        el("strong", { text: "Copy this now — it is not stored:" }),
-        el("code", { text: result.secret }),
-        store.isLocal() ? null : addToMachine(String(data.get("scope")))));
-      form.reset();
-    }
+    if (result?.secret) reveal({ secret: result.secret, scope, project: target });
   });
+
+  // Shown once, never stored. Say so plainly rather than letting someone assume they can
+  // come back for it.
+  const secret = revealed && revealed.project === store.state.project
+    ? el("div", { class: "secret" },
+        el("strong", { text: "Copy this now — it is not stored:" }),
+        el("code", { text: revealed.secret }),
+        store.isLocal() ? null : addToMachine(revealed.scope),
+        button("I have copied it", () => reveal(null), { kind: "ghost small" }))
+    : null;
 
   return el(
     "div",
@@ -403,6 +418,7 @@ function renderTokens() {
       rows,
       { empty: "No tokens. The project is reachable without one." },
     ),
+    secret,
     canOperate ? form : el("p", { class: "note", text: "You cannot create tokens in this project." }),
   );
 }
