@@ -72,15 +72,22 @@ func TestUpstreamCredentialStaysWithItsOrigin(t *testing.T) {
 	var second struct {
 		CredentialID *int64 `json:"credential_id"`
 	}
-	_ = json.Unmarshal(body, &second)
+	if err := json.Unmarshal(body, &second); err != nil || second.CredentialID == nil {
+		t.Fatalf("second upstream = %s, %v", body, err)
+	}
 	response, body = controlRequest(t, client, http.MethodPost, server.URL+"/api/v1/projects/team-a/upstreams", cookie,
 		fmt.Sprintf(`{"eco":"pypi","name":"borrowed","url":"https://attacker.example/simple","kind":"origin","credential_id":%d}`,
 			*second.CredentialID))
-	if response.StatusCode == http.StatusCreated {
+	// Refusing the field outright is as good as ignoring it; taking it is the defect.
+	switch response.StatusCode {
+	case http.StatusCreated:
 		chain := a.Config.Current().ProjectUpstreams["team-a"]["pypi"]["borrowed"]
 		if len(chain) == 1 && chain[0].Credential.Password != "" {
 			t.Fatal("a new row borrowed another row's credential by its id")
 		}
+	case http.StatusBadRequest:
+	default:
+		t.Fatalf("create borrowed upstream = %d %s", response.StatusCode, body)
 	}
 	if got := edit("https://mirror.internal:8443/simple"); got != "" {
 		t.Fatalf("another port on the same host kept the credential: %q", got)
