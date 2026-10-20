@@ -119,10 +119,10 @@ hosts, not images.
   The pipeline is implemented, but releases intentionally fail closed when those
   credentials are absent.
 - **A binary that silently installs a root CA is malware-shaped.** Endpoint security
-  tooling treats it accordingly. `pkgreg-client` therefore defaults to a temporary
-  localhost-backed child shell and writes nothing to the machine. Only explicit
-  `--persist` downloads the readable platform script, verifies its embedded CA, and
-  executes or prints it.
+  tooling treats it accordingly. `pkgcache` therefore installs no CA anywhere: it
+  keeps the team's CA in its own directory and verifies against it itself. Machine-wide
+  trust is only ever the readable platform script, downloaded and run as root by
+  someone who has read it.
 - The script remains directly downloadable for audit and environments that do not
   want a release binary.
 
@@ -216,7 +216,18 @@ qualified four paths on 2026-07-28: Docker `--add-host`, Compose
 `build.extra_hosts`, isolated dnsmasq authoritative plus forwarded lookup, and a
 `docker-container` BuildKit builder using the configured resolver. All passed.
 
-### Phase 4 — signed client wrapper — implemented
+### Phase 4 — signed client wrapper — implemented, then absorbed into pkgcache
+
+> **Now:** `pkgreg-client` is a shim, and the installer it describes below
+> (`internal/clientinstaller`) has been removed. The session form
+> `pkgreg-client -server … -ca-sha256 … [-project P] [-token-file T]` runs
+> `pkgcache setup -no-cache -server … -ca-sha256 … [-team-project P] [-token-file T]`
+> and then `pkgcache shell`; any other first argument (`build`, `compose`, …) is passed
+> to pkgcache unchanged. The install modes answer with their replacements instead of
+> running: `--persist` is `pkgcache persist` for one user's tool settings, or the
+> project's `setup.sh` for machine-wide trust; `-docker-trust` is
+> `pkgcache docker-setup`; `-docker-build-trust` is `pkgcache docker-build-setup`. The
+> rest of this section is the record of what the original client did.
 
 [`go/cmd/pkgreg-client`](../go/cmd/pkgreg-client/) is a small cross-platform wrapper
 that requires either `-ca-sha256` or a trusted `-ca-file`. Its default mode downloads
@@ -296,9 +307,10 @@ Persistent-mode tests parse the
 generated shell with `bash -n`, execute its non-mutating `--dry-run`, verify the
 PowerShell state/restore contract, exercise v1 and compatibility download routes,
 check project authorization, reject a hostile `Host` header, and verify the
-out-of-band fingerprint header. `internal/clientinstaller` separately covers
-fingerprint mismatch, embedded-CA mismatch, authentication, size limits, platform
-command selection, printing, execution, and cleanup.
+out-of-band fingerprint header. The original client's installer tests (fingerprint
+mismatch, embedded-CA mismatch, authentication, size limits, platform command selection,
+printing, execution, cleanup) went with `internal/clientinstaller`; the trust fetch they
+exercised lives on in `internal/trust`, under `pkgcache setup`.
 
 The opt-in privileged OS acceptance suite mints an ephemeral CA/server certificate,
 proves curl rejects it, installs twice, proves system trust plus name resolution,

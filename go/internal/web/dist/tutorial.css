@@ -562,6 +562,7 @@
 .plain-card p:last-child, .install-card p:last-child,
 .after-install p:last-child, .faq p:last-child { margin-bottom: 0; }
 .plain-card .term { margin-top: 14px; }
+.plain-card .term + p { margin-top: 12px; }
 .callout {
   margin: 18px 0 0;
   padding: 15px 17px;
@@ -654,7 +655,21 @@
 .tool-head h3 { margin: 0; font-size: 15px; }
 .tool-card p { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
 .tool-card p code { color: var(--fg2); }
+/* Seven tools in two columns would leave the last one alone in its row; the one with
+   the longest command takes the whole row instead. */
+.tool-card.tool-wide { grid-column: 1 / -1; }
 @media (max-width: 760px) { .tool-grid { grid-template-columns: 1fr; } }
+
+/* ---------- the cache on this machine ----------------------------------- */
+.notes { display: grid; gap: 14px; margin-top: 30px; max-width: 86ch; }
+.notes p { margin: 0; color: var(--fg2); font-size: 13px; line-height: 1.7; }
+.notes p b { color: var(--fg); }
+.notes code { color: var(--fg2); background: var(--inset); padding: 1px 5px; border-radius: var(--radius); font-size: 0.92em; }
+
+/* The server's and pkgcache's wordings both live in the markup and tutorial.js hides
+   one. Stated here as well so a later display rule cannot bring the other back. */
+[data-product][hidden] { display: none !important; }
+.callout p { margin: 8px 0 0; }
 
 /* ---------- numbered steps and callouts -------------------------------- */
 .build-steps {
@@ -707,6 +722,8 @@
   gap: 14px;
   padding: 20px;
 }
+.advanced summary code { font-size: 0.92em; }
+.build-step .advanced { margin-top: 18px; }
 .advanced-body h3 { margin: 8px 0 0; font-size: 15px; }
 .advanced-body h3:first-child { margin-top: 0; }
 .advanced-body p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; }

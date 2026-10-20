@@ -164,6 +164,33 @@ func TestEvictionUsesLRUAndHoldsTarget(t *testing.T) {
 	}
 }
 
+// A dry run predicts the pass it previews. It once never lowered its own running total,
+// so the target never came to hold and every candidate in the project was reported.
+func TestEvictionDryRunStopsWhereTheRealPassWould(t *testing.T) {
+	h := newHarness(t)
+	oldest := h.put(t, "p", "a", "aaaa", h.now.Add(-3*time.Hour))
+	h.put(t, "p", "b", "bbbb", h.now.Add(-2*time.Hour))
+	h.put(t, "p", "c", "cccc", h.now.Add(-time.Hour))
+
+	preview, err := h.svc.Evict(context.Background(), EvictOptions{TargetBytes: 8, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.EvictedEntries != 1 || preview.AfterBytes > 8 {
+		t.Fatalf("dry run=%+v, want one entry and the target held", preview)
+	}
+	if !h.blobs.Exists(oldest) {
+		t.Fatal("a dry run removed content")
+	}
+	actual, err := h.svc.Evict(context.Background(), EvictOptions{TargetBytes: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.EvictedEntries != preview.EvictedEntries {
+		t.Fatalf("dry run predicted %d, the real pass evicted %d", preview.EvictedEntries, actual.EvictedEntries)
+	}
+}
+
 // Eviction must rank by last *read*, not by insertion order. The two orderings agree
 // on a cache nobody has read from, which is why insert-time-only coverage passed while
 // the hottest entry in a real cache was the first one evicted.

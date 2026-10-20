@@ -1,4 +1,4 @@
-// Command pkgcache is a package cache for one machine: six pull-through ecosystems on
+// Command pkgcache is a package cache for one machine: seven pull-through ecosystems on
 // one loopback port, with no certificate, no account and no privileged setup.
 //
 // It is the same engine as pkgreg, composed differently. pkgreg is a host other
@@ -35,7 +35,7 @@ var commands = map[string]struct {
 	"crate":              {"run crate with its builds served from the cache", runCrate},
 	"persist":            {"settings that outlive the session", runPersist},
 	"docker-setup":       {"teach the Docker daemon about this cache", runDockerSetup},
-	"docker-build-setup": {"cache apt and apk in every build on this machine", runDockerBuildSetup},
+	"docker-build-setup": {"cache apt in every build on this machine (apk needs build)", runDockerBuildSetup},
 	"checkpoint":         {"record what this project holds right now", runCheckpoint},
 	"export":             {"put what this project holds into a pack", runExport},
 	"import":             {"take a pack somebody carried here", runImport},
@@ -54,9 +54,11 @@ var commands = map[string]struct {
 	"version":            {"print build identity", runVersion},
 }
 
-// order fixes the help text, which a map iteration would shuffle between runs.
+// order fixes the help text, which a map iteration would shuffle between runs. A
+// command in the map and missing here works but is never mentioned, which is how peer
+// went unlisted; TestOrderListsEveryCommand holds the two together.
 var order = []string{
-	"setup", "project", "run", "shell", "env", "build", "compose", "crate",
+	"setup", "project", "peer", "run", "shell", "env", "build", "compose", "crate",
 	"pull", "warmlock", "persist", "docker-setup", "docker-build-setup",
 	"checkpoint", "export", "import", "snapshots", "rollback",
 	"widget", "tray", "console", "share",

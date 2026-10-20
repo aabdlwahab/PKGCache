@@ -41,6 +41,13 @@ func (a *API) seriesRoutes() {
 // certificate this same server hands to anyone who asks at /api/ca.crt, and pinning it
 // is what makes the first download safe. Withholding it protected nothing and broke the
 // one step a newcomer cannot work around.
+//
+// offline is the instance-wide switch (`serve -offline`, upstream.offline), which holds
+// every project to its cache whatever the project's own flag says. It had no reader at
+// all, so the console's policy tile, reading only the project flag, said "online" about
+// an instance that could reach nothing. It rides here because every page already loads
+// this route, and because it is no secret either: any miss on such an instance answers
+// with the offline error.
 func (a *API) getCoordinates(w http.ResponseWriter, r *http.Request) error {
 	host, unifiedPort, proxyPort, err := a.clientCoordinates(r)
 	if err != nil {
@@ -56,6 +63,7 @@ func (a *API) getCoordinates(w http.ResponseWriter, r *http.Request) error {
 		"proxy":       net.JoinHostPort(host, strconv.Itoa(proxyPort)),
 		"single_port": snapshot.Server.SinglePort,
 		"console":     scheme + "://" + net.JoinHostPort(host, strconv.Itoa(unifiedPort)),
+		"offline":     snapshot.Upstream.Offline,
 	}
 	// An instance with no TLS material has no fingerprint to report, and that is a
 	// legitimate configuration rather than a failure — so the field is absent instead

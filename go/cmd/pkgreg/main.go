@@ -1,4 +1,4 @@
-// Command pkgreg is the package cache: six pull-through ecosystems, an operator
+// Command pkgreg is the package cache: seven pull-through ecosystems, an operator
 // console, and air-gap transfer, in one static binary with no containers.
 package main
 
@@ -19,7 +19,7 @@ var commands = map[string]struct {
 }{
 	"serve":          {"run the cache and the control plane", runServe},
 	"init":           {"create the data directory, mint TLS material, write a config", runInit},
-	"publish-client": {"offer pkgreg-client binaries for download from this instance", runPublishClient},
+	"publish-client": {"offer pkgcache and the other client binaries for download from this instance", runPublishClient},
 	"publish-apt":    {"publish .deb packages into the apt repository this instance serves", runPublishApt},
 	"doctor":         {"check configuration, storage and TLS, and report what is wrong", runDoctor},
 	"audit":          {"print the immutable control-plane audit log", runAudit},

@@ -349,10 +349,21 @@ func (a *API) ports() map[string]int {
 	return out
 }
 
-func (a *API) endpointMap(
-	project, host string,
-	unifiedPort, proxyPort int,
-) map[string]any {
+// endpointMap renders every ecosystem's setup steps for one project, at the address
+// and scheme a client of this instance would actually use.
+//
+// The scheme is the one /api/v1/coordinates reports, and Local is what /me reports as
+// the product, so the steps cannot disagree with the rest of the page about either.
+// Before SetupContext carried them, each descriptor wrote its own scheme: gomod's
+// http:// reached a TLS server only through the single-port redirect, and files'
+// https:// never reached pkgcache at all.
+func (a *API) endpointMap(r *http.Request, project string) (map[string]any, error) {
+	host, unifiedPort, proxyPort, err := a.clientCoordinates(r)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := a.Config.Current()
+	scheme := clientScheme(r, snapshot)
 	out := make(map[string]any)
 	for _, descriptor := range a.Ecos.Descriptors() {
 		ecoPort := unifiedPort
@@ -360,14 +371,15 @@ func (a *API) endpointMap(
 			ecoPort = proxyPort
 		}
 		steps := descriptor.SetupSteps(eco.SetupContext{
-			Host: host, Port: ecoPort, Project: project,
+			Scheme: scheme, Host: host, Port: ecoPort, Project: project,
 			IsGlobal: project == config.GlobalProject,
+			Local:    snapshot.Local.Enabled,
 		})
 		out[descriptor.ID] = map[string]any{
 			"setup": steps, "listener": descriptor.Listener,
 		}
 	}
-	return out
+	return out, nil
 }
 
 func artifactJSON(artifact catalog.Artifact) map[string]any {

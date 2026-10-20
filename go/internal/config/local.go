@@ -91,6 +91,9 @@ type Hop struct {
 	// from a sibling is never relayed to one, so two machines that borrow from each other
 	// cannot hand a miss back and forth.
 	Sibling bool
+	// Token is the team project's read token, presented as a bearer header on requests to
+	// Base. Never on Proxy: that hop is cleartext.
+	Token string
 }
 
 // RelayFor returns the relay a project's forward-proxy requests use, if any.
@@ -155,7 +158,7 @@ func LocalDefaults() Snapshot {
 	// Nothing is ever reclaimed unless the user asks for it. A background process
 	// quietly deleting the wheels someone's current work depends on, to hold a number
 	// nobody chose, is the wrong default on a machine somebody is sitting in front of.
-	// `pkgcache prune` and `pkgcache gc` do exactly what they say, when asked.
+	// `pkgcache prune` does exactly what it says, when asked.
 	s.Maintenance.GCInterval = 0
 	s.Maintenance.EvictInterval = 0
 	s.Maintenance.EvictTargetBytes = 0

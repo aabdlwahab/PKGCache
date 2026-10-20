@@ -117,6 +117,11 @@ func TestAccountEndpointsSayThereAreNoAccounts(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `"auth_enabled":false`) {
 		t.Fatalf("/me = %d %q", response.StatusCode, body)
 	}
+	// A server with no accounts is still a server. The console reads this to decide whether
+	// to hand out pkgreg's commands or pkgcache's, so no accounts must not read as a laptop.
+	if !strings.Contains(string(body), `"product":"pkgreg"`) {
+		t.Errorf("/me = %q, which does not name pkgreg", body)
+	}
 }
 
 // An ordered chain is two origins for one index, and the schema forbade it for every

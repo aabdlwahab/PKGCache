@@ -78,15 +78,8 @@ func (m *Migrator) Location(context.Context) (controlapi.MigrationLocation, erro
 	} else {
 		location.Movable = true
 	}
-	if record, found := readMigrationRecord(m.DataDir); found {
-		if record.State == controlapi.MigrationMoving && time.Since(record.Started) > staleMove {
-			// See staleMove. Said as a failure with the one fact that matters — nothing
-			// was lost — because the alternative is a window waiting forever on a move
-			// no process is performing.
-			record.State = controlapi.MigrationFailed
-			record.Error = "the move stopped without finishing, and the cache is still here. " +
-				"Its output is in " + migrationLogPath(m.DataDir)
-		}
+	// This daemon is answering, which is what ReadMigration's second argument asks.
+	if record, found := ReadMigration(m.DataDir, true); found {
 		location.Last = &record
 	}
 	return location, nil

@@ -19,6 +19,12 @@
  * consumes the placeholders, and in single-port mode the unified and proxy addresses
  * are identical, so a second pass could not tell them apart to split them again.
  *
+ * And sometimes not at all. Both binaries serve these pages, and the tutorial's example
+ * is the team's server — which is this instance on pkgreg, and a different machine on a
+ * laptop's pkgcache. Substituting there turned `pkgcache setup -server` into the very
+ * cache being set up. A page whose example means the server says so with
+ * <body data-example="team-server">, and on pkgcache it is left as the example.
+ *
  * Shared by both pages so the two cannot drift.
  */
 (function () {
@@ -153,8 +159,23 @@
     });
   }
 
-  /* Start the request during head parsing, so by the time the document is ready it has
-     almost always already arrived. */
+  /* Which binary is answering. /api/v1/me is the one route every page reads first and
+     both binaries answer, and it names the product even when it refuses: with a login
+     switched on the 401 carries the field too, so the body is read whatever the status.
+     null when it cannot be told, which callers read as pkgreg — what every instance was
+     before pkgcache served these pages. */
+  function askProduct() {
+    return fetch("/api/v1/me", { credentials: "same-origin" })
+      .then(function (response) { return response.json(); })
+      .then(function (body) {
+        if (!body || typeof body.product !== "string") return null;
+        return body.product === "pkgcache" ? "pkgcache" : "pkgreg";
+      })
+      .catch(function () { return null; });
+  }
+
+  /* Start the requests during head parsing, so by the time the document is ready they
+     have almost always already arrived. */
   var asked = null;
   if (window.fetch && window.location.origin && window.location.origin !== "null") {
     asked = new Promise(function (resolve) {
@@ -166,19 +187,33 @@
         }
       };
       setTimeout(function () { finish(null); }, BUDGET_MS);
-      fetch("/api/v1/coordinates", { credentials: "same-origin" })
+      var where = fetch("/api/v1/coordinates", { credentials: "same-origin" })
         .then(function (response) { return response.ok ? response.json() : null; })
-        .then(finish)
-        .catch(function () { finish(null); });
+        .catch(function () { return null; });
+      Promise.all([where, askProduct()]).then(function (both) {
+        var data = both[0];
+        if (both[1]) {
+          data = data || {};
+          data.product = both[1];
+        }
+        finish(data);
+      });
     });
   }
 
   /* The same response carries the CA fingerprint, which the tutorial needs to fill
-     into its start command. Publishing the promise rather than refetching keeps that to
-     one request and makes this the only place either page asks the server where it is
-     and what it presents. Resolves to the raw payload, or null when the request failed
-     or the page is a file:// preview. */
+     into its setup command, and the product, which decides what the tutorial says at
+     all. Publishing the promise rather than refetching keeps that to one request each
+     and makes this the only place either page asks the server where it is and what it
+     presents. Resolves to the raw coordinates payload with `product` added, or null
+     when nothing could be learned or the page is a file:// preview. */
   window.pkgregCoordinates = asked || Promise.resolve(null);
+
+  /* The example names the team's server, and this instance is not one. */
+  function exampleIsElsewhere(data) {
+    return !!data && data.product === "pkgcache" &&
+      document.body.getAttribute("data-example") === "team-server";
+  }
 
   function run() {
     if (!asked) {
@@ -186,6 +221,7 @@
       return;
     }
     asked.then(function (data) {
+      if (exampleIsElsewhere(data)) return;
       apply(fromServer(data) || fromLocation());
     });
   }

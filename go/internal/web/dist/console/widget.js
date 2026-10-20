@@ -1,4 +1,4 @@
-/* The widget: one window, four questions, no navigation.
+/* The widget: one window, four tabs, and four questions on the first of them.
  *
  * It is the console's own modules — api.js, store.js, dom.js, format.js — in a shell
  * built for a 420px window somebody leaves open beside their editor. Not a route inside
@@ -6,14 +6,15 @@
  * page title, and a widget that hid all of it would still be paying for it. This is a
  * second shell over the same state, which is what the region model is for.
  *
- * The four questions, in the order they are asked:
+ * The "now" tab, which the window opens on, asks four questions in this order:
  *
  *   1. Is the cache working?          the state line, and the banner when it is not
  *   2. How much room is left?         the meter, against the limit somebody chose
  *   3. Is it actually helping?        the share served from here
  *   4. What is it doing right now?    live transfers, straight off the event bus
  *
- * Everything else a person might want is in the console, one click away in the footer.
+ * The other three — packages, transfer, sources — are the controls, in widget-panels.js.
+ * Everything else a person might want is in the console, one click away in the header.
  */
 
 import { api } from "./api.js";
@@ -22,7 +23,9 @@ import { pickDirectory } from "./picker.js";
 import * as store from "./store.js";
 import { el, region, button, fill } from "./dom.js";
 import { packagesPanel, transferPanel, sourcesPanel } from "./widget-panels.js";
-import { bytes, count, percent, outcomeColor, OUTCOME_LABEL } from "./format.js";
+import {
+  bytes, count, percent, outcomeColor, outcomeLabel, passedThrough,
+} from "./format.js";
 
 const root = document.getElementById("root");
 
@@ -156,7 +159,7 @@ const panels = new Map();
 
 function panelFor(name) {
   if (panels.has(name)) return panels.get(name);
-  const context = { notice, reload, settle };
+  const context = { notice, reload, settle, reclaim };
   const built =
     name === "packages"
       ? packagesPanel(context)
@@ -297,6 +300,22 @@ function buildSections(regions) {
 
 /* ---- the four questions --------------------------------------------------- */
 
+/** Whether the cache is full now, rather than when it last refused something.
+ *
+ * The daemon's `full` is the verdict on the last download it declined, and it is decided
+ * again only when the next one arrives (local.Guard.MayStore). Room made since — by
+ * Reclaim, by removing packages — shows in the same answer's numbers, which are measured
+ * on every read, but not in its flag; so reading the flag alone kept "The cache is full"
+ * on screen over a cache with room in it until somebody happened to download something.
+ * Where the numbers show room under both the limit and the free-space floor, the next
+ * download is stored, and the flag is not shown. */
+function stillFull(budget) {
+	if (!budget?.full) return false;
+	const underLimit = !(budget.limit_bytes > 0) || budget.used_bytes < budget.limit_bytes;
+	const aboveFloor = !(budget.free_bytes > 0) || budget.free_bytes > budget.min_free_bytes;
+	return !(underLimit && aboveFloor);
+}
+
 /** The state line, and the banner when the cache has stopped storing.
  *
  * "Caching" is not a fact about the process being up — it is up, or this window would
@@ -304,13 +323,14 @@ function buildSections(regions) {
  * which is the thing that silently stops being true. */
 function renderState(regions) {
 	const budget = store.state.storage?.budget ?? null;
+	const full = stillFull(budget);
 	const project = currentProject();
 	const offline = project?.offline === true;
 
 	let text = "Caching";
 	let note = "and serving";
 	let modifier = "";
-	if (budget?.full) {
+	if (full) {
 		text = "Not caching";
 		note = "still serving what it has";
 		modifier = " is-full";
@@ -325,16 +345,16 @@ function renderState(regions) {
 
 	// The banner is the one part worth replacing, and it changes when the cache fills up
 	// rather than when a byte arrives.
-	const reason = budget?.full ? budget.reason || "" : "";
+	const reason = full ? budget.reason || "" : "";
 	// Whether the move is on offer is part of what the banner says, and it is learned after
 	// the first render — so it is part of the key that decides whether to redraw.
-	const bannerKey = `${reason}|${migration?.movable === true}`;
+	const bannerKey = `${full}|${reason}|${migration?.movable === true}`;
 	if (parts.bannerKey === bannerKey) {
 		return;
 	}
 	parts.bannerKey = bannerKey;
 	parts.banner.set(
-		budget?.full
+		full
 			? el(
 					"div",
 					{ class: "wg-banner", role: "status" },
@@ -348,9 +368,7 @@ function renderState(regions) {
 					el(
 						"div",
 						{ class: "wg-banner-actions" },
-						button("Reclaim space", () => run(() => api.gc(false), "Reclaiming space…"), {
-							kind: "danger",
-						}),
+						button("Reclaim space", () => run(reclaim), { kind: "danger" }),
 						// The other way out of a full disk, and the one that keeps everything.
 						migration?.movable ? button("Move to a bigger disk", () => moveCache()) : null,
 					),
@@ -359,10 +377,12 @@ function renderState(regions) {
 	);
 }
 
-/** Disk: what is held against what was allowed, with the free-disk floor marked.
+/** Disk: what is held against the limit somebody chose, or against the disk without one.
  *
- * A cache with no limit still has a floor, so the meter falls back to the filesystem —
- * "no limit" is a choice about this cache, not a promise about the disk. */
+ * "No limit" is a choice about this cache, not a promise about the disk, so without one
+ * the meter measures the filesystem and the figure beside it is what is free. The floor
+ * the daemon keeps free underneath either is not drawn: it is reported when it is reached,
+ * in the banner, in the daemon's own words. */
 function renderDisk(regions) {
 	const storage = store.state.storage;
 	if (!storage) {
@@ -378,7 +398,7 @@ function renderDisk(regions) {
 	// Setting the width on the element that is already there is also what lets its CSS
 	// transition run. Replacing the element meant every value change jumped.
 	parts.meterFill.style.setProperty("width", `${(share * 100).toFixed(1)}%`);
-	parts.meter.className = "meter wg-meter" + (budget?.full ? " status-critical" : "");
+	parts.meter.className = "meter wg-meter" + (stillFull(budget) ? " status-critical" : "");
 	parts.meter.setAttribute("aria-valuemax", String(ceiling));
 	parts.meter.setAttribute("aria-valuenow", String(used));
 	parts.used.textContent = bytes(used);
@@ -456,15 +476,22 @@ function renderRecent() {
 function recentRow(event) {
 	// A download somebody stopped is not a failure anybody needs to look into.
 	const cancelled = event.kind === "fetch.error" && event.status === "cancelled";
+	// A download served and not kept, because the cache is full, arrives as an ordinary
+	// fetch.done. Read the way the Overview reads it, or this window would show a full
+	// cache's every download as a normal fetch while the console showed it as not kept.
+	const uncached = passedThrough(event);
 	const outcome = cancelled
 		? "cancelled"
-		: event.kind === "cache.hit" ? "hit" : event.outcome || outcomeOf(event.kind);
+		: uncached
+			? "uncached"
+			: event.kind === "cache.hit" ? "hit" : event.outcome || outcomeOf(event.kind);
+	const why = (uncached || event.kind === "fetch.error") && event.detail ? `\n${event.detail}` : "";
 	return el(
 		"div",
-		{ class: "wg-recent-row", title: `${event.eco ?? ""} ${event.id ?? ""} — ${outcome}` },
+		{ class: "wg-recent-row", title: `${event.eco ?? ""} ${event.id ?? ""} — ${outcomeLabel(outcome)}${why}` },
 		el("span", { class: "wg-recent-mark", style: `background:${cancelled ? "var(--muted)" : outcomeColor(outcome)}` }),
 		el("span", { class: "wg-recent-name", text: shortName(event.id ?? "") }),
-		el("span", { class: "wg-recent-outcome", text: OUTCOME_LABEL[outcome] ?? outcome }),
+		el("span", { class: "wg-recent-outcome", text: outcomeLabel(outcome) }),
 		el("span", { class: "wg-recent-size", text: event.size ? bytes(event.size) : "" }),
 	);
 }
@@ -598,11 +625,11 @@ function renderProject(regions) {
  *      Only reachable when the app is older too, since opening the window now replaces a
  *      stale daemon — but if it happens, switching here moves nothing and saying nothing
  *      would be exactly the bug this window is supposed to have stopped having.
- *   2. `pkgcache persist` wrote ~/.npmrc, pip.conf, uv.toml and .gitconfig naming one
- *      project literally, and they do not follow a switch. That is deliberate — an editor
- *      already open would be redirected under it — but a person looking at a window that
- *      says "work" while every `npm install` goes to global deserves to be told which of
- *      those two facts is doing the work.
+ *   2. `pkgcache persist` wrote ~/.npmrc, pip.conf, uv.toml — and .gitconfig, if it was
+ *      given git hosts — naming one project literally, and they do not follow a switch.
+ *      That is deliberate — an editor already open would be redirected under it — but a
+ *      person looking at a window that says "work" while every `npm install` goes to
+ *      global deserves to be told which of those two facts is doing the work.
  */
 function renderAlignment(regions) {
   const project = store.state.project;
@@ -628,13 +655,14 @@ function renderAlignment(regions) {
     regions.alignRegion.set();
     return;
   }
+  const tools = persistedTools(persisted.files);
   regions.alignRegion.set(
     el(
       "div",
       { class: "wg-warn", role: "status" },
       el("div", {
         class: "wg-warn-title",
-        text: `npm, pip and uv are pointed at ${persisted.project}`,
+        text: `${tools} are pointed at ${persisted.project}`,
       }),
       el("div", {
         class: "wg-warn-body",
@@ -649,11 +677,22 @@ function renderAlignment(regions) {
         "div",
         { class: "wg-warn-actions" },
         button(`Point them at ${project}`, () =>
-          run(() => store.repointTools(), `npm, pip and uv now use ${project}.`),
+          run(() => store.repointTools(), `${tools} now use ${project}.`),
         ),
       ),
     ),
   );
+}
+
+/** The tools `pkgcache persist` points, named as narrowly as it points them.
+ *
+ * The daemon reports how many files it wrote, not which, and the layout is fixed
+ * (local/persist.go): .npmrc, pip.conf and uv.toml always, .gitconfig only where it was
+ * given git hosts — so a fourth file is git. uv is "uv pip" because uv.toml's [pip] table
+ * reaches that and nothing else; `uv sync`, `uv lock` and `uv add` are deliberately left
+ * on PyPI, and "uv" alone would claim they follow this cache too. */
+function persistedTools(files) {
+  return files > 3 ? "npm, pip, uv pip and git" : "npm, pip and uv pip";
 }
 
 /** Create a project on this cache and switch to it.
@@ -689,15 +728,15 @@ async function addProject(existing) {
   }, `Created ${name}.`);
 }
 
-/** The footer: the two things worth doing from here, and the way out to the console.
+/** The footer: one button, taking this project offline or back online.
  *
  * Offline is a toggle rather than a switch with a label, because it is the one control
- * whose current state is already stated at the top of the window. */
+ * whose current state is already stated at the top of the window. Export and import moved
+ * into the transfer tab, next to the checkpoints they are made from — two buttons in two
+ * places was two places to keep true — and the way out to the console is in the header. */
 function renderFoot(regions) {
   const project = currentProject();
   const offline = project?.offline === true;
-  // One control. Export and import moved into the transfer panel, next to the checkpoints
-  // they are made from — two buttons in two places was two places to keep true.
   regions.footRegion.set(
     button(offline ? "Go online" : "Go offline", () =>
       run(
@@ -724,6 +763,33 @@ async function settle(submitted) {
     if (Date.now() > deadline) throw new Error(`${job.action} is still running; see the console`);
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
+}
+
+/** Collect what nothing references, and say what came of it once it has.
+ *
+ * A collection is a queued job, and the request answers as soon as it is queued. Reporting
+ * on that answer said "Done." before anything had been collected, and re-read the meter
+ * before it could have moved. This waits for the job to end, then reads its one log line —
+ * scanned=… deleted=… reclaimed_bytes=… pinned=… (maintenance.gcJob) — for what it did.
+ *
+ * Resolves to the sentence to show; the caller reloads, which is what moves the meter. */
+async function reclaim() {
+  notice("Reclaiming space…");
+  const job = await settle(await api.gc(false));
+  const figure = (name) => Number(new RegExp(`\\b${name}=(\\d+)`).exec(job.log ?? "")?.[1] ?? NaN);
+  const deleted = figure("deleted");
+  if (Number.isNaN(deleted)) return "Reclaimed what nothing referenced.";
+  if (deleted > 0) {
+    return `Reclaimed ${bytes(figure("reclaimed_bytes"))} from ${count(deleted)} ` +
+      `file${deleted === 1 ? "" : "s"} nothing referenced.`;
+  }
+  // Not a failure, and the commonest answer: a collection takes only what no project and
+  // no checkpoint uses, and leaves even that alone until it is gc_grace old, so it cannot
+  // take a file a download has written and not yet recorded. Said, because a person short
+  // of room who reads "Done." will press it again.
+  return "Nothing to reclaim: every file is used by a project or a checkpoint, or is less " +
+    "than an hour old (gc_grace), in case a download is still recording it. Removing " +
+    "packages frees their space at once.";
 }
 
 /* ---- moving the cache ------------------------------------------------------
@@ -867,9 +933,10 @@ async function waitForMove(record) {
 		const seconds = Math.floor((Date.now() - began) / 1000);
 		elapsed.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 		// A large cache on a slow disk takes minutes, and a bar with no end in sight needs
-		// to say so before somebody decides it has hung.
+		// to say so before somebody decides it has hung. Not "still going": all this window
+		// knows is that no daemon has answered yet, and the terminal can say more.
 		hint.textContent = seconds > 120
-			? "Still going — a large cache takes a while. pkgcache status in a terminal says where it is."
+			? "No answer yet — a large cache takes a while to move. pkgcache status in a terminal says where it is."
 			: "";
 	};
 	tick();
@@ -1037,6 +1104,14 @@ function shareConsole() {
 			event.preventDefault();
 			void submit();
 		});
+		// Enter, by hand. A browser submits a form on Enter only when it has a submit button
+		// or a single text field, and this has two fields and its buttons outside it, in the
+		// dialog's action row — so Enter did nothing at all.
+		form.addEventListener("keydown", (event) => {
+			if (event.key !== "Enter" || event.isComposing || !(event.target instanceof HTMLInputElement)) return;
+			event.preventDefault();
+			void submit();
+		});
 		close = openModal({
 			title: changing ? "Change the password" : "Share this console",
 			wide: !changing,
@@ -1084,11 +1159,13 @@ function notice(content, isError = false) {
   if (!isError) noticeTimer = setTimeout(() => regions.noticeRegion.set(), 12000);
 }
 
+/** Do something, re-read the state it changed, and say so. An operation that resolves to
+ *  a sentence — reclaim does — is reporting what it did, and that sentence wins. */
 async function run(operation, success) {
   try {
-    await operation();
+    const said = await operation();
     await reload();
-    notice(success);
+    notice(typeof said === "string" ? said : success);
   } catch (cause) {
     notice(cause?.message || String(cause), true);
   }
@@ -1110,33 +1187,78 @@ function renderConnection() {
   dot.title = store.state.connected ? "Live" : "Not receiving events";
 }
 
+/** What to show when this window may not read the cache.
+ *
+ * The usual reason is a console shared with other machines: /widget is served on that
+ * socket too, and there `/api/v1/me` answers 401 with password_only, because pkgcache has
+ * no accounts — one password, set by whoever shared it. That is a single field, which
+ * fits at 420px, so it is asked for here, the way the console's sign-in asks for it: the
+ * share's login takes the console's request and reads only the password.
+ *
+ * A 401 without password_only is a pkgreg with accounts, which this window is not built
+ * for; anything else is a cache that did not answer. Neither gets a form. */
+function renderSignIn(cause) {
+  const shared = cause?.status === 401 && cause.detail?.password_only === true;
+  // Same reason as the header link, and one more: without the attribute a click would
+  // navigate this window to the console rather than doing nothing, which is worse. The
+  // console is an operator UI with a nav rail and tabs, and this window is 420 points wide.
+  const consoleLink = el("a", {
+    href: "/console",
+    target: "_blank",
+    rel: "noopener",
+    "data-wml-openurl": consoleURL(),
+    text: "Open the console",
+  });
+  let body;
+  if (shared) {
+    const password = el("input", {
+      name: "password", type: "password", required: true, autocomplete: "current-password",
+    });
+    const error = region("div", { class: "dlg-error", role: "alert" });
+    const form = el("form", { class: "wg-form" },
+      el("div", { class: "wg-quiet", text: "Its owner shared this cache's console with a password. Ask them for it." }),
+      el("label", { class: "wg-field" },
+        el("span", { class: "wg-field-label", text: "Password" }), password),
+      error.node,
+      el("div", { class: "wg-actions" },
+        el("button", { class: "btn primary", type: "submit", text: "Sign in" })));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      error.set();
+      try {
+        // No username: there is nobody to tell apart, and the share ignores it.
+        await api.login("", password.value);
+        location.reload();
+      } catch (failure) {
+        error.set(el("span", { text: failure?.message || String(failure) }));
+        password.focus();
+      }
+    });
+    body = [el("div", { class: "wg-state", text: "Sign in to this shared cache" }), form];
+    requestAnimationFrame(() => password.focus());
+  } else if (cause?.status === 401) {
+    body = [
+      el("div", { class: "wg-state", text: "Sign in required" }),
+      el("div", { class: "wg-quiet", text: "This server asks for an account, which this window does not take. Sign in from the console instead." }),
+      consoleLink,
+    ];
+  } else {
+    body = [
+      el("div", { class: "wg-state", text: "No answer from the cache" }),
+      el("div", { class: "wg-quiet", text: cause?.message || String(cause) }),
+    ];
+  }
+  fill(root, el("main", { class: "wg-main" }, ...body));
+  rebindWML();
+  root.classList.remove("booting");
+}
+
 async function boot() {
   document.documentElement.dataset.theme = store.state.theme;
   try {
     store.set({ me: await api.me() });
-  } catch {
-    // An instance with accounts is not what this window is for: it is pkgcache's, and
-    // pkgcache has none. Say so rather than rendering a login form at 420px.
-    fill(
-      root,
-      el("main", { class: "wg-main" },
-        el("div", { class: "wg-state", text: "Sign in required" }),
-        el("div", { class: "wg-quiet", text: "This cache asks for an account. Open the console instead." }),
-        // Same reason as the header link, and one more: without this the click would
-        // navigate this window to the console rather than doing nothing, which is worse.
-        // The console is an operator UI with a nav rail and tabs, and this window is
-        // 420 points wide.
-        el("a", {
-          href: "/console",
-          target: "_blank",
-          rel: "noopener",
-          "data-wml-openurl": consoleURL(),
-          text: "console",
-        }),
-      ),
-    );
-    rebindWML();
-    root.classList.remove("booting");
+  } catch (cause) {
+    renderSignIn(cause);
     return;
   }
 

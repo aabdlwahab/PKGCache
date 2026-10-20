@@ -121,7 +121,7 @@ func shareOn(ctx context.Context, snap *config.Snapshot, port int) error {
 		return fmt.Errorf("share: the password has to be at least %d characters",
 			local.MinSharePassword)
 	}
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, err := ensureCaching(ctx, snap, "pkgcache share", "whose console to share")
 	if err != nil {
 		return err
 	}

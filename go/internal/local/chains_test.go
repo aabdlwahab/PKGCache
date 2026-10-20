@@ -134,3 +134,62 @@ func TestConfigureChainsWaitsForADrainingDaemon(t *testing.T) {
 		t.Fatal("chain configuration did not proceed once the daemon let go")
 	}
 }
+
+// A token-protected team: every team row is written with the token sealed beside it, the
+// running configuration presents it for the team's origin and not for the registry behind
+// it, and rewriting the chain replaces the sealed copies rather than piling them up.
+func TestConfigureChainsSealsTheTeamToken(t *testing.T) {
+	t.Setenv(ProjectEnvVar, "")
+	snap := testSnapshot(t, 0)
+
+	var set TeamSet
+	set.Set(config.GlobalProject, Team{
+		Server: "https://team", Project: "work", Direct: true, Token: "s3cret",
+	})
+	for range 2 {
+		if _, err := ConfigureChains(context.Background(), snap, set); err != nil {
+			t.Fatal(err)
+		}
+	}
+	instance, err := app.Open(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = instance.Close() }()
+	rows, err := instance.Projects.Upstreams(config.GlobalProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed := map[int64]bool{}
+	for _, row := range rows {
+		if !managedRow(row) {
+			continue
+		}
+		if row.Priority != teamPriority {
+			if row.CredentialID != nil {
+				t.Fatalf("public row %s carries a credential", row.URL)
+			}
+			continue
+		}
+		if row.CredentialID == nil {
+			t.Fatalf("team row %s has no credential", row.URL)
+		}
+		plain, err := instance.Credentials.Get(*row.CredentialID)
+		if err != nil || plain.Kind != "bearer" || plain.Token != "s3cret" {
+			t.Fatalf("team row %s credential = %+v, %v", row.URL, plain, err)
+		}
+		sealed[*row.CredentialID] = true
+	}
+	// The rows of the first run were deleted with their credentials; what is left is one
+	// sealed copy per team row, all of them this run's.
+	for id := int64(1); id < 4*int64(len(chainedEcosystems)); id++ {
+		if _, err := instance.Credentials.Get(id); err == nil && !sealed[id] {
+			t.Fatalf("credential %d outlived the row it was sealed for", id)
+		}
+	}
+
+	chain := instance.Config.Current().ProjectUpstreams[config.GlobalProject]["npm"]["registry"]
+	if len(chain) != 2 || chain[0].Credential.Token != "s3cret" || !chain[1].Anonymous() {
+		t.Fatalf("published npm chain = %+v", chain)
+	}
+}

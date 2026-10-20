@@ -39,10 +39,10 @@ release: ## Build stripped, reproducible static binaries (amd64 + arm64)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/$(BIN)-linux-arm64 ./cmd/pkgreg
 
-client-build: ## Build pkgreg-client for this host
+client-build: ## Build the pkgreg-client shim for this host
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/pkgreg-client ./cmd/pkgreg-client
 
-client-release: ## Build the client installer for Linux, macOS, and Windows
+client-release: ## Build the pkgreg-client shim, which runs pkgcache, for Linux, macOS, and Windows
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags '-s -w $(LDFLAGS)' -o bin/pkgreg-client-linux-amd64 ./cmd/pkgreg-client
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \

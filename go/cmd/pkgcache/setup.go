@@ -32,6 +32,9 @@ func runSetup(ctx context.Context, args []string) error {
 		"never reach a public registry: use the team cache or fail")
 	noCache := fs.Bool("no-cache", false,
 		"do not cache locally; use the team cache through a verified loopback bridge")
+	tokenFile := fs.String("token-file", os.Getenv(local.TokenFileEnvVar),
+		"file holding the team project's read token, if it requires one (default $"+
+			local.TokenFileEnvVar+")")
 	uninstall := fs.Bool("uninstall", false, "forget the team cache and its chain")
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(fs.Output(), `pkgcache setup — point this machine at a cache, once
@@ -52,6 +55,14 @@ applies to, and the global project's is the fallback for every project without i
 -team-project is the name on the team's side, which defaults to their global project
 because assuming a name exists on somebody else's server is not this program's call.
 
+A team project that serves downloads only to a token takes it from -token-file, or from
+the file $PKGCACHE_TOKEN_FILE names: a file, so the secret stays out of process lists and
+shell history. It is kept with that project's team record, readable by you alone, sent
+over TLS on every request to the team cache and never printed. apt is the exception: the
+team's apt proxy is cleartext, so apt goes to its mirror directly, or fails with
+-no-direct. Running setup again for the same server and project keeps the token;
+-uninstall forgets it.
+
 Nothing is written outside this cache's own directory.
 
 flags:
@@ -63,6 +74,21 @@ flags:
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	// Read before anything is stopped or written: a token file that cannot be used should
+	// cost nothing but the message. From the environment it applies only with -server, so
+	// a CI job that always exports it can still run `setup -limit` on its own.
+	token := ""
+	if *tokenFile != "" && (*server != "" || given["token-file"]) {
+		if *server == "" {
+			return errors.New("-token-file is the team project's token; pass -server with it")
+		}
+		read, err := local.ReadTokenFile(*tokenFile)
+		if err != nil {
+			return err
+		}
+		token = read
+	}
 
 	snap, err := config.LoadLocal(collect())
 	if err != nil {
@@ -122,14 +148,17 @@ flags:
 		if err != nil {
 			return err
 		}
-		set.Set(scope, local.Team{
+		// Without a token file, the one this project already has for this same server and
+		// project is kept: re-running setup to change -no-direct must not cost it.
+		set.Set(scope, set.KeepToken(scope, local.Team{
 			Server:      verified.Base.String(),
 			Fingerprint: verified.Fingerprint,
 			Project:     *teamProject,
 			Direct:      !*noDirect,
 			NoCache:     *noCache,
 			CAPEM:       string(verified.CAPEM),
-		})
+			Token:       token,
+		}))
 		if err := local.WriteTeams(snap.DataDir, set); err != nil {
 			return err
 		}
@@ -210,6 +239,7 @@ func describe(snap *config.Snapshot) error {
 	if team, bridged := set.Bridged(); bridged {
 		fmt.Println("local      disabled")
 		fmt.Printf("team       %s (project %s)\n", team.Server, team.Project)
+		describeToken(team)
 		fmt.Println("direct     never — this machine caches nothing itself")
 		return nil
 	}
@@ -238,7 +268,11 @@ func describe(snap *config.Snapshot) error {
 		fmt.Println()
 		for _, project := range others {
 			team, _ := set.Own(project)
-			fmt.Printf("%-10s %s (project %s)\n", project, team.Server, team.Project)
+			withToken := ""
+			if team.Token != "" {
+				withToken = ", with a token"
+			}
+			fmt.Printf("%-10s %s (project %s%s)\n", project, team.Server, team.Project, withToken)
 		}
 	}
 	return nil
@@ -258,10 +292,19 @@ func describeTier(set local.TeamSet, project string) {
 		inherited = fmt.Sprintf(" — inherited from %s", config.GlobalProject)
 	}
 	fmt.Printf("team       %s (project %s)%s\n", team.Server, team.Project, inherited)
+	describeToken(team)
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {
 		fmt.Println("direct     never — the team cache or nothing")
+	}
+}
+
+// describeToken says whether a token is sent to the team cache. Whether, never which: this
+// is printed to terminals, CI logs and screenshots.
+func describeToken(team local.Team) {
+	if team.Token != "" {
+		fmt.Println("token      configured")
 	}
 }
 

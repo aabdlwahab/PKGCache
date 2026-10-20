@@ -52,6 +52,20 @@ func (e *Engine) servePassThrough(
 	defer cancel()
 	defer func() { _ = response.Body.Close() }()
 
+	// An origin that says no is answered exactly as a miss answers it — the same error,
+	// the same status to the client, the same fetch.error — rather than relayed as if it
+	// were the artifact. Relaying it reported a 404 as a download that finished, and
+	// handed the client the registry's error page under the artifact's name.
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		refused := &UpstreamHTTPError{URL: request.URL, Status: response.StatusCode}
+		e.events.Publish(obs.Event{
+			Kind: obs.EventFetchError, Project: res.Project, Eco: res.Eco,
+			ID: res.Key, Detail: refused.Error(),
+		})
+		e.record(res, OutcomeFail, 0, now)
+		return OutcomeFail, refused
+	}
+
 	e.events.Publish(obs.Event{
 		Kind: obs.EventFetchDone, Project: res.Project, Eco: res.Eco,
 		ID: res.Key, Detail: "not cached: " + reason,
@@ -59,9 +73,7 @@ func (e *Engine) servePassThrough(
 
 	e.applyHeaders(w, res)
 	for name, values := range response.Header {
-		// Hop-by-hop and length headers belong to this connection, and Content-Length
-		// would be wrong if the copy is cut short.
-		if skipRelayHeader(name) {
+		if !relayHeader(name) {
 			continue
 		}
 		for _, value := range values {
@@ -81,10 +93,18 @@ func (e *Engine) servePassThrough(
 	return OutcomeUncached, copyErr
 }
 
-func skipRelayHeader(name string) bool {
+// relayHeader reports whether an origin's header describes the bytes being relayed, and so
+// belongs on the answer this cache gives.
+//
+// An allowlist, because the answer is this cache's and not the registry's: a miss served
+// from the store carries none of the origin's headers, and a pass-through must not carry
+// more. A denylist of hop-by-hop headers let the rest through, which put npmjs.org's
+// Set-Cookie on a loopback response and would do the same for HSTS, Alt-Svc or
+// Clear-Site-Data from whichever origin sent them. Content-Length stays out because the
+// copy can be cut short; Content-Type is set separately, from the resolution first.
+func relayHeader(name string) bool {
 	switch http.CanonicalHeaderKey(name) {
-	case "Content-Length", "Transfer-Encoding", "Connection", "Keep-Alive",
-		"Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Upgrade":
+	case "Content-Encoding", "Content-Disposition", "Etag", "Last-Modified":
 		return true
 	}
 	return false

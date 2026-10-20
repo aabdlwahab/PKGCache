@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +50,7 @@ func newSources(t *testing.T) (*Sources, *app.App) {
 	t.Cleanup(func() { _ = instance.Close() })
 	return &Sources{
 		DataDir: snap.DataDir, Store: instance.Projects, Ecos: instance.Ecos,
-		Pool: instance.Pool, Snapshot: snap,
+		Pool: instance.Pool, Snapshot: snap, Credentials: instance.Credentials,
 	}, instance
 }
 
@@ -186,6 +187,61 @@ func TestSourcesReportInheritance(t *testing.T) {
 	}
 	if !byName["work"].Inherited || byName["work"].Server != server.URL {
 		t.Errorf("work = %+v, want it following global", byName["work"])
+	}
+}
+
+// A token from the console is write-only: the state says one is configured and never what
+// it is. Update with the field left empty keeps it; clearing it is asked for explicitly.
+func TestConfigureSourceKeepsATokenWriteOnly(t *testing.T) {
+	t.Setenv(ProjectEnvVar, "")
+	sources, _ := newSources(t)
+	server, fingerprint := fakeTeam(t)
+	spec := controlapi.SourceSpec{
+		Server: server.URL, Fingerprint: fingerprint, TeamProject: "work", Token: " s3cret\n",
+	}
+	state, err := sources.Configure(context.Background(), config.GlobalProject, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.TokenConfigured || strings.Contains(string(encoded), "s3cret") {
+		t.Fatalf("state = %s", encoded)
+	}
+	stored := func() string {
+		team, _, err := ReadTeam(sources.DataDir, config.GlobalProject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return team.Token
+	}
+	if stored() != "s3cret" {
+		t.Fatalf("stored token = %q", stored())
+	}
+
+	spec.Token = ""
+	if _, err := sources.Configure(context.Background(), config.GlobalProject, spec); err != nil {
+		t.Fatal(err)
+	}
+	if stored() != "s3cret" {
+		t.Fatal("Update with an empty token field dropped the stored one")
+	}
+	states, err := sources.Sources(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range states {
+		if listed.Project == config.GlobalProject && !listed.TokenConfigured {
+			t.Fatal("the listing does not say a token is configured")
+		}
+	}
+
+	spec.ClearToken = true
+	if state, err := sources.Configure(context.Background(), config.GlobalProject, spec); err != nil ||
+		state.TokenConfigured || stored() != "" {
+		t.Fatalf("clearing the token left %q (state %+v, %v)", stored(), state, err)
 	}
 }
 

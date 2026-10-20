@@ -27,7 +27,7 @@ import (
 // room. So:
 //
 //   - the limit is set by the user, explicitly, before the cache serves anything;
-//   - nothing is ever deleted unless `pkgcache prune` or `pkgcache gc` is run;
+//   - nothing is ever deleted unless `pkgcache prune` is run;
 //   - a full cache stops caching, loudly. It does not stop the build, and it does not
 //     start deleting.
 
@@ -237,13 +237,13 @@ func (g *Guard) MayStore(size int64) (mayStore bool, reason string) {
 		size = 0
 	}
 	wasFull, _ := g.Full()
-	if g.budget.LimitBytes > 0 && bytes+size > g.budget.LimitBytes {
+	if g.overLimit(bytes, size) {
 		return g.refuse(bytes, free, wasFull, fmt.Sprintf(
 			"the cache is full: %s of a %s limit used. Run `pkgcache prune` to reclaim "+
 				"space, or raise the limit with `pkgcache limit`",
 			FormatSize(bytes), FormatSize(g.budget.LimitBytes)))
 	}
-	if free > 0 && free-size < g.budget.MinFreeBytes {
+	if g.underFloor(free, size) {
 		return g.refuse(bytes, free, wasFull, fmt.Sprintf(
 			"the disk is nearly full: %s free, and pkgcache keeps %s in reserve. Run "+
 				"`pkgcache prune` to reclaim space",
@@ -257,6 +257,16 @@ func (g *Guard) MayStore(size int64) (mayStore bool, reason string) {
 		g.publish(bytes, free)
 	}
 	return true, ""
+}
+
+// overLimit and underFloor are the two reasons an artifact of size bytes is refused,
+// shared by the decision and by the re-check in Usage so the two cannot disagree.
+func (g *Guard) overLimit(bytes, size int64) bool {
+	return g.budget.LimitBytes > 0 && bytes+size > g.budget.LimitBytes
+}
+
+func (g *Guard) underFloor(free, size int64) bool {
+	return free > 0 && free-size < g.budget.MinFreeBytes
 }
 
 // refuse records the decision and publishes it.
@@ -302,6 +312,15 @@ func (g *Guard) Usage() Usage {
 	g.mu.Lock()
 	g.bytes, g.free, g.sampled = bytes, free, time.Now()
 	g.mu.Unlock()
+	// The verdict is recorded when a fill is refused, and used to be cleared only by the
+	// next fill that fit. A cache somebody had just pruned therefore went on calling itself
+	// full — in `pkgcache status`, the console and the window — until something happened
+	// to be downloaded. The measurement just taken is enough to know.
+	if wasFull, _ := g.Full(); wasFull && !g.overLimit(bytes, 0) && !g.underFloor(free, 0) {
+		g.full.Store(false)
+		g.reason.Store(nil)
+		g.publish(bytes, free)
+	}
 	full, reason := g.Full()
 	var objects int64
 	if g.blobs != nil {

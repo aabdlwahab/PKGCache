@@ -32,18 +32,19 @@ export function visibleNav() {
   return store.isGuest() ? NAV.filter(([, , guest]) => guest) : NAV;
 }
 
-export function wordmark() {
+/** The wordmark, in the name of the binary serving the page: [pkgreg] or [pkgcache]. */
+export function wordmark(product = "pkgreg") {
   return el(
     "div",
     { class: "wordmark" },
     el("span", { class: "br", text: "[" }),
     el("span", { class: "a", text: "pkg" }),
-    el("span", { class: "f", text: "reg" }),
+    el("span", { class: "f", text: product === "pkgcache" ? "cache" : "reg" }),
     el("span", { class: "br", text: "]" }),
   );
 }
 
-export function buildChrome(root) {
+export function buildChrome(root, product = "pkgreg") {
   const projectSelect = el("select", { class: "project-select", "aria-label": "Project" });
   projectSelect.addEventListener("change", () => {
     // Not awaited: the page has already moved, and the write to the machine's own
@@ -126,7 +127,7 @@ export function buildChrome(root) {
     "header",
     { class: "topbar" },
     shaderCanvas,
-    el("a", { class: "brand", href: href("overview") }, wordmark()),
+    el("a", { class: "brand", href: href("overview") }, wordmark(product)),
     nav.node,
     el("div", { class: "spacer" }),
     el("label", { class: "project-switcher" },
@@ -324,7 +325,7 @@ function recentRow(event) {
 
 /** The sign-in screen. Rendered instead of the console, never alongside it. */
 export function renderLogin(
-  root, message, { guestAvailable = false, passwordOnly = false } = {},
+  root, message, { guestAvailable = false, passwordOnly = false, product = "pkgreg" } = {},
 ) {
   // autocomplete is what lets a password manager fill this form, and what tells the
   // browser these two fields are credentials rather than arbitrary text.
@@ -369,7 +370,7 @@ export function renderLogin(
   const form = el(
     "form",
     { class: "login-card" },
-    wordmark(),
+    wordmark(product),
     el("h1", {
       class: "login-title",
       text: passwordOnly ? "Sign in to this shared cache" : "Sign in to the control plane",

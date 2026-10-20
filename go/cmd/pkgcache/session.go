@@ -90,12 +90,19 @@ func startSession(
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
 	}
-	if flags.project == "" {
-		flags.project = local.CurrentProject(snap.DataDir)
-	}
-	state, stop, err := reachCache(ctx, snap)
+	state, bridgedTo, stop, err := reachCache(ctx, snap)
 	if err != nil {
 		return nil, local.State{}, nil, nil, err
+	}
+	if flags.project == "" {
+		// A bridge forwards paths to the team cache as they are, and this machine has no
+		// projects of its own in that mode, so its URLs name the team's project. The
+		// current project named `global` there, and `setup -team-project` — the very
+		// thing pkgreg-client -project turns into — was silently ignored.
+		flags.project = bridgedTo
+	}
+	if flags.project == "" {
+		flags.project = local.CurrentProject(snap.DataDir)
 	}
 	if stop != nil {
 		// A bridge lives exactly as long as the command it serves. Registered here so
@@ -140,34 +147,42 @@ func closeBridges() {
 // The second is what pkgreg-client has always done, and it is a mode of this program
 // rather than a second program. Nothing here opens a store, creates a database or
 // writes to the cache directory, which is the promise -no-cache makes.
+//
+// bridgedTo is the team's project when the answer is a bridge, and empty otherwise.
 func reachCache(
 	ctx context.Context, snap *config.Snapshot,
-) (local.State, func(), error) {
+) (state local.State, bridgedTo string, stop func(), err error) {
 	set, err := local.ReadTeams(snap.DataDir)
 	if err != nil {
-		return local.State{}, nil, err
+		return local.State{}, "", nil, err
 	}
 	// Bridge-only is a property of the machine, not of a project: it promises that no
 	// store is opened at all, which cannot hold for one project and not another.
 	team, bridged := set.Bridged()
 	if !bridged {
 		state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
-		return state, nil, err
+		return state, "", nil, err
 	}
 
 	caPEM := []byte(team.CAPEM)
 	if len(caPEM) == 0 {
-		return local.State{}, nil, errors.New(
+		return local.State{}, "", nil, errors.New(
 			"pkgcache: the team cache's CA is missing; run `pkgcache setup` again")
 	}
+	// The token, when the team's project serves only to one, is attached by the bridge to
+	// every request it carries — the one place it is held, rather than a copy per tool.
 	running, err := clientbridge.Start(ctx, clientbridge.SessionOptions{
 		Server: team.Server, Project: team.Project, CAPEM: caPEM,
-		CAFingerprint: team.Fingerprint,
+		CAFingerprint: team.Fingerprint, Token: team.Token,
 	})
 	if err != nil {
-		return local.State{}, nil, err
+		return local.State{}, "", nil, err
 	}
-	return local.State{Addr: running.Addr}, func() { _ = running.Close() }, nil //nolint:contextcheck // io.Closer takes no context, by definition
+	bridgedTo = team.Project
+	if bridgedTo == "" {
+		bridgedTo = config.GlobalProject
+	}
+	return local.State{Addr: running.Addr}, bridgedTo, func() { _ = running.Close() }, nil //nolint:contextcheck // io.Closer takes no context, by definition
 }
 
 func runRun(ctx context.Context, args []string) error {

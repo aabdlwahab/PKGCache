@@ -358,13 +358,14 @@ func (b *bridge) check(stdout, stderr io.Writer, project string) int {
 %d of %d checks failed, so the bridge cannot replace certificate setup here.
 
 If this is a connectivity failure, fix it before choosing another mode. A managed
-build host can explicitly preview and apply persistent setup:
+build host can install machine-wide trust instead, with project %s's setup script from
+%s (Console, Connect, Read setup.sh), previewed and then run as root:
 
-  pkgreg-client --persist -server %s -project %s -ca-sha256 <fingerprint> -dry-run
-  sudo pkgreg-client --persist -server %s -project %s -ca-sha256 <fingerprint>
+  bash setup.sh --dry-run
+  sudo bash setup.sh
 
 Nothing needs undoing first: the bridge does not modify this machine.
-`, failed, len(probes), b.target, project, b.target, project)
+`, failed, len(probes), project, b.target)
 		return 1
 	}
 	_, _ = fmt.Fprintf(stdout, "\nthe cache is reachable and verified; run the bridge and apply:\n\n%s",

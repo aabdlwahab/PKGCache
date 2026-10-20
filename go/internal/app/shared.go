@@ -64,6 +64,7 @@ func (a *App) SharedHandler(gate SharedGate) http.Handler {
 			// to sign out again.
 			writeJSON(w, http.StatusOK, map[string]any{
 				"auth_enabled": false, "authenticated": true, "shared": true,
+				"product": "pkgcache",
 			})
 		case strings.HasPrefix(path, "/api/"):
 			a.API.ServeHTTP(w, r)

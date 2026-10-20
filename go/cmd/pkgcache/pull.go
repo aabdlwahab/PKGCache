@@ -75,7 +75,7 @@ flags:
 	}
 	// The cache has to be running before an image can be pulled from it, and this is
 	// somebody asking for packages rather than asking a question — so it starts.
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, err := ensureCaching(ctx, snap, "pkgcache pull", "for Docker to pull from")
 	if err != nil {
 		return err
 	}

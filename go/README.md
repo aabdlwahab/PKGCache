@@ -1,6 +1,6 @@
 # pkgreg
 
-The Go rearchitecture of package-registry: six pull-through package caches, an
+The Go rearchitecture of package-registry: seven pull-through package caches, an
 operator console, and air-gap transfer, in **one static binary with no containers**.
 
 Design: [go-architecture.md](../docs/go-architecture.md) ·
@@ -117,7 +117,8 @@ toolchain and no Makefile — just the binary — so publishing is a subcommand 
 server itself:
 
 ```bash
-# Copy bin/pkgreg-client-* and bin/pkgreg-client-SHA256SUMS onto the cache host, then:
+# Copy the pkgcache-* release files onto the cache host (pkgreg-client-* as well, for
+# old command lines), then:
 pkgreg publish-client -data-dir /var/lib/pkgreg /path/to/release
 pkgreg publish-client -data-dir /var/lib/pkgreg   # no path: scans the dir holding pkgreg
 ```
@@ -128,49 +129,49 @@ air-gapped host is refused rather than served. `internal/clientrelease` owns tha
 filename grammar and digest format for the publisher, the download API and `doctor`
 alike.
 
-Compare the CA fingerprint through a trusted channel, then open a temporary shell:
+Compare the CA fingerprint through a trusted channel, point pkgcache at the server once,
+then open a shell:
 
 ```bash
-./pkgreg-client -server https://localhost:8443 -ca-file /tmp/pkgreg/certs/ca.crt
+./pkgcache setup -no-cache -server https://localhost:8443 -ca-file /tmp/pkgreg/certs/ca.crt
+./pkgcache shell
 # run package commands, then:
 exit
 ```
 
-The default uses a verified localhost bridge and changes nothing outside the child
-shell.
+`-no-cache` uses a verified localhost bridge and caches nothing on this machine; without
+it a local cache sits in front of the team's. setup writes only to pkgcache's own
+directory, where the server and its CA stay until `pkgcache setup -uninstall`. An old
+`pkgreg-client -server … -ca-file …` command line still works: it is now a shim that runs
+these two commands.
 
 Docker is the exception, because its daemon never sees that shell — and on macOS and
-Windows it runs in a virtual machine whose loopback is not the developer's, so the
-bridge address is unreachable and a pull fails with `connection refused`. Installing
-the CA for the daemon alone is its own mode: one file, no administrator access on
-Docker Desktop, and `-uninstall` to reverse it.
+Windows it runs in a virtual machine whose loopback is not the developer's, so a bridge
+address is unreachable there. Give the daemon a cache of its own instead: set up without
+`-no-cache`, run `pkgcache docker-setup` once, and pull through the machine's cache, which
+the daemon reaches over plain HTTP and needs no CA for:
 
 ```bash
-./pkgreg-client -docker-trust -server https://localhost:8443 \
-  -ca-file /tmp/pkgreg/certs/ca.crt -dry-run
-./pkgreg-client -docker-trust -server https://localhost:8443 \
-  -ca-file /tmp/pkgreg/certs/ca.crt
-docker pull localhost:8443/dockerhub/library/alpine:3.20
+./pkgcache setup -server https://localhost:8443 -ca-file /tmp/pkgreg/certs/ca.crt -limit 25G
+./pkgcache docker-setup
+./pkgcache pull alpine:3.20
 ```
 
-`~/.docker/certs.d/<host>:<port>/ca.crt` is what Docker Desktop reads, verified against
-Docker Desktop 29.6.2 on darwin/arm64. A Linux daemon reads `/etc/docker/certs.d`
-instead, so the same command needs `sudo` there. Windows has no such directory — a path
-named `<host>:<port>` is not expressible — so Docker Desktop for Windows takes registry
-trust from the certificate store, which `--persist` populates.
-
-For a managed build host that needs machine-wide trust and reusable settings, preview
-and apply the explicit persistent path:
+A managed build host that needs machine-wide trust — the CA in the system and Docker
+trust stores, and settings every user gets — runs the project's generated setup script
+as root instead. It is served to a session: a guest one, for the global project, while
+guest browsing is on (the default), or save it from Console → Connect after signing in:
 
 ```bash
-./pkgreg-client --persist -server https://localhost:8443 \
-  -ca-file /tmp/pkgreg/certs/ca.crt -dry-run
-sudo ./pkgreg-client --persist -server https://localhost:8443 \
-  -ca-file /tmp/pkgreg/certs/ca.crt
+curl --cacert /tmp/pkgreg/certs/ca.crt -c ./session -X POST https://localhost:8443/api/v1/login/guest
+curl --cacert /tmp/pkgreg/certs/ca.crt -b ./session -f -o setup.sh \
+  https://localhost:8443/api/v1/projects/global/setup.sh
+bash setup.sh --dry-run
+sudo bash setup.sh
 ```
 
-The generated `.sh` and `.ps1` files remain available beside the client for auditing
-that persistent setup. Prefer a hostname published in site or builder DNS.
+The `.ps1` form is served beside it for Windows. Prefer a hostname published in site or
+builder DNS.
 
 ## Deploy to a server
 
@@ -303,7 +304,7 @@ cmd/
                      needs cgo and a GUI toolchain and nothing else here does
   pkgcache-docker/   docker with build and pull served from the cache, for tools that
                      take a --runtime
-  pkgreg-client/     fingerprint-verified package shell, and machine setup with --persist
+  pkgreg-client/     shim that turns the old client's command lines into pkgcache ones
   pkgreg-bridge/     the standalone form of the same loopback transport
 internal/
   app/               composition root — the only place construction happens
@@ -313,7 +314,6 @@ internal/
   catalog/           metadata: blobs, entries, refs, artifacts, snapshots, stats
   clientbridge/      the verified loopback transport a session runs over
   clientbuild/       docker build/compose and image pulls driven through the cache
-  clientinstaller/   trust verification, temporary sessions, and persistent setup
   clientrelease/     what a published client release looks like on disk
   config/            every tunable; immutable snapshots swapped atomically
   control/           database, auth, sealed credentials, projects, jobs, API/SSE
@@ -321,7 +321,7 @@ internal/
   dockerfile/        the in-memory Dockerfile rewrite, and the image-name mapping
   engine/            the cache pipeline: single-flight, progressive delivery,
                      freshness, refs, documents
-  eco/               adapter contract plus files, npm, PyPI, OCI, apt/apk and Git
+  eco/               adapter contract plus files, npm, PyPI, OCI, apt/apk, Git and Go modules
   feed/              a published release rendered into each platform's update feed
   listener/          single-port TLS/plain split and atomic certificate reload
   local/             pkgcache's daemon lifecycle, projects, team chains, docker setup

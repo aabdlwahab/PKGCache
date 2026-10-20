@@ -38,11 +38,18 @@ func (a *API) listDownloads(w http.ResponseWriter, _ *http.Request) error {
 		// An unreadable or absent directory is the normal state of a fresh instance,
 		// not a fault. Either way the answer is "nothing yet, here is how to fix it",
 		// and the hint names a command that works on a host holding only this binary.
-		writeJSON(w, http.StatusOK, map[string]any{
+		body := map[string]any{
 			"downloads": []clientrelease.Binary{},
 			"published": false,
-			"hint":      "the operator runs `pkgreg publish-client` on the cache host",
-		})
+		}
+		// Only a server hands binaries out. pkgcache has no publish-client, and nobody
+		// downloads a client from their own machine's cache, so there the empty list is
+		// the whole answer rather than a fault with a fix.
+		if !a.Config.Current().Local.Enabled {
+			body["hint"] = "the operator copies the pkgcache-* release files onto the " +
+				"server host and runs `pkgreg publish-client` there"
+		}
+		writeJSON(w, http.StatusOK, body)
 		return nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

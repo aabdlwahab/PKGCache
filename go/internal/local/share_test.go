@@ -185,6 +185,11 @@ func TestSharedConsoleAsksForThePasswordAndServesNothingElse(t *testing.T) {
 		refusal["password_only"] != true {
 		t.Fatalf("projects without a session: %d %v", status, refusal)
 	}
+	// The sign-in screen only ever sees this refusal, so it is where the page learns
+	// whose console it is drawing.
+	if refusal["product"] != "pkgcache" {
+		t.Errorf("the refusal names %v, not pkgcache", refusal["product"])
+	}
 	for _, path := range []string{"/metrics", "/global/pypi/simple/six/"} {
 		if status := call(t, client, http.MethodGet, base+path, "", nil).StatusCode; status != http.StatusNotFound {
 			t.Errorf("%s without a session: %d", path, status)
@@ -204,6 +209,10 @@ func TestSharedConsoleAsksForThePasswordAndServesNothingElse(t *testing.T) {
 	call(t, client, http.MethodGet, base+"/api/v1/me", "", &me)
 	if me["shared"] != true {
 		t.Errorf("me on the shared socket: %v", me)
+	}
+	// The console names itself from this; a shared cache is still a cache, not a server.
+	if me["product"] != "pkgcache" {
+		t.Errorf("me on the shared socket names %v, not pkgcache", me["product"])
 	}
 	// Packages stay this machine's, password or not.
 	if status := call(t, client, http.MethodGet, base+"/global/pypi/simple/six/", "", nil).StatusCode; status != http.StatusNotFound {
@@ -238,6 +247,11 @@ func TestLoopbackIsUntouchedBySharing(t *testing.T) {
 	if status := call(t, loopback.Client(), http.MethodGet,
 		loopback.URL+"/api/v1/projects", "", nil).StatusCode; status != http.StatusOK {
 		t.Fatalf("loopback projects while shared: %d", status)
+	}
+	var me map[string]any
+	call(t, loopback.Client(), http.MethodGet, loopback.URL+"/api/v1/me", "", &me)
+	if me["product"] != "pkgcache" {
+		t.Errorf("loopback me names %v, not pkgcache", me["product"])
 	}
 }
 

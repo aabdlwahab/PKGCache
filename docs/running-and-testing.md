@@ -92,48 +92,70 @@ the CA download.
 
 ## 3. Default path — a temporary pkgreg-client shell
 
-Download `pkgreg-client` from the tutorial or Console → Connect and compare the CA
-fingerprint through a trusted channel. The normal command starts a verified localhost
-bridge and a configured child shell:
+Download `pkgcache` from the tutorial or Console → Connect and compare the CA
+fingerprint through a trusted channel. `-no-cache` gives what the old `pkgreg-client`
+gave — a verified localhost bridge and a configured child shell, nothing cached on this
+machine — except that setup is remembered, so the next shell needs none. Leave it off to
+keep a local cache in front of the team's:
 
 ```sh
-chmod +x ./pkgreg-client
-./pkgreg-client -server https://cache:8443 -ca-sha256 "$FP"
+chmod +x ./pkgcache
+./pkgcache setup -no-cache -server https://cache:8443 -ca-sha256 "$FP"
+./pkgcache shell
 # run package commands, then type:
 exit
 ```
+
+An old `pkgreg-client -server … -ca-sha256 …` command line still works: the shim runs
+these two commands for it.
 
 The child shell points pip, uv and npm at an ephemeral `127.0.0.1` listener and
 provides temporary addresses for Git, files, and the apt/apk proxy. The bridge
 verifies the remote TLS connection against the fingerprint-pinned CA. Exiting stops
 the listener and discards the environment; no system trust, hosts file, or package
-configuration changes. Docker is daemon-side: localhost works only where that daemon
+configuration changes. What setup itself keeps — the server, its fingerprint-pinned CA,
+and a token if one was given — stays in pkgcache's own directory until
+`pkgcache setup -uninstall`. Docker is daemon-side: localhost works only where that daemon
 can reach the host loopback (normally native Linux), not reliably with Docker Desktop
 or a remote builder.
 
-For a project whose data plane requires a token, save the one-time read token in a
-protected file and let the temporary bridge attach it:
+For a project whose data plane requires a token, give setup the one-time read token. It
+is kept with the team record, readable by you alone, and the bridge attaches it to every
+request to the team; `-token-file -` asks for it instead of reading a file:
 
 ```sh
 printf '%s\n' "$PKGREG_TOKEN" > ./pkgreg.token
 chmod 600 ./pkgreg.token
-./pkgreg-client -server https://cache:8443 -project team-a \
+./pkgcache setup -no-cache -server https://cache:8443 -team-project team-a \
   -ca-sha256 "$FP" -token-file ./pkgreg.token
+./pkgcache shell
 ```
 
 Do not pass the token itself as a command-line argument; command lines may be visible
-to other processes. Persistent mode intentionally does not store project tokens.
+to other processes. The machine-wide setup script below takes no token at all.
 
-For a managed build host that must keep the setup, select it explicitly:
+A managed build host that must keep the setup runs the project's generated setup
+script, which the retired `pkgreg-client --persist` used to fetch and run for it.
+Download it with the CA you have already checked against the fingerprint, read it, and
+run it explicitly as root — it never invokes sudo itself. The script is served to a
+session, which for the global project a guest one is enough while guest browsing is on
+(`auth.guest_read`, the default); for another project, or with guest browsing off, sign
+in to the console and save it from Connect → Read setup.sh. It is a bash script, so run
+it with bash rather than sh:
 
 ```sh
-./pkgreg-client --persist -server https://cache:8443 -ca-sha256 "$FP" -dry-run
-sudo ./pkgreg-client --persist -server https://cache:8443 -ca-sha256 "$FP"
+curl -k -o ca.crt https://cache:8443/api/ca.crt
+openssl x509 -in ca.crt -noout -fingerprint -sha256    # must match "$FP"
+curl --cacert ./ca.crt -c ./session -X POST https://cache:8443/api/v1/login/guest
+curl --cacert ./ca.crt -b ./session -f -o setup.sh \
+  https://cache:8443/api/v1/projects/global/setup.sh
+bash setup.sh --dry-run
+sudo bash setup.sh
 source /etc/pkgreg/projects/global/env.sh
 ```
 
-Only `--persist` downloads and runs the readable setup script. The generated
-`setup.sh` and `setup.ps1` remain available from Connect for audit.
+`setup.sh` and `setup.ps1` are also on Connect ("Read setup.sh"). For one user's tool
+settings rather than the machine's, `pkgcache persist` writes them under your home.
 
 To exercise the same thing locally without touching the machine, set the per-tool
 variables by hand. Each tool has its own way of being told about a CA:
@@ -199,7 +221,7 @@ Uploads are write-once; add `?overwrite=1` to replace.
 ### docker
 
 Docker cannot be given a CA per command. Temporary mode avoids that by using its
-loopback bridge. With `pkgreg-client --persist`, the client writes the `certs.d` file.
+loopback bridge. The persistent `setup.sh` writes the `certs.d` file.
 The equivalent manual check is:
 
 ```sh
@@ -470,14 +492,12 @@ rm -rf /tmp/pkgreg-demo
 docker image rm -f 127.0.0.1:41999/dockerhub/library/alpine:3.20
 ```
 
-The default client shell and standalone bridge leave nothing. If you explicitly used
-the persistent mode, preview and remove it with:
+The default client shell and standalone bridge leave nothing. If you explicitly ran
+the persistent `setup.sh`, preview and remove it with the same script:
 
 ```sh
-./pkgreg-client --persist -server https://cache:8443 -ca-sha256 "$FP" \
-  -uninstall -dry-run
-sudo ./pkgreg-client --persist -server https://cache:8443 -ca-sha256 "$FP" \
-  -uninstall
+bash setup.sh --uninstall --dry-run
+sudo bash setup.sh --uninstall
 ```
 
 ---

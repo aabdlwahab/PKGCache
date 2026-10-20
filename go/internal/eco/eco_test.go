@@ -201,3 +201,21 @@ func TestSiblingRelaysAptForPublicNamesOnly(t *testing.T) {
 		t.Fatalf("a sibling's release download went to %s, want the team", byPath.URL)
 	}
 }
+
+// Origin is where every descriptor's direct address comes from, so a scheme or a bracket
+// got wrong here is got wrong in every ecosystem at once.
+func TestSetupContextOriginCarriesTheInstanceScheme(t *testing.T) {
+	for _, test := range []struct {
+		ctx  eco.SetupContext
+		want string
+	}{
+		{eco.SetupContext{Scheme: "http", Host: "127.0.0.1", Port: 41780}, "http://127.0.0.1:41780"},
+		{eco.SetupContext{Scheme: "https", Host: "cache.internal", Port: 8443}, "https://cache.internal:8443"},
+		{eco.SetupContext{Scheme: "https", Host: "::1", Port: 8443}, "https://[::1]:8443"},
+		{eco.SetupContext{Host: "cache.internal", Port: 443}, "https://cache.internal:443"},
+	} {
+		if got := test.ctx.Origin(); got != test.want {
+			t.Errorf("Origin(%+v) = %q; want %q", test.ctx, got, test.want)
+		}
+	}
+}

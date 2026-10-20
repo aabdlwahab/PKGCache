@@ -60,8 +60,10 @@ func Collect(ctx context.Context, snap *config.Snapshot) error {
 		if err != nil {
 			return err
 		}
+		// The job manager's vocabulary, which Job.Done also speaks. Waiting on a word it
+		// never writes ("succeeded") made every successful prune wait forever.
 		switch current.Status {
-		case "succeeded":
+		case "done":
 			return nil
 		case "failed", "cancelled":
 			return fmt.Errorf("local: prune %s: %s", current.Status, current.Error)

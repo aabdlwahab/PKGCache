@@ -20,8 +20,8 @@ On native Linux, the same bridge can also avoid `/etc/docker/certs.d`. Docker De
 and remote daemons do not share the terminal's loopback, so that is not a portable
 Docker setup.
 
-When loopback does not fit, use explicit `pkgreg-client --persist`. Because the bridge
-never writes to the machine, there is nothing to undo first.
+When loopback does not fit, run the project's `setup.sh` explicitly, as root (Console →
+Connect). Because the bridge never writes to the machine, there is nothing to undo first.
 
 ## Why loopback is the trick
 
@@ -77,8 +77,8 @@ CI variable separately.
 ## When to fall back
 
 `-check` exits non-zero when the cache is unreachable or the pin does not match. Do
-not bypass a failed fingerprint check. Use `pkgreg-client --persist` deliberately for
-these environments:
+not bypass a failed fingerprint check. Use the project's persistent `setup.sh`
+deliberately for these environments:
 
 - **Containers and `docker build`.** `localhost` inside a container is not the host, so
   the bridge is invisible there. CI images should install the public CA, refresh the

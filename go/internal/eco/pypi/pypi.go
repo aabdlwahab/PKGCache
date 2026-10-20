@@ -851,7 +851,7 @@ func parseArtifactKey(key string) (name, version, arch string, ok bool) {
 
 func setupSteps(_ eco.SetupContext) []eco.SetupStep {
 	return []eco.SetupStep{
-		{Comment: "The pkgreg shell already points pip and uv at this project. Use normal commands:"},
+		{Comment: "The pkgcache shell already points pip and uv at this project. Use normal commands:"},
 		{Command: "python -m pip install <package>"},
 		{Command: "uv pip install <package>"},
 	}

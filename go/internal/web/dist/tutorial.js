@@ -1,6 +1,7 @@
-/* Client setup tutorial — progressive enhancement only. The page is complete
-   without JavaScript; this file adds instance downloads, the current fingerprint,
-   copy buttons, theme switching, and restrained scroll effects. */
+/* Setup tutorial — progressive enhancement only. The page is complete without
+   JavaScript; this file adds instance downloads, the current fingerprint, the wording
+   for whichever binary is serving it, copy buttons, theme switching, and restrained
+   scroll effects. */
 (function () {
   "use strict";
 
@@ -19,6 +20,9 @@
     });
   }
 
+  /* The host every example on this page gives the team's server. */
+  var SERVER_EXAMPLE = "cache.example.com";
+
   var project = "global";
   try {
     var requestedProject = new URLSearchParams(window.location.search).get("project") || "";
@@ -31,21 +35,59 @@
   [].forEach.call(document.querySelectorAll('[data-role="project"]'), function (node) {
     node.textContent = project;
   });
-  /* A non-global project prefixes ecosystem paths as well as naming itself in the
-     start command, so both forms are rewritten together. */
+  /* ?project= is a project on the team's server. setup names it with -team-project —
+     pkgcache's own -project is a project on the reader's machine, and rewriting that
+     instead produced a setup command scoped to a local project nobody had created.
+
+     The same goes for paths. An address on the server carries the server's project
+     (/<project>/pypi/…, an image name, the apt proxy's username), but a $PKGCACHE_
+     variable is the cache on the reader's machine, whose projects are its own and which
+     setup has already mapped onto the server's. So a path is rewritten only on a line
+     that names the server, and a shell command is left exactly as the shell exports it. */
   if (project !== "global") {
     rewriteCommands(function (text) {
-      return text
-        .split("-project global")
-        .join("-project " + project)
-        .split("/projects/global/")
-        .join("/projects/" + project + "/")
-        .split("/global/")
-        .join("/" + project + "/")
-        .split("/dockerhub/")
-        .join("/" + project + "/dockerhub/");
+      return text.split("\n").map(function (line) {
+        line = line
+          .split("-team-project global")
+          .join("-team-project " + project)
+          .split("/projects/global/")
+          .join("/projects/" + project + "/");
+        if (line.indexOf(SERVER_EXAMPLE) === -1) return line;
+        return line
+          // The apt proxy is the one address with no path; its project is the username.
+          .split("http://" + SERVER_EXAMPLE)
+          .join("http://" + project + "@" + SERVER_EXAMPLE)
+          .split("/global/")
+          .join("/" + project + "/")
+          .split("/dockerhub/")
+          .join("/" + project + "/dockerhub/");
+      }).join("\n");
     });
   }
+
+  /* Which binary is serving the page, as coords.js learned it. pkgreg is a server the
+     reader is about to point a machine at; pkgcache is the cache already on the
+     reader's machine, which has no downloads, no CA and no idea which server its owner
+     uses. Unknown — an older server, a failed request — reads as pkgreg, which is what
+     every instance was before pkgcache served this page too. */
+  var coordinates = window.pkgregCoordinates || Promise.resolve(null);
+  var product = coordinates.then(
+    function (data) { return data && data.product === "pkgcache" ? "pkgcache" : "pkgreg"; },
+    function () { return "pkgreg"; },
+  );
+
+  product.then(function (name) {
+    if (name !== "pkgcache") return;
+    document.title = "pkgcache — getting started";
+    [].forEach.call(document.querySelectorAll('[data-role="product"]'), function (node) {
+      node.textContent = name;
+    });
+    /* Both wordings live in the markup, the server's shown by default; this picks one,
+       the way coords.js picks between the single- and split-port sentences. */
+    [].forEach.call(document.querySelectorAll("[data-product]"), function (node) {
+      node.hidden = node.getAttribute("data-product") !== name;
+    });
+  });
 
   /* ---- instance downloads --------------------------------------------- */
   var downloads = document.querySelector('[data-role="downloads"]');
@@ -62,7 +104,14 @@
     return Math.max(1, Math.round(bytes / 1024)) + " KB";
   }
 
+  /* Named the way people know their machines. Nobody buying a Mac was told "arm64",
+     and the browser cannot tell the two Mac builds apart for them — every Mac reports
+     itself as Intel — so both are offered, and the label has to do the choosing. */
   function platformLabel(item) {
+    if (item.os === "darwin") {
+      if (item.arch === "arm64") return "macOS · Apple silicon";
+      if (item.arch === "amd64") return "macOS · Intel";
+    }
     var labels = { linux: "Linux", darwin: "macOS", windows: "Windows" };
     return (labels[item.os] || item.os) + " " + item.arch;
   }
@@ -82,7 +131,7 @@
     if (className) downloadState.classList.add(className);
   }
 
-  function downloadFailure(message, command) {
+  function downloadNote(message, command, state, className) {
     if (!downloads) return;
     downloads.textContent = "";
     var note = document.createElement("p");
@@ -95,7 +144,7 @@
       note.appendChild(code);
     }
     downloads.appendChild(note);
-    setDownloadState("not published", "empty");
+    setDownloadState(state || "not published", className || "empty");
   }
 
   function renderQuick(rows) {
@@ -118,66 +167,88 @@
     });
   }
 
+  function renderDownloads(data, served) {
+    if (served === "pkgcache") {
+      /* The binary serving this page is the download. A list of nothing followed by
+         a server command would send the reader looking for something they already
+         have. */
+      downloadNote(
+        "Nothing to download: pkgcache is already on this machine — it is what is " +
+          "serving this page.",
+        "",
+        "already here",
+        "ready",
+      );
+      return;
+    }
+    if (!data) {
+      downloadNote("Could not ask this server which pkgcache builds are available.");
+      return;
+    }
+    /* pkgcache alone. pkgreg-client may be published beside it, but only as a shim
+       that runs pkgcache for instructions written before the two merged; offering it
+       is how this page came to print commands that could not run. */
+    var rows = (data.downloads || []).filter(function (item) {
+      return item.tool === "pkgcache";
+    });
+    if (!rows.length) {
+      /* Name the command rather than saying "ask the operator": on most instances
+         the reader either is the operator or is about to message them, and either
+         way one sentence they can paste ends this faster. */
+      downloadNote(
+        "pkgcache is not published on this server yet. With the pkgcache-* release " +
+          "files beside pkgreg on the server host, the operator runs",
+        "pkgreg publish-client",
+      );
+      return;
+    }
+
+    downloads.textContent = "";
+    var list = document.createElement("div");
+    list.className = "dl-row";
+    var os = currentOS();
+    rows.forEach(function (item) {
+      var cell = document.createElement("div");
+      var link = document.createElement("a");
+      link.className = "btn btn-ghost dl-btn";
+      if (item.os === os) link.classList.add("recommended");
+      link.href = "/api/v1/downloads/" + encodeURIComponent(item.name);
+      link.download = item.name;
+      if (item.sha256) link.title = "SHA-256 " + item.sha256;
+
+      var label = document.createElement("b");
+      label.textContent = platformLabel(item);
+      var size = document.createElement("span");
+      size.className = "dl-size";
+      size.textContent = fileSize(item.bytes);
+      link.appendChild(label);
+      link.appendChild(size);
+      cell.appendChild(link);
+
+      var name = document.createElement("code");
+      name.className = "dl-hash";
+      name.textContent = item.name;
+      cell.appendChild(name);
+      if (item.sha256) {
+        var hash = document.createElement("code");
+        hash.className = "dl-hash";
+        hash.textContent = "sha256 " + item.sha256;
+        cell.appendChild(hash);
+      }
+      list.appendChild(cell);
+    });
+    downloads.appendChild(list);
+    setDownloadState(rows.length + " files ready", "ready");
+    renderQuick(rows.filter(function (item) { return item.os === os; }));
+  }
+
   if (downloads && window.fetch) {
-    fetch("/api/v1/downloads", { credentials: "same-origin" })
+    var listed = fetch("/api/v1/downloads", { credentials: "same-origin" })
       .then(function (response) { return response.ok ? response.json() : null; })
-      .then(function (data) {
-        if (!data) {
-          downloadFailure("Could not ask this cache which client files are available.");
-          return;
-        }
-        var rows = (data.downloads || []).filter(function (item) {
-          return item.tool === "client";
-        });
-        if (!rows.length) {
-          /* Name the command rather than saying "ask the operator": on most instances
-             the reader either is the operator or is about to message them, and either
-             way one sentence they can paste ends this faster. */
-          downloadFailure(
-            "No client is published on this instance yet. On the cache host, the " +
-              "operator runs",
-            "pkgreg publish-client",
-          );
-          return;
-        }
-
-        downloads.textContent = "";
-        var list = document.createElement("div");
-        list.className = "dl-row";
-        var os = currentOS();
-        rows.forEach(function (item) {
-          var cell = document.createElement("div");
-          var link = document.createElement("a");
-          link.className = "btn btn-ghost dl-btn";
-          if (item.os === os) link.classList.add("recommended");
-          link.href = "/api/v1/downloads/" + encodeURIComponent(item.name);
-          link.download = item.name;
-          if (item.sha256) link.title = "SHA-256 " + item.sha256;
-
-          var label = document.createElement("b");
-          label.textContent = platformLabel(item);
-          var size = document.createElement("span");
-          size.className = "dl-size";
-          size.textContent = fileSize(item.bytes);
-          link.appendChild(label);
-          link.appendChild(size);
-          cell.appendChild(link);
-
-          if (item.sha256) {
-            var hash = document.createElement("code");
-            hash.className = "dl-hash";
-            hash.textContent = "sha256 " + item.sha256;
-            cell.appendChild(hash);
-          }
-          list.appendChild(cell);
-        });
-        downloads.appendChild(list);
-        setDownloadState(rows.length + " files ready", "ready");
-        renderQuick(rows.filter(function (item) { return item.os === os; }));
-      })
-      .catch(function () {
-        downloadFailure("Could not reach this cache to list client downloads.");
-      });
+      .catch(function () { return null; });
+    Promise.all([listed, product]).then(function (both) {
+      renderDownloads(both[0], both[1]);
+    });
   }
 
   /* ---- fingerprint ----------------------------------------------------- */
@@ -187,29 +258,38 @@
      PASTE_FINGERPRINT in the command it told people to copy. */
   var fingerprint = document.querySelector('[data-role="fingerprint"]');
   var noTLS = document.querySelector('[data-role="no-tls"]');
-  if (window.pkgregCoordinates) {
-    window.pkgregCoordinates
-      .then(function (data) {
-        if (!data) return;
-        var value = data.ca_sha256;
-        if (fingerprint && value) {
-          fingerprint.textContent = value;
-          fingerprint.classList.add("is-live");
-          rewriteCommands(function (text) {
-            return text.split("PASTE_FINGERPRINT").join(value);
-          });
+  Promise.all([coordinates.catch(function () { return null; }), product])
+    .then(function (both) {
+      var data = both[0];
+      if (both[1] === "pkgcache") {
+        /* A machine's cache has no CA, and the fingerprint the setup commands want is
+           the server's — which this cache cannot know until it has been pointed at one.
+           The placeholder stays, and the box says whose value goes there. */
+        if (fingerprint) {
+          fingerprint.textContent =
+            "Your team server’s — on its Console → Connect, or from its operator";
         }
-        /* A non-https scheme means the server has no certificate pair. coords.js will
-           have rewritten every example address to http://, and the client rejects those,
-           so the reader needs to know the blocker is upstream of them. */
-        if (noTLS && data.scheme && data.scheme !== "https") {
-          noTLS.hidden = false;
-        }
-      })
-      .catch(function () {
-        /* Offline or a file:// preview. The static wording already stands on its own. */
-      });
-  }
+        return;
+      }
+      if (!data) return;
+      var value = data.ca_sha256;
+      if (fingerprint && value) {
+        fingerprint.textContent = value;
+        fingerprint.classList.add("is-live");
+        rewriteCommands(function (text) {
+          return text.split("PASTE_FINGERPRINT").join(value);
+        });
+      }
+      /* On a server, a non-https scheme means it has no certificate pair. coords.js
+         will have rewritten every example address to http://, and setup rejects those,
+         so the reader needs to know the blocker is upstream of them. */
+      if (noTLS && data.scheme && data.scheme !== "https") {
+        noTLS.hidden = false;
+      }
+    })
+    .catch(function () {
+      /* Offline or a file:// preview. The static wording already stands on its own. */
+    });
 
   /* ---- theme ----------------------------------------------------------- */
   var theme = document.getElementById("theme");

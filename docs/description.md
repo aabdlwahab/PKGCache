@@ -63,7 +63,7 @@ For a README lead, a package listing, the site's meta description — about 90 w
 ```
 Your builds download the same dependencies over and over. pkgcache fetches each one once
 and serves every later request from local disk: pip and uv, npm, yarn and pnpm, Docker and
-any OCI registry, apt and apk, git clones, and plain files — six ecosystems on one loopback
+any OCI registry, apt and apk, git clones, Go modules and plain files — seven ecosystems on one loopback
 port, with no certificate, no account and nothing another machine can reach. Run the same
 engine as pkgreg and it becomes the cache your whole team points at. Export what it holds
 and a machine with no network keeps building.
@@ -75,7 +75,7 @@ For a release announcement, a Show HN intro, an internal proposal — about 200 
 
 ```
 PKGCache is a pull-through cache for the package managers a build actually uses: pip and
-uv, npm, yarn and pnpm, any OCI registry, apt and apk, git, and plain files. It ships as
+uv, npm, yarn and pnpm, any OCI registry, apt and apk, git, Go modules and plain files. It ships as
 two programs from one codebase. pkgcache runs on a single machine — one loopback port, no
 certificate, no account, no privileged setup, and it refuses to bind an address another
 machine can reach. pkgreg is the same engine run as a host a team points at, with

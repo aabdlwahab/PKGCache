@@ -76,13 +76,15 @@ export function openModal({ ariaLabel, title, body, actions, onCancel, wide = fa
 
 /** Ask for a line of text. Resolves to the trimmed value, or null if cancelled.
  *
- * The replacement for window.prompt, which on a Mac answers null without asking. */
+ * The replacement for window.prompt, which on a Mac answers null without asking. `type`
+ * is "password" for a secret, which should not sit readable on a screen somebody is
+ * sharing. */
 export function askText({
-  title, label, placeholder = "", value = "", confirmLabel = "OK", validate,
+  title, label, placeholder = "", value = "", confirmLabel = "OK", validate, type = "text",
 } = {}) {
   return new Promise((resolve) => {
     const field = el("input", {
-      class: "dlg-input", value, placeholder, autocomplete: "off", spellcheck: "false",
+      class: "dlg-input", type, value, placeholder, autocomplete: "off", spellcheck: "false",
     });
     const errorRegion = region("div", { class: "dlg-error" });
     let close = () => {};

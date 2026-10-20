@@ -92,7 +92,18 @@ type SetupStep struct {
 }
 
 // SetupContext is what the console knows when rendering client instructions.
+//
+// Both binaries render these, and the developer reading them is in a pkgcache shell
+// either way: on a laptop's own cache, or pointed at a team server by `pkgcache setup`.
+// So a step addressed to that shell names its PKGCACHE_* variables and never embeds this
+// instance's address, which in the second case is not what the shell talks to. The
+// address below is for the steps that go around the shell.
 type SetupContext struct {
+	// Scheme is how a client reaches Host:Port directly: "https" on a server with a
+	// certificate, "http" on a local cache, which has none. Steps build addresses from
+	// Origin rather than writing a scheme of their own, because each hardcoded one was
+	// wrong on one binary or the other.
+	Scheme string
 	// Host is the cache's client-facing host, without a scheme.
 	Host string
 	// Port is the client-facing port.
@@ -104,6 +115,21 @@ type SetupContext struct {
 	// IsGlobal is true for the default project, which several ecosystems address
 	// differently (docker omits the prefix; apt omits the proxy username).
 	IsGlobal bool
+	// Local is true on pkgcache: a cache that serves only the machine it runs on. It has
+	// no certificate authority, and nothing another machine could be pointed at, so a
+	// step about installing a CA or reaching this instance from elsewhere applies only
+	// when it is false.
+	Local bool
+}
+
+// Origin is the scheme and authority a client reaches the cache at directly, such as
+// https://cache.internal:8443. An unset scheme is https, a server's normal posture.
+func (c SetupContext) Origin() string {
+	scheme := c.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	return scheme + "://" + ClientAuthority(c.Host, c.Port)
 }
 
 // ClientAuthority joins a client-facing host and port without producing invalid

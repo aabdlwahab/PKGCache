@@ -3,10 +3,10 @@
  *
  * Three rules are enforced here rather than left to each view:
  *
- *   1. Every chart ships a table view. On the light surface three of the six series
- *      colours measure below 3:1 against the panel, so colour alone cannot carry
- *      identity. Building the toggle into the component means no chart can ship
- *      without its relief.
+ *   1. Every chart ships a table view. On the light surface three of the series
+ *      colours (tokens.css names them) measure below 3:1 against the panel, so colour
+ *      alone cannot carry identity. Building the toggle into the component means no
+ *      chart can ship without its relief.
  *
  *   2. Absent buckets are drawn as gaps, never as zero. A dropped flush window means
  *      "not recorded"; plotting zero there would assert that no traffic happened.
@@ -308,28 +308,42 @@ export function segmentedBar(parts, { format = String } = {}) {
 /**
  * A single headline with a bar. Not a chart — one number does not need axes.
  * `threshold` marks the level the system will actually act on, so the gauge is read
- * against the eviction floor rather than an arbitrary "looks low".
+ * against that rather than an arbitrary "looks low" — a server's eviction floor, or the
+ * free space pkgcache refuses to eat into — and `thresholdLabel` says which it is.
+ *
+ * `full` is the system's own verdict that it has stopped storing, and it wins over the
+ * arithmetic here: pkgcache samples its size every few seconds and may have refused on
+ * the disk floor while its own limit still looks roomy, so a gauge computed only from
+ * the two numbers it was handed could read "healthy" beside a cache storing nothing.
  */
-export function meter(used, total, { threshold, format = String } = {}) {
+export function meter(used, total, {
+  threshold, thresholdLabel = "floor", format = String, remaining = "free", full = false,
+} = {}) {
   const share = total > 0 ? Math.min(1, used / total) : 0;
   const free = total - used;
   let status = "good";
-  if (threshold && free < threshold) status = "critical";
+  // At or past the total is full too, before anything has said so: pkgcache just
+  // restarted over its limit has refused nothing yet, and "filling" undersold it.
+  if (full || (total > 0 && used >= total)) status = "full";
+  else if (threshold && free < threshold) status = "critical";
   else if (threshold && free < threshold * 2) status = "warning";
   else if (share > 0.9) status = "warning";
+  // A full cache draws in the same colour as a disk about to run out: both mean the
+  // next download will not be kept.
+  const tone = status === "full" ? "critical" : status;
 
   return el(
     "div",
     { class: "meter-block" },
     el(
       "div",
-      { class: `meter status-${status}` },
+      { class: `meter status-${tone}` },
       el("div", { class: "meter-fill", style: `width:${share * 100}%` }),
       threshold && total
         ? el("div", {
             class: "meter-threshold",
             style: `left:${Math.min(100, ((total - threshold) / total) * 100)}%`,
-            title: `eviction floor: ${format(threshold)} free`,
+            title: `${thresholdLabel}: ${format(threshold)} free`,
           })
         : null,
     ),
@@ -337,15 +351,15 @@ export function meter(used, total, { threshold, format = String } = {}) {
       "div",
       { class: "meter-legend" },
       // Status never rests on colour: the words are the encoding, the colour agrees.
-      el("span", { class: `pill ${status}`, text: statusWord(status) }),
+      el("span", { class: `pill ${tone}`, text: statusWord(status) }),
       el("span", { class: "note", text: `${format(used)} used of ${format(total)}` }),
-      el("span", { class: "note", text: `${format(free)} free` }),
+      el("span", { class: "note", text: `${format(free)} ${remaining}` }),
     ),
   );
 }
 
 function statusWord(status) {
-  return { good: "healthy", warning: "filling", critical: "low space" }[status] || status;
+  return { good: "healthy", warning: "filling", critical: "low space", full: "full" }[status] || status;
 }
 
 /** Bucket a raw /stats/series payload into the shape stackedColumns wants. */

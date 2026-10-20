@@ -67,14 +67,19 @@
    question from surfaces and text, and reusing --accent or --ok as a series
    colour would make a green bar mean "healthy" when it only ever meant "npm".
 
-   The six categorical slots are assigned to ecosystems in a fixed order and are
-   never cycled or reassigned by rank, so filtering the chart cannot repaint the
-   series that remain.
+   The categorical slots go to ecosystems by their place among the registered ones
+   (ecoColor in console/format.js reads the server's descriptors, in ID order), and
+   are never cycled or reassigned by rank, so filtering the chart cannot repaint the
+   series that remain. Which hue belongs to which ecosystem is deliberately not
+   written down here: that would be a per-ecosystem table, and the one that used to
+   be here had already lost count of them. Past the eighth slot an ecosystem draws
+   in --muted rather than borrowing a colour that already means something else, so
+   the ninth one registered is the moment to extend this list (and re-validate it).
 
-   Validated against this console's own panel surfaces (#151a1f dark,
-   #fdfdfe light) rather than against a generic backdrop:
+   Validated as a set of eight, in this order, against this console's own panel
+   surfaces (#151a1f dark, #fdfdfe light) rather than against a generic backdrop:
 
-     dark   all six >= 3:1 contrast; worst adjacent CVD dE 8.4; normal-vision 19.3
+     dark   all eight >= 3:1 contrast; worst adjacent CVD dE 8.4; normal-vision 19.3
      light  worst adjacent CVD dE 9.1; normal-vision 19.6; three slots (aqua,
             yellow, magenta) fall below 3:1 contrast
 
@@ -84,21 +89,28 @@
    charts.js enforces it by construction — the table toggle is part of the chart
    component, not something each view remembers to add. */
 :root {
-  --series-1: #2a78d6;  /* blue    - pypi  */
-  --series-2: #eb6834;  /* orange  - npm   */
-  --series-3: #1baf7a;  /* aqua    - oci   */
-  --series-4: #eda100;  /* yellow  - apt   */
-  --series-5: #e87ba4;  /* magenta - git   */
-  --series-6: #008300;  /* green   - files */
+  --series-1: #2a78d6;  /* blue    */
+  --series-2: #eb6834;  /* orange  */
+  --series-3: #1baf7a;  /* aqua    */
+  --series-4: #eda100;  /* yellow  */
+  --series-5: #e87ba4;  /* magenta */
+  --series-6: #008300;  /* green   */
+  --series-7: #4a3aa7;  /* violet  */
+  --series-8: #e34948;  /* red     */
 
   /* Outcomes are ordinal, not categorical: hit, dedup and peer are the same event
      at increasing distance from the caller. One hue, darkening toward "closest",
      reads as a scale the way six unrelated hues never could. Miss leaves the ramp
-     entirely because it left the cache, and fail wears a reserved status colour. */
+     entirely because it left the cache, and fail wears a reserved status colour.
+     Uncached — fetched, served, and not kept because pkgcache is over its limit — is
+     amber: it stacks between miss and fail, and it is the one outcome that means the
+     cache has stopped doing its job. Checked against both neighbours: CVD dE >= 12.5
+     light / 14.3 dark, normal-vision >= 15.6 / 17.4. */
   --outcome-hit: #256abf;
   --outcome-dedup: #5598e7;
   --outcome-peer: #86b6ef;
   --outcome-miss: #898781;
+  --outcome-uncached: #d48a00;
   --outcome-fail: #d03b3b;
 
   /* Reserved status steps. Never used as a series colour, always paired with an
@@ -120,11 +132,14 @@
   --series-4: #c98500;
   --series-5: #d55181;
   --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 
   --outcome-hit: #3987e5;
   --outcome-dedup: #6da7ec;
   --outcome-peer: #9ec5f4;
   --outcome-miss: #898781;
+  --outcome-uncached: #dc9400;
   --outcome-fail: #d03b3b;
 
   --chart-grid: oklch(0.315 0.012 252);

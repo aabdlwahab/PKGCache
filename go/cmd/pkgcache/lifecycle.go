@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
@@ -63,6 +64,7 @@ flags:
 			fmt.Printf("           moved here from %s\n", base)
 		}
 	}
+	reportMove(snap.DataDir, err == nil)
 	project := local.CurrentProject(snap.DataDir)
 	if local.HasCurrentProject(snap.DataDir) {
 		fmt.Printf("project    %s\n", project)
@@ -87,6 +89,44 @@ flags:
 	}
 	reportProjects(ctx, state)
 	return nil
+}
+
+// reportMove says where a move of this cache has got to.
+//
+// The window tells somebody watching a long move that this command knows, and during the
+// move nothing else does: the daemon is stopped, so there is no console to ask. The record
+// is the one the window reads, through the same function, so the two cannot disagree
+// about whether a move is still running.
+func reportMove(dataDir string, daemonUp bool) {
+	record, found := local.ReadMigration(dataDir, daemonUp)
+	if !found {
+		return
+	}
+	switch record.State {
+	case controlapi.MigrationMoving:
+		fmt.Printf("move       under way: %s -> %s, started %s ago\n",
+			record.From, record.To, time.Since(record.Started).Round(time.Second))
+		if record.Bytes > 0 {
+			fmt.Printf("           %s in %d files\n", local.FormatSize(record.Bytes), record.Files)
+		}
+		fmt.Printf("           its output is in %s\n", local.MigrationLog(dataDir))
+	case controlapi.MigrationDone:
+		how := "copied"
+		if record.Renamed {
+			how = "renamed, same disk"
+		}
+		finished := record.Started
+		if record.Finished != nil {
+			finished = *record.Finished
+		}
+		fmt.Printf("move       done: %s -> %s (%s), %s ago\n",
+			record.From, record.To, how, time.Since(finished).Round(time.Second))
+	case controlapi.MigrationFailed:
+		fmt.Printf("move       FAILED: %s -> %s\n", record.From, record.To)
+		if record.Error != "" {
+			fmt.Printf("           %s\n", record.Error)
+		}
+	}
 }
 
 // reportProjects prints what each project holds and how much of it was served from here.
@@ -195,6 +235,7 @@ func reportTiers(ctx context.Context, dataDir, project string) error {
 	} else {
 		fmt.Printf("team       %s/%s  UNREACHABLE\n", team.Server, far)
 	}
+	describeToken(team) // setup.go
 	if team.Direct {
 		fmt.Println("direct     when the team cache is unreachable")
 	} else {

@@ -75,7 +75,7 @@ func TestPublicSetupGuidanceKeepsTLSVerificationEnabled(t *testing.T) {
 	landing := string(handler.assets["landing.html"].body)
 
 	for _, required := range []string{
-		"Download <code>pkgreg-client</code>",
+		"Download <code>pkgcache</code>",
 		`data-role="downloads"`,
 		"-ca-sha256",
 		`id="start"`,
@@ -83,16 +83,23 @@ func TestPublicSetupGuidanceKeepsTLSVerificationEnabled(t *testing.T) {
 		`id="docker"`,
 		`id="persist"`,
 		`id="help"`,
+		// Anchors other pages link to, which a rewrite of this page has to keep.
+		`id="tldr"`,
+		`id="download"`,
+		`id="fingerprint"`,
+		`id="pkgcache"`,
 		"PKGREG_CA_FILE",
 		"Type <code>exit</code>",
-		// Docker cannot read the shell the client configured, so the page must say
-		// what to pass instead. These are the two things every reader gets wrong.
+		// Docker cannot read the shell pkgcache configured, so the page must say what
+		// to pass instead. These are the two things every reader gets wrong.
 		"--network=host",
 		"--build-arg",
-		// Installing the CA for the Docker daemon belongs to the client, which checks it
-		// against the fingerprint first. This page used to spell it out as a curl into
-		// ~/.docker/certs.d, which trusted whatever answered.
-		"-docker-trust",
+		// Telling the Docker daemon about the cache belongs to pkgcache, and trusting
+		// the server's CA machine-wide to the script that embeds it. This page used to
+		// spell the second out as a curl into ~/.docker/certs.d, which trusted whatever
+		// answered.
+		"pkgcache docker-setup",
+		"setup.sh",
 	} {
 		if !strings.Contains(tutorial, required) {
 			t.Errorf("tutorial is missing %q", required)
@@ -114,11 +121,104 @@ func TestPublicSetupGuidanceKeepsTLSVerificationEnabled(t *testing.T) {
 		}
 	}
 	if !strings.Contains(landing, `href="/tutorial">Start the tutorial`) ||
-		!strings.Contains(landing, "temporary <code>pkgreg-client</code> shell") {
-		t.Error("landing page does not send new users through the client setup")
+		!strings.Contains(landing, "<code>pkgcache shell</code>") {
+		t.Error("landing page does not send new users through the pkgcache setup")
 	}
-	if strings.Contains(landing, "$PKGREG_DOCKER_REGISTRY") {
-		t.Error("landing page presents the daemon-side Docker path as a temporary-shell command")
+	for _, registry := range []string{"$PKGREG_DOCKER_REGISTRY", "$PKGCACHE_DOCKER_REGISTRY"} {
+		if strings.Contains(landing, registry) {
+			t.Error("landing page presents the daemon-side Docker path as a shell command")
+		}
+	}
+}
+
+// pkgcache is the client now, and pkgreg-client a shim kept for old instructions. Every
+// command these pages print has to be one that runs: the tutorial once told readers to
+// type `pkgreg-client -docker-trust`, `--persist` and `-cache-address`, none of which
+// pkgcache has, and to read $PKGREG_ variables inside a shell that clears them.
+func TestSetupPagesTeachPkgcacheCommands(t *testing.T) {
+	t.Parallel()
+	handler := New(true, MarkServer)
+	tutorial := string(handler.assets["tutorial.html"].body)
+	landing := string(handler.assets["landing.html"].body)
+	script := string(handler.assets["tutorial.js"].body)
+
+	for name, page := range map[string]string{"tutorial.html": tutorial, "landing.html": landing} {
+		for _, gone := range []string{
+			"./pkgreg-client", `.\pkgreg-client.exe`, "pkgreg-client build",
+			"-docker-trust", "--persist", "-cache-address",
+			// A pkgcache session exports PKGCACHE_ and clears these.
+			"$PKGREG_APT_PROXY", "$PKGREG_GIT_URL", "${PKGREG_FILES_URL}",
+			"$PKGREG_DOCKER_REGISTRY", "${PKGREG_DOCKER_REGISTRY}",
+			// The session sets UV_INDEX_URL, which yields to an explicit --index-url.
+			"-e UV_DEFAULT_INDEX", "ARG UV_DEFAULT_INDEX",
+		} {
+			if strings.Contains(page, gone) {
+				t.Errorf("%s still prints %q", name, gone)
+			}
+		}
+		// setup.sh spells it --cache-ip; the single-dash form was pkgreg-client's.
+		if strings.Contains(strings.ReplaceAll(page, "--cache-ip", ""), "-cache-ip") {
+			t.Errorf("%s still prints -cache-ip, which setup.sh calls --cache-ip", name)
+		}
+	}
+	for _, required := range []string{
+		"pkgcache setup -server https://cache.example.com:8443",
+		"-team-project global",
+		"setup -no-cache",
+		"./pkgcache shell",
+		"pkgcache: session ready",
+		"pkgcache pull",
+		"pkgcache build",
+		"pkgcache docker-build-setup",
+		"pkgcache persist",
+		"-token-file ./pkgreg.token",
+		"$PKGCACHE_APT_PROXY",
+		"GOPROXY",
+	} {
+		if !strings.Contains(tutorial, required) {
+			t.Errorf("tutorial is missing %q", required)
+		}
+	}
+	// Only pkgcache is offered for download, and ?project= names the server's project,
+	// which setup spells -team-project; pkgcache's own -project is the local one.
+	if !strings.Contains(script, `item.tool === "pkgcache"`) {
+		t.Error("tutorial.js offers something other than pkgcache for download")
+	}
+	if !strings.Contains(script, `"-team-project global"`) ||
+		strings.Contains(script, `split("-project global")`) {
+		t.Error("tutorial.js rewrites ?project= into pkgcache's local -project")
+	}
+	// Seven ecosystems, and the landing page says so and shows each of them.
+	if strings.Contains(landing, "Six ecosystems") || strings.Contains(landing, "six ecosystems") ||
+		!strings.Contains(landing, "Seven ecosystems") || !strings.Contains(landing, "eco-go") {
+		t.Error("landing page does not count or show the Go module ecosystem")
+	}
+}
+
+// Both binaries serve the tutorial. On pkgcache the example address is the team's
+// server, not this cache, so the page must not rewrite `setup -server` to point at the
+// cache being set up, must not tell its reader to fix a server it does not have, and
+// must name the product it is.
+func TestTutorialKnowsWhichBinaryServesIt(t *testing.T) {
+	t.Parallel()
+	handler := New(true, MarkLocal)
+	page := string(handler.assets["tutorial.html"].body)
+	script := string(handler.assets["tutorial.js"].body)
+	coords := string(handler.assets["coords.js"].body)
+
+	if !strings.Contains(coords, "/api/v1/me") || !strings.Contains(coords, "data.product") {
+		t.Error("coords.js does not learn which binary is serving the page")
+	}
+	if !strings.Contains(page, `data-example="team-server"`) ||
+		!strings.Contains(coords, `"team-server"`) {
+		t.Error("the tutorial's server example is rewritten to a pkgcache's own address")
+	}
+	if !strings.Contains(page, `data-product="pkgcache"`) ||
+		!strings.Contains(script, `[data-product]`) {
+		t.Error("the tutorial has no wording for a page served by pkgcache")
+	}
+	if !strings.Contains(script, `both[1] === "pkgcache"`) {
+		t.Error("tutorial.js can show the server-side TLS warning on pkgcache")
 	}
 }
 

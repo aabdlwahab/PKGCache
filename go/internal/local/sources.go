@@ -45,6 +45,9 @@ type Sources struct {
 	// Config is the live configuration, which carries the relays forward-proxy
 	// ecosystems take to the team cache.
 	Config *config.Store
+	// Credentials seals a team token onto the chain rows that carry it. Nil refuses a
+	// configuration with a token rather than writing rows that would answer 401.
+	Credentials PeerCredentials
 }
 
 // probeTimeout bounds the reachability check a listing performs. Short: it runs while
@@ -88,6 +91,7 @@ func (s *Sources) Sources(ctx context.Context) ([]controlapi.SourceState, error)
 			state.Direct = team.Direct
 			state.Inherited = !own
 			state.Reachable = &up
+			state.TokenConfigured = team.Token != ""
 		} else {
 			// No team cache is not an absence of configuration; it is the configuration.
 			// Direct says so, rather than leaving a caller to infer it from empty fields.
@@ -141,13 +145,24 @@ func (s *Sources) Configure(
 	if teamProject == "" {
 		teamProject = config.GlobalProject
 	}
-	set.Set(project, Team{
+	team := Team{
 		Server:      verified.Base.String(),
 		Fingerprint: verified.Fingerprint,
 		Project:     teamProject,
 		Direct:      spec.Direct,
 		CAPEM:       string(verified.CAPEM),
-	})
+		Token:       strings.TrimSpace(spec.Token),
+	}
+	if strings.ContainsAny(team.Token, "\r\n") {
+		return controlapi.SourceState{}, control.NewError(http.StatusBadRequest,
+			"invalid_token", "a token is one line")
+	}
+	if !spec.ClearToken {
+		// The widget's form has no token field, and Update in the console leaves an empty
+		// one: neither is asking to drop a token somebody configured from the terminal.
+		team = set.KeepToken(project, team)
+	}
+	set.Set(project, team)
 	if err := s.apply(ctx, set); err != nil {
 		return controlapi.SourceState{}, err
 	}
@@ -155,6 +170,7 @@ func (s *Sources) Configure(
 	return controlapi.SourceState{
 		Project: project, Server: verified.Base.String(), Fingerprint: verified.Fingerprint,
 		TeamProject: teamProject, Direct: spec.Direct, Reachable: &up,
+		TokenConfigured: team.Token != "",
 	}, nil
 }
 
@@ -203,7 +219,7 @@ func (s *Sources) apply(ctx context.Context, set TeamSet) error {
 		return err
 	}
 	known := func(id string) bool { _, found := s.Ecos.Get(id); return found }
-	if _, err := ConfigureChainsOn(ctx, s.Store, known, set); err != nil {
+	if _, err := ConfigureChainsOn(ctx, s.Store, s.Credentials, known, set); err != nil {
 		return err
 	}
 	if s.Config != nil {

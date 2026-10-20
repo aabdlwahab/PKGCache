@@ -283,8 +283,8 @@ func (d *diagnosis) checkTLS(ctx context.Context, snap *config.Snapshot) {
 		d.warn("tls", "no CA yet — run `pkgreg init`")
 		return
 	}
-	// The fingerprint is what pkgreg-client and pkgreg-bridge pin against, so it has to
-	// be obtainable without reaching for openssl or the console.
+	// The fingerprint is what `pkgcache setup -ca-sha256` and pkgreg-bridge pin against,
+	// so it has to be obtainable without reaching for openssl or the console.
 	if fingerprint := caFingerprint(caPath); fingerprint != "" {
 		d.ok("ca", fingerprint)
 	}
@@ -298,7 +298,7 @@ func (d *diagnosis) checkTLS(ctx context.Context, snap *config.Snapshot) {
 	certFile, keyFile := snap.Server.TLS.CertFile, snap.Server.TLS.KeyFile
 	if certFile == "" || keyFile == "" {
 		d.fail("tls", "no certificate pair, so this server answers in cleartext and "+
-			"pkgreg-client will refuse it (\"server must use https\"); run `pkgreg init -data-dir "+
+			"clients (pkgcache setup) will refuse it (\"server must use https\"); run `pkgreg init -data-dir "+
 			snap.DataDir+"` to mint one, or set server.tls.cert_file and key_file")
 		return
 	}
@@ -376,13 +376,25 @@ func (d *diagnosis) checkConsole() {
 // this instance. A cache with nothing published still serves packages perfectly, so
 // this is a warning — but it is the warning that explains why the tutorial's download
 // panel is empty, which is otherwise a mystery from the reader's side.
+//
+// Counted in pkgcache platforms, because pkgcache is the download the tutorial offers;
+// the pkgreg-client shim is verified alongside it, and its gaps are named after.
 func (d *diagnosis) checkClientDownloads(dataDir string) {
 	dir := clientrelease.Dir(dataDir)
-	total := len(clientrelease.ClientPlatforms())
-	missing, corrupt, unrecorded, err := clientrelease.Verify(dir)
+	total := len(clientrelease.PkgcachePlatforms())
+	missingShim, corrupt, unrecorded, err := clientrelease.Verify(dir)
 	if err != nil {
 		d.warn("clients", "cannot read "+dir+": "+err.Error())
 		return
+	}
+	missing, err := missingPkgcache(dir)
+	if err != nil {
+		d.warn("clients", "cannot read "+dir+": "+err.Error())
+		return
+	}
+	shim := ""
+	if len(missingShim) > 0 {
+		shim = "; pkgreg-client shim missing " + strings.Join(missingShim, ", ")
 	}
 	switch {
 	case len(corrupt) > 0:
@@ -393,14 +405,17 @@ func (d *diagnosis) checkClientDownloads(dataDir string) {
 			" — re-run `pkgreg publish-client`")
 	case len(missing) == total:
 		d.warn("clients", fmt.Sprintf(
-			"nothing published, so /tutorial offers no download; run `pkgreg publish-client` (see %s)",
-			dir))
+			"no pkgcache published, so /tutorial offers no download; run `pkgreg publish-client` (see %s)%s",
+			dir, shim))
 	case len(missing) > 0:
-		d.warn("clients", fmt.Sprintf("%d of %d platforms are published; missing %s",
-			total-len(missing), total, strings.Join(missing, ", ")))
+		d.warn("clients", fmt.Sprintf("%d of %d pkgcache platforms are published; missing %s%s",
+			total-len(missing), total, strings.Join(missing, ", "), shim))
+	case len(missingShim) > 0:
+		d.warn("clients", fmt.Sprintf("all %d pkgcache platforms are published%s", total, shim))
 	default:
 		d.ok("clients", fmt.Sprintf(
-			"%d platform binaries published with matching checksums", total))
+			"%d pkgcache and %d pkgreg-client binaries published with matching checksums",
+			total, len(clientrelease.ClientPlatforms())))
 	}
 }
 

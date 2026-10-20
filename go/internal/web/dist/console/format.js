@@ -1,5 +1,7 @@
 /* Value formatting. Every number a person reads passes through here, so units and
- * rounding stay consistent across six views. */
+ * rounding stay consistent across every view. */
+
+import * as store from "./store.js";
 
 const UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
 
@@ -68,26 +70,58 @@ export function digest(value) {
   return s.length > 16 ? `${s.slice(0, 12)}…` : s || "—";
 }
 
-export const ECOSYSTEM_ORDER = ["pypi", "npm", "oci", "apt", "git", "files"];
+/** How many --series-N slots tokens.css defines. Past the last one an ecosystem is drawn
+ *  in the neutral rather than handed a slot that is already somebody else's. */
+const SERIES_SLOTS = 8;
 
 /** Colour follows the entity, never its rank: a filter that removes npm must not
- *  repaint oci with npm's colour. An unknown ecosystem falls through to a neutral
- *  rather than being handed a slot that belongs to something else. */
+ *  repaint oci with npm's colour.
+ *
+ *  The slot is the ecosystem's place among the registered ones, which the server lists
+ *  in ID order. It used to be a hand-kept list here, which is exactly the per-ecosystem
+ *  table AGENTS.md calls a defect: gomod was registered and never added, so it drew in
+ *  the "unknown" grey on every chart. Reading the descriptors means an ecosystem added
+ *  on the server has a colour with no change here — and because the index is taken
+ *  over every registered ecosystem rather than over the rows a chart happens to draw,
+ *  filtering one out still cannot move another. */
 export function ecoColor(eco) {
-  const index = ECOSYSTEM_ORDER.indexOf(eco);
-  return index === -1 ? "var(--muted)" : `var(--series-${index + 1})`;
+  const index = store.state.ecosystems.findIndex((descriptor) => descriptor.id === eco);
+  return index === -1 || index >= SERIES_SLOTS ? "var(--muted)" : `var(--series-${index + 1})`;
 }
 
-export const OUTCOME_ORDER = ["hit", "dedup", "peer", "miss", "fail"];
+/* Pipeline order: closest to the caller first, then what left the cache, then failure.
+ * "uncached" sits beside miss because it is one — fetched from upstream — except that
+ * pkgcache, over its limit, served it without keeping it (engine/passthrough.go). */
+export const OUTCOME_ORDER = ["hit", "dedup", "peer", "miss", "uncached", "fail"];
 
 export const OUTCOME_LABEL = {
   hit: "local hit",
   dedup: "deduplicated",
   peer: "from a peer",
   miss: "from upstream",
+  uncached: "served, not kept",
   fail: "failed",
 };
 
+/** The reader's word for an outcome. One the console does not know yet is shown as the
+ *  server spelled it, rather than dropped from the chart it is counted in. */
+export function outcomeLabel(outcome) {
+  return OUTCOME_LABEL[outcome] ?? outcome;
+}
+
+/** Where an outcome stacks: known ones in pipeline order, anything newer after them. */
+export function outcomeRank(outcome) {
+  const index = OUTCOME_ORDER.indexOf(outcome);
+  return index === -1 ? OUTCOME_ORDER.length : index;
+}
+
 export function outcomeColor(outcome) {
   return OUTCOME_ORDER.includes(outcome) ? `var(--outcome-${outcome})` : "var(--muted)";
+}
+
+/** Whether a finished-fetch event describes a download pkgcache served and did not keep.
+ *  It arrives as an ordinary fetch.done, told apart only by its detail — see
+ *  servePassThrough, which is the one place that writes "not cached: …". */
+export function passedThrough(event) {
+  return event?.kind === "fetch.done" && String(event.detail ?? "").startsWith("not cached");
 }

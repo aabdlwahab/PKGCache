@@ -289,10 +289,23 @@ func parseArtifactKey(key string) (name, version, arch string, ok bool) {
 	return identity.name, identity.version, identity.arch, ok
 }
 
-func setupSteps(_ eco.SetupContext) []eco.SetupStep {
-	return []eco.SetupStep{
-		{Comment: "The pkgreg shell provides the apt/apk proxy address. sudo below is for changing operating-system packages, not for pkgreg setup:"},
-		{Command: `sudo apt-get -o Acquire::http::Proxy="$PKGREG_APT_PROXY" update`},
-		{Command: `http_proxy="$PKGREG_APT_PROXY" apk add --no-cache <package>`},
+func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
+	steps := []eco.SetupStep{
+		{Comment: "The pkgcache shell names this project's apt/apk proxy as $PKGCACHE_APT_PROXY. sudo below is for changing operating-system packages, not for pkgcache:"},
+		{Command: `sudo apt-get -o Acquire::http::Proxy="$PKGCACHE_APT_PROXY" update`},
+		{Command: `http_proxy="$PKGCACHE_APT_PROXY" apk add --no-cache <package>`},
 	}
+	if ctx.Local {
+		return steps
+	}
+	// A caching pkgcache relays apt to this server's proxy (local.TeamRelays); the
+	// -no-cache bridge relays paths, and a forward-proxy request has none of its own, so
+	// there the shell's variable reaches nothing. The proxy itself needs no certificate
+	// — it is plain HTTP whatever ctx.Scheme says, which is why this is not Origin — so
+	// naming it directly works on any machine that can reach the port.
+	proxy := router.ProxyURLFor("http://"+eco.ClientAuthority(ctx.Host, ctx.Port), ctx.Project)
+	return append(steps,
+		eco.SetupStep{Comment: "A pkgcache pointed here relays these to this server; a -no-cache bridge does not. There, or on a machine with no pkgcache, name the proxy directly — plain HTTP, so no certificate is involved:"},
+		eco.SetupStep{Command: `sudo apt-get -o Acquire::http::Proxy="` + proxy + `" update`},
+	)
 }

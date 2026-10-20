@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,22 +87,31 @@ func (s *Service) checkpointJob(
 	if _, err := s.Projects.Get(record.Project); err != nil {
 		return err
 	}
-	if s.Now == nil {
-		s.Now = time.Now
-	}
-	created := s.Now().UTC()
-	parent, err := s.Catalog.GetHead(record.Project)
+	_, err := s.checkpoint(ctx, record.Project, message, record.Actor, logf)
+	return err
+}
+
+// checkpoint records what a project holds now and returns the new head.
+//
+// Its own function because an export can ask for one first: "export this project" means
+// what it holds now, not what it held the last time somebody checkpointed it, and a
+// project that was never checkpointed has nothing to export at all.
+func (s *Service) checkpoint(
+	ctx context.Context, project, message, actor string, logf func(string),
+) (string, error) {
+	created := s.clock().UTC()
+	parent, err := s.Catalog.GetHead(project)
 	if err != nil {
-		return err
+		return "", err
 	}
 	logf("streaming catalog entries into the manifest")
 	writer, err := s.Blobs.Create()
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = writer.Abort() }()
 	count, bytes, err := snapshot.WriteManifest(writer, snapshot.Header{
-		Project: record.Project, Created: created,
+		Project: project, Created: created,
 	}, func(yield func(snapshot.Entry) error) error {
 		descriptors := s.Ecos.Descriptors()
 		sort.Slice(descriptors, func(i, j int) bool {
@@ -109,7 +119,7 @@ func (s *Service) checkpointJob(
 		})
 		for _, descriptor := range descriptors {
 			err := s.Catalog.WalkEntriesEco(
-				record.Project, descriptor.ID, func(entry catalog.Entry) error {
+				project, descriptor.ID, func(entry catalog.Entry) error {
 					if err := ctx.Err(); err != nil {
 						return err
 					}
@@ -129,7 +139,7 @@ func (s *Service) checkpointJob(
 			}
 			if descriptor.Storage == eco.StorageManagedDir {
 				if err := s.checkpointManaged(
-					ctx, record.Project, descriptor, created, yield); err != nil {
+					ctx, project, descriptor, created, yield); err != nil {
 					return err
 				}
 			}
@@ -137,27 +147,27 @@ func (s *Service) checkpointJob(
 		return nil
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	digest, manifestBytes, err := writer.Commit()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := s.Catalog.UpsertBlob(catalog.Blob{
 		Digest: digest, Size: manifestBytes, CreatedAt: created, LastAccess: created,
 	}); err != nil {
-		return err
+		return "", err
 	}
 	checkpoint := catalog.Snapshot{
-		ID: string(digest), Project: record.Project, Parent: parent, Manifest: digest,
+		ID: string(digest), Project: project, Parent: parent, Manifest: digest,
 		EntryCount: count, TotalBytes: bytes, CreatedAt: created,
-		Subject: message, Author: record.Actor,
+		Subject: message, Author: actor,
 	}
 	if err := s.Catalog.CommitSnapshot(checkpoint); err != nil {
-		return err
+		return "", err
 	}
 	logf(fmt.Sprintf("checkpoint %s: %d entries, %d bytes", digest, count, bytes))
-	return nil
+	return checkpoint.ID, nil
 }
 
 func (s *Service) rollbackJob(
@@ -197,6 +207,25 @@ func (s *Service) exportJob(
 	if _, err := s.Projects.Get(record.Project); err != nil {
 		return err
 	}
+	// Checked here as well as below, where a generated name is: a checkpoint taken for an
+	// export that was always going to be refused would be history written for nothing.
+	if typed := stringParam(record.Params, "file"); typed != "" &&
+		(filepath.Base(typed) != typed || !strings.HasSuffix(typed, packExtension)) {
+		return errors.New("export: file must be a .tar basename")
+	}
+	target := stringParam(record.Params, "target")
+	if target == "" && boolParam(record.Params, "checkpoint") {
+		// What `pkgcache export` does by default, as one job rather than two, so a window
+		// asking for it cannot pack a head that moved between its two requests. Asked
+		// for rather than always done: an export is otherwise a read, and a checkpoint
+		// per export is a history made mostly of exports.
+		id, err := s.checkpoint(ctx, record.Project,
+			"export "+s.clock().Format("2006-01-02 15:04"), record.Actor, logf)
+		if err != nil {
+			return err
+		}
+		target = id
+	}
 	outDir := filepath.Join(s.DataDir, "shuttle", "out")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -211,7 +240,7 @@ func (s *Service) exportJob(
 	pack, err := snapshot.WritePack(ctx, temp, s.Catalog, s.Blobs, snapshot.ExportOptions{
 		Project:  record.Project,
 		Base:     stringParam(record.Params, "base"),
-		Target:   stringParam(record.Params, "target"),
+		Target:   target,
 		CertDir:  filepath.Join(s.DataDir, "certs"),
 		Logf:     logf,
 		Progress: s.packProgress(record),
@@ -227,6 +256,9 @@ func (s *Service) exportJob(
 	if err := temp.Close(); err != nil {
 		return err
 	}
+	// Which checkpoint, said in the log, because what a pack holds is that checkpoint's
+	// content and not the project's at the moment it was written.
+	logf("packed checkpoint " + pack.Target)
 	name := stringParam(record.Params, "file")
 	// Whether the name was chosen here decides what an existing file at that path means,
 	// which is why this is remembered rather than recomputed from the string.
@@ -404,12 +436,10 @@ func (s *Service) lockwarmJob(
 		}); err != nil {
 		return err
 	}
-	port := addressPort(s.Config.Current().Server.UnifiedAddr)
-	if port == 0 {
-		return errors.New("lockwarm: unified listener has no configured port")
+	publicBase, err := lockBase(s.Config.Current(), host, record.Project)
+	if err != nil {
+		return err
 	}
-	publicBase := "https://" + net.JoinHostPort(host, strconv.Itoa(port)) +
-		"/" + record.Project + "/pypi"
 	rewritten := lockwarm.Rewrite(lock, packages, indexMap, publicBase)
 	outDir := filepath.Join(s.DataDir, "lockwarm", record.Project)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -439,8 +469,45 @@ func (s *Service) lockwarmJob(
 	if err := os.Rename(tempPath, out); err != nil {
 		return err
 	}
+	logf("rewritten lock points at " + publicBase)
 	logf("rewritten lock available at " + out)
 	return nil
+}
+
+// lockBase is the address a rewritten lock names: this cache, as a client reaches it.
+//
+// The scheme is the instance's own. It was "https://" always, which is right for a server
+// with a certificate and wrong on every pkgcache, whose one listener is plain HTTP: the
+// lock named a TLS port that does not exist, and installing from it failed against a
+// cache that was up. The rules are the ones the console's coordinates follow — a public
+// origin first, then the listener's own TLS — less what only a request can say, since a
+// job has none.
+func lockBase(snap *config.Snapshot, host, project string) (string, error) {
+	scheme := "http"
+	if snap.Server.TLS.Enabled() {
+		scheme = "https"
+	}
+	port := addressPort(snap.Server.UnifiedAddr)
+	if origin, err := url.Parse(snap.Auth.PublicOrigin); err == nil &&
+		(origin.Scheme == "http" || origin.Scheme == "https") {
+		scheme = origin.Scheme
+		// The origin fronts the single port; with separate listeners it names the
+		// console's, which is not where the indexes are.
+		if snap.Server.SinglePort {
+			switch {
+			case origin.Port() != "":
+				port = addressPort(origin.Host)
+			case scheme == "https":
+				port = 443
+			default:
+				port = 80
+			}
+		}
+	}
+	if port == 0 {
+		return "", errors.New("lockwarm: unified listener has no configured port")
+	}
+	return scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/" + project + "/pypi", nil
 }
 
 func (s *Service) importPath(name string) (string, error) {
@@ -488,6 +555,13 @@ func (s *Service) importPath(name string) (string, error) {
 func stringParam(params map[string]any, name string) string {
 	value, _ := params[name].(string)
 	return strings.TrimSpace(value)
+}
+
+// boolParam reads a flag. Anything but a JSON true is false, so a flag that asks for
+// more work is only ever acted on when it was plainly asked for.
+func boolParam(params map[string]any, name string) bool {
+	value, _ := params[name].(bool)
+	return value
 }
 
 // packExtension is the only thing a pack is ever called.
@@ -563,8 +637,9 @@ func defaultPackName(project string, pack snapshot.Pack, now time.Time) string {
 
 // clock reads the service's time source without installing one.
 //
-// checkpointJob sets s.Now when it finds it nil, which is fine there and would be a data
-// race here: exports and checkpoints run as separate jobs.
+// Installing it on first use — which checkpointing once did — is a data race: jobs run
+// concurrently, and an export can now take a checkpoint of its own beside one running as
+// a job.
 func (s *Service) clock() time.Time {
 	if s.Now != nil {
 		return s.Now()

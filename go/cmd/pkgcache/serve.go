@@ -71,8 +71,9 @@ func runServe(ctx context.Context, args []string) error {
 
 usage: pkgcache serve [flags]
 
-Binds one loopback port serving pypi, npm, oci, git, files and the apt/apk forward
-proxy, plus the console and the API. Refuses any address another machine can reach.
+Binds one loopback port serving pypi, npm, oci, git, Go modules (GOPROXY), files and
+the apt/apk forward proxy, plus the console and the API. Refuses any address another
+machine can reach.
 
 Most people never run this: `+"`pkgcache run`"+` starts a daemon on demand.
 

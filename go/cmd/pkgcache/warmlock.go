@@ -356,7 +356,7 @@ func warmUVLock(
 	}
 
 	// Somebody asking to warm a cache is asking for packages, so this starts it.
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, err := ensureCaching(ctx, snap, "pkgcache warmlock", "to warm")
 	if err != nil {
 		return err
 	}
@@ -718,7 +718,7 @@ func warmJSLock(
 		return nil
 	}
 
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, err := ensureCaching(ctx, snap, "pkgcache warmlock", "to warm")
 	if err != nil {
 		return err
 	}

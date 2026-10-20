@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -194,7 +195,7 @@ func TestChainRowsAreTheWholePolicy(t *testing.T) {
 		if row.Priority != teamPriority && row.Priority != publicPriority {
 			t.Fatalf("row at priority %d is not part of a chain", row.Priority)
 		}
-		if !managedRow(row) {
+		if !managedRow(row.Upstream) {
 			t.Fatalf("a row this wrote is not recognised as its own: %+v", row)
 		}
 	}
@@ -375,5 +376,139 @@ func TestRelaysPutSiblingsBeforeTheTeam(t *testing.T) {
 	if len(alone.Hops) != 1 || !alone.Direct || alone.Hops[0].Proxy != "http://172.17.21.107:41780" ||
 		!alone.Hops[0].Sibling || alone.Hops[0].Base != "http://172.17.21.107:41780/global" {
 		t.Fatalf("sibling-only relay = %+v", alone)
+	}
+}
+
+// The token is the one secret in team.json. It survives a write and a read, is removed
+// with its project's record, and the file holding it is this user's alone — including a
+// file an older build or a person left readable by everyone.
+func TestTeamTokenIsKeptInAPrivateRecord(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "team.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var set TeamSet
+	set.Set(config.GlobalProject, Team{Server: "https://team", Project: "work", Token: "s3cret"})
+	set.Set("side", Team{Server: "https://team", Project: "side"})
+	if err := WriteTeams(dir, set); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "team.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("team.json holds a token with mode %v", info.Mode().Perm())
+	}
+	loaded, err := ReadTeams(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if team, _ := loaded.Own(config.GlobalProject); team.Token != "s3cret" {
+		t.Fatalf("the token did not survive a round trip: %+v", team)
+	}
+	if team, _ := loaded.Own("side"); team.Token != "" {
+		t.Fatal("a project with no token of its own was given one")
+	}
+	loaded.Remove(config.GlobalProject)
+	if err := WriteTeams(dir, loaded); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(read(t, filepath.Join(dir, "team.json")), "s3cret") {
+		t.Fatal("the token outlived its project's record")
+	}
+}
+
+// A token file is one token. The trailing newline an editor adds is not part of it; an
+// empty file, two lines, or a file that is not there are refused before anything is
+// written, rather than stored and found out as a 401 on every request.
+func TestReadTokenFile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if token, err := ReadTokenFile(write("ok", "  pkgreg_abc123\n")); err != nil || token != "pkgreg_abc123" {
+		t.Fatalf("token = %q, %v", token, err)
+	}
+	for name, body := range map[string]string{"empty": " \n", "two": "one\ntwo\n"} {
+		if _, err := ReadTokenFile(write(name, body)); err == nil {
+			t.Fatalf("a %s token file was accepted", name)
+		}
+	}
+	if _, err := ReadTokenFile(filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("a missing token file was accepted")
+	}
+	if _, err := ReadTokenFile(write("huge", strings.Repeat("x", maxTokenFile+1))); err == nil {
+		t.Fatal("a file far too large to be a token was accepted")
+	}
+}
+
+// Re-running setup for the same cache keeps the token; naming another cache or another
+// project on it does not carry the token there.
+func TestKeepTokenOnlyForTheSameCacheAndProject(t *testing.T) {
+	var set TeamSet
+	set.Set("work", Team{Server: "https://team:8443", Project: "work", Token: "old"})
+
+	same := set.KeepToken("work", Team{Server: "https://team:8443/", Project: "work", Direct: true})
+	if same.Token != "old" {
+		t.Fatal("re-running setup for the same cache and project dropped its token")
+	}
+	if fresh := set.KeepToken("work", Team{Server: "https://team:8443", Project: "work", Token: "new"}); fresh.Token != "new" {
+		t.Fatal("a new token did not replace the stored one")
+	}
+	if other := set.KeepToken("work", Team{Server: "https://elsewhere:8443", Project: "work"}); other.Token != "" {
+		t.Fatal("the token was carried to another server")
+	}
+	if other := set.KeepToken("work", Team{Server: "https://team:8443", Project: "global"}); other.Token != "" {
+		t.Fatal("the token was carried to another project on the same server")
+	}
+	if inherited := set.KeepToken("side", Team{Server: "https://team:8443", Project: "work"}); inherited.Token != "" {
+		t.Fatal("a project took a token from a record that is not its own")
+	}
+}
+
+// The token rides the team's rows and only those: a public registry behind the team is
+// never shown a credential somebody else issued.
+func TestChainRowsCarryTheTokenToTheTeamOnly(t *testing.T) {
+	rows := ChainRows(Team{Server: "https://team", Project: "work", Direct: true, Token: "s3cret"}, nil)
+	for _, row := range rows {
+		switch row.Priority {
+		case teamPriority:
+			if row.Credential == nil || row.Credential.Kind != "bearer" || row.Credential.Token != "s3cret" {
+				t.Fatalf("team row %s/%s carries %+v", row.Eco, row.Name, row.Credential)
+			}
+		default:
+			if row.Credential != nil {
+				t.Fatalf("public row %s was given the team's token", row.URL)
+			}
+		}
+	}
+	for _, row := range ChainRows(Team{Server: "https://team", Direct: true}, nil) {
+		if row.Credential != nil {
+			t.Fatalf("a team with no token produced a credential on %s", row.URL)
+		}
+	}
+}
+
+// The token goes over TLS only. The team's data-plane hop carries it; its apt proxy is
+// cleartext and never does — with the origin allowed that hop is dropped, and under
+// -no-direct it stays, bare, so apt fails at the team rather than reaching the internet.
+func TestRelaysKeepTheTokenOffTheCleartextProxy(t *testing.T) {
+	relays := TeamRelays(TeamSet{Projects: map[string]Team{
+		config.GlobalProject: {Server: "https://team:8443", Project: "work", Direct: true, Token: "s3cret"},
+		"walled":             {Server: "https://team:8443", Project: "work", Token: "s3cret"},
+	}})
+	direct := relays[config.GlobalProject].Hops
+	if len(direct) != 1 || direct[0].Proxy != "" || direct[0].Base != "https://team:8443/work" ||
+		direct[0].Token != "s3cret" {
+		t.Fatalf("direct relay = %+v", direct)
+	}
+	walled := relays["walled"].Hops
+	if len(walled) != 1 || walled[0].Proxy != "http://work@team:8443" || walled[0].Token != "s3cret" {
+		t.Fatalf("-no-direct relay = %+v", walled)
 	}
 }

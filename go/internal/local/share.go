@@ -494,6 +494,7 @@ func (s *Share) Refuse(w http.ResponseWriter, _ *http.Request) {
 		"error":         "sign in with the password this cache was shared with",
 		"code":          "authentication_required",
 		"password_only": true,
+		"product":       "pkgcache",
 	})
 }
 

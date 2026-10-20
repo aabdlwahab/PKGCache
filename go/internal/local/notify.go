@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
 )
 
 // Telling somebody the cache stopped caching is most of the feature.
@@ -20,6 +22,32 @@ import (
 // the only one: a person running a command sees it on stderr, a person looking sees it
 // in `pkgcache status`, a person working sees a desktop notification, and a pipeline
 // with nobody watching sees a non-zero exit.
+
+// ReadMigration reports the last move of this cache that the window started, the way the
+// window reads it: `pkgcache status` and Migrator.Location both come here, so a terminal
+// asked "where is it?" during a move gives the answer the window would.
+//
+// daemonUp is whether a daemon on this cache answered. A move stops the daemon within
+// seconds of starting, so a "moving" record older than staleMove that a live daemon can
+// see is a move that died — said as a failure with the one fact that matters, that
+// nothing was lost, because the alternative is waiting forever on a move no process is
+// performing. With no daemon up nothing contradicts it, and it is reported as it stands.
+func ReadMigration(dataDir string, daemonUp bool) (controlapi.MigrationRecord, bool) {
+	record, found := readMigrationRecord(dataDir)
+	if !found {
+		return record, false
+	}
+	if daemonUp && record.State == controlapi.MigrationMoving &&
+		time.Since(record.Started) > staleMove {
+		record.State = controlapi.MigrationFailed
+		record.Error = "the move stopped without finishing, and the cache is still here. " +
+			"Its output is in " + migrationLogPath(dataDir)
+	}
+	return record, true
+}
+
+// MigrationLog is where a window-started move writes its own output.
+func MigrationLog(dataDir string) string { return migrationLogPath(dataDir) }
 
 // usagePath is where the daemon publishes what it last measured, so a client can
 // report the cache's state without opening the store or walking it.
@@ -74,7 +102,7 @@ func ReadUsage(dataDir string) (Usage, time.Time, bool) {
 
 // ClearUsage forgets the published measurement.
 //
-// Called by the commands that change the answer — prune, gc, limit — so that a cache
+// Called by the commands that change the answer — prune and limit — so that a cache
 // somebody has just made room in does not keep reporting itself full until the next
 // download happens to re-measure it.
 func ClearUsage(dataDir string) { _ = os.Remove(usagePath(dataDir)) }

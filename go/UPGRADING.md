@@ -2,6 +2,11 @@
 
 For an instance deployed before the P0 security pass and the guest-browsing change.
 
+Since then `pkgreg-client` has become a shim for `pkgcache`: its `-docker-trust` and
+`--persist` modes, which this guide still mentions, are retired. Their replacements are
+`pkgcache docker-setup` and the project's setup script, run as root; see
+[running and testing](../docs/running-and-testing.md).
+
 Every claim here was rehearsed against a simulated pre-upgrade deployment: a data
 directory with populated databases, no accounts, and a configuration file predating
 the new keys.

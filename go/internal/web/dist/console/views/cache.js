@@ -1,7 +1,8 @@
 /* Cache — "what is in it?"
  *
- * Inventory, composition, and the age histogram that previews what eviction would
- * take next. */
+ * Inventory, composition, and the age histogram: on a server, a preview of what
+ * eviction would take next; on pkgcache, which never evicts, where to look first when
+ * the space is wanted back. */
 
 import { el, region, panel, fill, table, button, field, input, select, loading } from "../dom.js";
 import { api } from "../api.js";
@@ -24,12 +25,11 @@ export default {
     const inventory = region("div");
     const leaders = region("div");
 
-    const ecoSelect = select(
-      "eco",
-      [{ value: "", label: "All ecosystems" },
-        ...store.state.ecosystems.map((d) => ({ value: d.id, label: d.display }))],
-      filters.eco,
-    );
+    const ecoOptions = () => [
+      { value: "", label: "All ecosystems" },
+      ...store.state.ecosystems.map((d) => ({ value: d.id, label: d.display })),
+    ];
+    const ecoSelect = select("eco", ecoOptions(), filters.eco);
     const search = input("q", { value: filters.q, placeholder: "Search artifact names" });
     const sortSelect = select("sort", [
       { value: "date", label: "Newest first" },
@@ -64,14 +64,30 @@ export default {
         el("p", { class: "note", text: `project ${store.state.project}` })),
       el("div", { class: "panel-grid" },
         panel("By ecosystem", { note: "bytes held and where requests were answered", wide: true }, composition.node),
-        panel("Cold content", { note: "time since last read — what eviction takes first" }, ages.node),
+        panel("Cold content", {
+          note: store.isLocal()
+            ? "time since last read — nothing is removed until you ask"
+            : "time since last read — what eviction takes first",
+        }, ages.node),
         panel("Most requested", { note: "all time" }, leaders.node)),
       panel("Inventory", { wide: true }, form, inventory.node),
     );
 
     const drawComposition = () => composition.set(renderComposition());
     const drawLeaders = () => leaders.set(renderLeaders());
-    const unsubscribe = [store.on("stats", () => { drawComposition(); drawLeaders(); })];
+    // The inventory is kept so it can be redrawn without a refetch when the ecosystem
+    // list arrives: this view can mount before it has, and ecoColor reads it, so a page
+    // opened straight onto #/cache painted every badge in the "unknown" grey for good.
+    let lastInventory = null;
+    const unsubscribe = [
+      store.on("stats", () => { drawComposition(); drawLeaders(); }),
+      store.on("ecosystems", () => {
+        ecoSelect.replaceChildren(...select("eco", ecoOptions(), filters.eco).children);
+        ecoSelect.value = filters.eco;
+        drawComposition();
+        if (lastInventory) inventory.set(renderInventory(lastInventory, filters, goToPage));
+      }),
+    ];
     drawComposition();
     drawLeaders();
     // Fetched below, so they start as loading rather than as "Nothing cached yet."
@@ -84,6 +100,7 @@ export default {
       try {
         const result = await api.artifacts(store.state.project, filters);
         if (cancelled) return;
+        lastInventory = result;
         inventory.set(renderInventory(result, filters, goToPage));
       } catch (cause) {
         if (!cancelled) store.fail(cause);
@@ -181,11 +198,18 @@ function renderComposition() {
 function renderAges(buckets) {
   const total = buckets.reduce((sum, bucket) => sum + bucket.bytes, 0);
   if (!total) return el("p", { class: "empty", text: "Nothing cached yet." });
+  // pkgcache never evicts, and `pkgcache prune` reclaims only what nothing refers to any
+  // more (internal/local/collect.go) — age plays no part in either. So there is no queue
+  // here to warn about: the cold end is only where a person looking for room would
+  // start removing, after which prune gives the bytes back.
+  const local = store.isLocal();
 
   return charts.figure(
     "Bytes by time since last read",
     {
-      note: "the last bars are the eviction queue",
+      note: local
+        ? "the last bars are where to look for room"
+        : "the last bars are the eviction queue",
       columns: [
         { label: "Age", cell: (row) => row.label },
         { label: "Entries", numeric: true, cell: (row) => count(row.entries) },
@@ -198,9 +222,11 @@ function renderAges(buckets) {
       buckets.map((bucket) => ({
         label: bucket.label,
         value: bucket.bytes,
-        // One measure, one hue: this is a distribution, not six identities. Colder
-        // buckets are the ones eviction reaches first, so they carry the warning.
-        color: bucket.max_age_days === 0 || bucket.max_age_days > 90
+        // One measure, one hue: this is a distribution, not a set of identities. On a
+        // server the colder buckets are the ones eviction reaches first, so they carry
+        // the warning; on pkgcache nothing reaches them, and a warning would be a
+        // claim about a risk that does not exist.
+        color: !local && (bucket.max_age_days === 0 || bucket.max_age_days > 90)
           ? "var(--status-warning)"
           : "var(--series-1)",
       })),

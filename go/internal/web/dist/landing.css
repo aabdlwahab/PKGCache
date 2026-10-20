@@ -799,6 +799,11 @@ h2 {
 .ecos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 @media (max-width: 940px) { .ecos { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 620px) { .ecos { grid-template-columns: 1fr; } }
+/* Seven cards fill neither three columns nor two, and a last card alone in its row reads
+   as an afterthought. Containers take a double track wherever there are two or more, and
+   files a second one at three, so every row is full at every width. */
+@media (min-width: 621px) { .eco-span { grid-column: span 2; } }
+@media (min-width: 941px) { .eco-span-wide { grid-column: span 2; } }
 .eco {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 20px 20px 0; position: relative; overflow: hidden;
@@ -817,6 +822,9 @@ h2 {
 .eco-apt    { --eco: oklch(0.70 0.14 42); }
 .eco-git    { --eco: oklch(0.66 0.17 300); }
 .eco-files  { --eco: oklch(0.72 0.15 152); }
+/* Go's own cyan, pulled toward blue far enough to stay apart from uv's on the
+   tutorial and from containers' here. */
+.eco-go     { --eco: oklch(0.72 0.12 222); }
 
 [data-theme="light"] .eco-docker { --eco: oklch(0.525 0.16 248); }
 [data-theme="light"] .eco-pip    { --eco: oklch(0.53 0.13 92); }
@@ -824,6 +832,7 @@ h2 {
 [data-theme="light"] .eco-apt    { --eco: oklch(0.545 0.14 42); }
 [data-theme="light"] .eco-git    { --eco: oklch(0.545 0.17 300); }
 [data-theme="light"] .eco-files  { --eco: oklch(0.51 0.15 152); }
+[data-theme="light"] .eco-go     { --eco: oklch(0.515 0.12 222); }
 .eco-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .eco-badge {
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;

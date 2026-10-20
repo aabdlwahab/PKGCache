@@ -5,11 +5,17 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/local"
 )
+
+// installService is local.InstallService, held in a variable so a test can prove a dry run
+// never reaches it: the real one registers a launchd agent or a systemd unit in the
+// session of whoever runs the test.
+var installService = local.InstallService
 
 func runPersist(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("persist", flag.ContinueOnError)
@@ -60,12 +66,32 @@ flags:
 	if *anyway {
 		availability = local.AvailabilityAccepted
 	}
-	if !*noService && !*showOnly {
+	switch {
+	case *noService || *showOnly:
+	case *dryRun:
+		// -dry-run promises to apply nothing, and the service is the one change here that
+		// reaches outside the home directory — a unit registered with launchd or systemd.
+		// It used to be installed regardless, so the preview made the change it described.
+		// Said instead, and assumed for the rest of the preview, since the real run would
+		// have installed it before writing a single setting.
+		verb := "install"
+		if *uninstall {
+			verb = "remove"
+		}
+		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+			fmt.Printf("would %s socket activation for %s\n", verb, snap.DataDir)
+			if availability == local.AvailabilityUnknown {
+				availability = local.AvailabilitySocket
+			}
+		} else {
+			fmt.Printf("no socket activation on %s; the real run would need -anyway\n", runtime.GOOS)
+		}
+	default:
 		executable, err := os.Executable()
 		if err != nil {
 			return err
 		}
-		got, err := local.InstallService(executable, snap.DataDir, *uninstall, os.Stdout) //nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
+		got, err := installService(executable, snap.DataDir, *uninstall, os.Stdout) //nolint:contextcheck // runSystemctl and runLaunchctl bound themselves; see serviceManagerTimeout
 		if err != nil {
 			if !*anyway {
 				return fmt.Errorf("%w\n  or pass -anyway to install the settings regardless", err)

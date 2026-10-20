@@ -284,8 +284,10 @@ func Collect(paths []string) (map[string]string, error) {
 						"%s is an archive, not a binary: extract it to %s first",
 						base, inner)
 				}
+				// pkgcache first: it is what developers download, and the shim beside it
+				// only forwards to it.
 				return nil, fmt.Errorf("%s is not a publishable name: expected one of %s",
-					base, strings.Join(ClientPlatforms(), ", "))
+					base, strings.Join(append(PkgcachePlatforms(), ClientPlatforms()...), ", "))
 			}
 			found[base] = path
 			continue

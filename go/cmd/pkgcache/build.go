@@ -13,12 +13,11 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/local"
 )
 
-// build and compose are the same commands pkgreg-client has, with the same flags and
-// the same promise: the Dockerfile in the repository never mentions a cache, the
-// rewrite happens in memory, and everything this does not recognise goes to docker
-// untouched.
+// build and compose are the commands pkgreg-client had, with the same flags and the
+// same promise: the Dockerfile in the repository never mentions a cache, the rewrite
+// happens in memory, and everything this does not recognise goes to docker untouched.
 //
-// What differs is only where the cache is. pkgreg-client points a build at a bridge or
+// What differs is only where the cache is. pkgreg-client pointed a build at a bridge or
 // at a server's HTTPS address; pkgcache points it at a cache on this machine, over
 // loopback where the daemon shares it and through host.docker.internal where it does
 // not.
@@ -100,7 +99,7 @@ flags:
 	if err != nil {
 		return err
 	}
-	state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+	state, err := ensureCaching(ctx, snap, "pkgcache "+name, "for the build to reach")
 	if err != nil {
 		return err
 	}
@@ -147,18 +146,41 @@ flags:
 // Go's flag package stops at the first non-flag, which would silently hand `-t app:dev`
 // to us as a positional argument and then complain about it. Same rule as
 // pkgreg-client's, deliberately: a wrapper that diverges here stops being a wrapper.
+//
+// Two things the rule has to know beyond the names. -h and -help are flag's own, never
+// registered, so without naming them here `pkgcache build -h` went to docker — after the
+// daemon had been started for a build that was never going to happen. And a flag that
+// takes a value owns the next argument when it is not written with =: `-project web`
+// split after -project handed `web` to docker as the build context.
 func splitKnownFlags(fs *flag.FlagSet, argv []string) (ours, theirs []string) {
-	known := map[string]bool{}
-	fs.VisitAll(func(f *flag.Flag) { known[f.Name] = true })
-	for i := range argv {
+	known := map[string]*flag.Flag{}
+	fs.VisitAll(func(f *flag.Flag) { known[f.Name] = f })
+	for i := 0; i < len(argv); i++ {
 		argument := argv[i]
+		if !strings.HasPrefix(argument, "-") {
+			return ours, argv[i:]
+		}
 		trimmed := strings.TrimLeft(argument, "-")
-		base, _, _ := strings.Cut(trimmed, "=")
-		if strings.HasPrefix(argument, "-") && known[base] {
+		base, _, inline := strings.Cut(trimmed, "=")
+		if base == "h" || base == "help" {
 			ours = append(ours, argument)
 			continue
 		}
-		return ours, argv[i:]
+		defined := known[base]
+		if defined == nil {
+			return ours, argv[i:]
+		}
+		ours = append(ours, argument)
+		if !inline && !isBoolFlag(defined) && i+1 < len(argv) {
+			i++
+			ours = append(ours, argv[i])
+		}
 	}
 	return ours, nil
+}
+
+// isBoolFlag is how flag itself decides whether a flag may stand alone.
+func isBoolFlag(f *flag.Flag) bool {
+	boolean, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && boolean.IsBoolFlag()
 }

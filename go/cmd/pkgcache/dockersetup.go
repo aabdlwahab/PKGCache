@@ -76,7 +76,7 @@ func runDockerBuildSetup(ctx context.Context, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print every change without applying it")
 	uninstall := fs.Bool("uninstall", false, "reverse a previous run")
 	fs.Usage = func() {
-		_, _ = fmt.Fprint(fs.Output(), `pkgcache docker-build-setup — cache apt and apk in every build on this machine
+		_, _ = fmt.Fprint(fs.Output(), `pkgcache docker-build-setup — cache apt in every build on this machine
 
 usage: pkgcache docker-build-setup [flags]
 
@@ -134,7 +134,7 @@ func gatewayAddress(ctx context.Context, snap *config.Snapshot, uninstall bool) 
 	if !uninstall {
 		// Starting the cache first means the address is the one actually bound, which
 		// differs whenever the fixed port was taken.
-		state, err := local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})
+		state, err := ensureCaching(ctx, snap, "pkgcache docker-setup", "for Docker to trust")
 		if err != nil {
 			return "", err
 		}

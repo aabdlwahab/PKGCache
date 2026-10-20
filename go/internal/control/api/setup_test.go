@@ -3,9 +3,13 @@ package api
 import (
 	"crypto/tls"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
+	"github.com/aabdlwahab/PKGCache/internal/eco"
+	"github.com/aabdlwahab/PKGCache/internal/eco/files"
+	"github.com/aabdlwahab/PKGCache/internal/eco/gomod"
 )
 
 func TestClientCoordinatesRespectListenerTopology(t *testing.T) {
@@ -111,6 +115,80 @@ func TestClientSchemeUsesPublicFacingConnection(t *testing.T) {
 			}
 			if got := clientScheme(request, &snapshot); got != test.want {
 				t.Fatalf("clientScheme() = %q; want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestSetupStepsFollowTheInstance renders the endpoints panel for a laptop's cache and
+// for a server, and checks each gets its own scheme and its own advice. Descriptors used
+// to write the scheme themselves, so gomod's http:// was wrong on every TLS server and
+// files' https:// on every pkgcache.
+func TestSetupStepsFollowTheInstance(t *testing.T) {
+	registry := eco.NewRegistry()
+	registry.Register(gomod.New())
+	registry.Register(files.New(nil, 0))
+	tests := []struct {
+		name      string
+		configure func(*config.Snapshot)
+		request   string
+		want      []string
+		never     []string
+	}{
+		{
+			name: "local cache is plain HTTP and uses the shell's variables",
+			configure: func(value *config.Snapshot) {
+				value.Local.Enabled = true
+				value.Server.UnifiedAddr = "127.0.0.1:41780"
+				value.Server.TLS = config.TLS{}
+			},
+			request: "http://127.0.0.1:41780/api/v1/projects/team-a/endpoints",
+			want: []string{
+				"export GOPROXY=http://127.0.0.1:41780/team-a/gomod/goproxy",
+				`curl -fLO "${PKGCACHE_FILES_URL}<path>"`,
+			},
+			never: []string{"https://", "trust store"},
+		},
+		{
+			// Reached over plain HTTP on the single sniffed port, which is exactly where
+			// reading the request's own scheme would have said http.
+			name: "server with a certificate is https",
+			configure: func(value *config.Snapshot) {
+				value.Server.TLS.CertFile = "server.crt"
+				value.Server.TLS.KeyFile = "server.key"
+			},
+			request: "http://cache.example.test:8443/api/v1/projects/team-a/endpoints",
+			want: []string{
+				"export GOPROXY=https://cache.example.test:8443/team-a/gomod/goproxy",
+				"curl -fLO https://cache.example.test:8443/team-a/files/<path>",
+			},
+			never: []string{"http://cache.example.test"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := config.Defaults()
+			test.configure(&snapshot)
+			api := &API{Options: Options{Config: config.NewStore(&snapshot), Ecos: registry}}
+			endpoints, err := api.endpointMap(httptest.NewRequest("GET", test.request, nil), "team-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rendered strings.Builder
+			for _, id := range registry.IDs() {
+				for _, step := range endpoints[id].(map[string]any)["setup"].([]eco.SetupStep) {
+					rendered.WriteString(step.Comment + step.Command + "\n")
+				}
+			}
+			for _, want := range test.want {
+				if !strings.Contains(rendered.String(), want) {
+					t.Errorf("steps are missing %q:\n%s", want, rendered.String())
+				}
+			}
+			for _, never := range test.never {
+				if strings.Contains(rendered.String(), never) {
+					t.Errorf("steps contain %q:\n%s", never, rendered.String())
+				}
 			}
 		})
 	}

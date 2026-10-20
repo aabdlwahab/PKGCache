@@ -143,8 +143,15 @@ export const api = {
     request(`/users/${encodeURIComponent(name)}`, { method: "PATCH", body: body(patch) }),
   deleteUser: (name) => request(`/users/${encodeURIComponent(name)}`, { method: "DELETE" }),
   gc: (dryRun) => request("/maintenance/gc", { method: "POST", body: body({ dry_run: dryRun }) }),
+  evict: (project, dryRun) =>
+    request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
   /* Removing named content, as opposed to evicting whatever is coldest. Synchronous:
      this is the handful of digests somebody ticked, not a sweep worth queueing. */
+  removeArtifacts: (project, digests, dryRun = false) =>
+    request(`${at(project)}/maintenance/remove`, {
+      method: "POST",
+      body: body({ digests, dry_run: dryRun }),
+    }),
   /* Copying or moving packages into another project. Nothing is copied byte for byte —
      the other project gains rows pointing at what the store already holds — so this is
      synchronous for the same reason removal is. */
@@ -156,11 +163,6 @@ export const api = {
   // Stop a download in flight. 404 when it has already finished.
   cancelFetch: (project, eco, key) =>
     request(`${at(project)}/fetches/cancel`, { method: "POST", body: body({ eco, key }) }),
-  removeArtifacts: (project, digests, dryRun = false) =>
-    request(`${at(project)}/maintenance/remove`, {
-      method: "POST",
-      body: body({ digests, dry_run: dryRun }),
-    }),
 
   // ---- local sources: present only on a cache that keeps its own upstreams
   sources: () => request("/local/sources"),
@@ -169,13 +171,6 @@ export const api = {
   deleteSource: (project) =>
     request(`/local/sources/${encodeURIComponent(project)}`, { method: "DELETE" }),
 
-  // ---- the machine's working project: present only on a cache that belongs to one
-  //
-  // The project switcher used to be a browser preference and nothing more, so switching
-  // it moved this page and left `pkgcache build`, `pkgcache run` and pkgcache-docker
-  // working in whichever project they had been working in before — usually global,
-  // silently, with every artifact landing in the wrong catalog. These two are how the
-  // page reads and writes the file those commands actually consult.
   // ---- siblings: other machines' caches, present only on a local cache
   // Ask a machine what projects it has, before pointing anything at one of them.
   reach: (project, probe) =>
@@ -188,6 +183,13 @@ export const api = {
     request(`/local/peers/${encodeURIComponent(project)}/${encodeURIComponent(peer)}`,
       { method: "DELETE" }),
 
+  // ---- the machine's working project: present only on a cache that belongs to one
+  //
+  // The project switcher used to be a browser preference and nothing more, so switching
+  // it moved this page and left `pkgcache build`, `pkgcache run` and pkgcache-docker
+  // working in whichever project they had been working in before — usually global,
+  // silently, with every artifact landing in the wrong catalog. These two are how the
+  // page reads and writes the file those commands actually consult.
   machineProject: () => request("/local/project"),
   setMachineProject: (project) =>
     request("/local/project", { method: "PUT", body: body({ project }) }),
@@ -214,8 +216,6 @@ export const api = {
   share: (password, port = 0) =>
     request("/local/share", { method: "PUT", body: body({ password, port }) }),
   unshare: () => request("/local/share", { method: "DELETE" }),
-  evict: (project, dryRun) =>
-    request(`${at(project)}/maintenance/evict`, { method: "POST", body: body({ dry_run: dryRun }) }),
 
   /** Subscribe to the event bus. Returns an unsubscribe function. */
   events(receive, onState) {

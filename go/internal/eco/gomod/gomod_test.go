@@ -113,3 +113,42 @@ func TestTheDefaultProxyNameIsOneSegment(t *testing.T) {
 		}
 	}
 }
+
+// The step has to set what the pkgcache shell sets (internal/session: GOPROXY, GOSUMDB
+// off) and nothing else. It once exported GONOSUMCHECK, which Go does not read, and
+// GOFLAGS=-mod=mod, which has nothing to do with a proxy and quietly changes how every
+// build treats go.mod.
+func TestSetupMatchesTheShellAndTheInstanceScheme(t *testing.T) {
+	descriptor := New().Descriptor()
+	for _, test := range []struct {
+		ctx   eco.SetupContext
+		proxy string
+	}{
+		{
+			eco.SetupContext{Scheme: "http", Host: "127.0.0.1", Port: 41780, Project: "global", Local: true},
+			"export GOPROXY=http://127.0.0.1:41780/global/gomod/goproxy",
+		},
+		{
+			eco.SetupContext{Scheme: "https", Host: "cache.example.test", Port: 8443, Project: "team-a"},
+			"export GOPROXY=https://cache.example.test:8443/team-a/gomod/goproxy",
+		},
+	} {
+		var commands []string
+		for _, step := range descriptor.SetupSteps(test.ctx) {
+			if step.Command != "" {
+				commands = append(commands, step.Command)
+			}
+		}
+		joined := strings.Join(commands, "\n")
+		for _, want := range []string{test.proxy, "export GOSUMDB=off"} {
+			if !strings.Contains(joined, want) {
+				t.Errorf("%s: commands are missing %q:\n%s", test.ctx.Scheme, want, joined)
+			}
+		}
+		for _, never := range []string{"GONOSUMCHECK", "GOFLAGS"} {
+			if strings.Contains(joined, never) {
+				t.Errorf("%s: commands still set %s:\n%s", test.ctx.Scheme, never, joined)
+			}
+		}
+	}
+}

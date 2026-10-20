@@ -142,6 +142,9 @@ input, select, textarea {
 textarea { resize: vertical; }
 
 .field { display: grid; gap: 4px; margin-bottom: 10px; }
+/* display:grid above outranks the user agent's [hidden] rule, so a field a form hid —
+   Reports to, for a role that has no manager — stayed on screen without this. */
+.field[hidden] { display: none; }
 .field-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: var(--tspace); }
 .field-hint { color: var(--muted); font-size: 12px; }
 .form { max-width: 46rem; }
@@ -402,8 +405,15 @@ tbody tr:hover { background: var(--panel2); }
   border: 1px solid var(--line);
   color: var(--fg2);
 }
+/* Job states are the job manager's own words (control/job/manager.go): queued, running,
+   done, failed, cancelled. This used to style "succeeded", which nothing writes, so every
+   finished job in the history and the rail drew as an unstyled grey pill. Queued is dashed
+   because it has not started; cancelled is muted because somebody chose it, and it is not
+   a failure to go and look into. */
 .pill.running, .pill.queued { color: var(--accent); border-color: var(--accent); }
-.pill.succeeded, .pill.good { color: var(--ok); border-color: var(--ok); }
+.pill.queued { border-style: dashed; }
+.pill.done, .pill.succeeded, .pill.good { color: var(--ok); border-color: var(--ok); }
+.pill.cancelled { color: var(--muted); border-color: var(--control-line); border-style: dashed; }
 .pill.failed, .pill.critical { color: var(--bad); border-color: var(--bad); }
 .pill.warning { color: var(--warn); border-color: var(--warn); }
 .pill.peer { color: var(--accent); }
@@ -641,6 +651,21 @@ body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
 .prog-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
 .prog-track { height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
 .prog-fill { height: 100%; background: var(--accent); transition: width 200ms linear; }
+/* A move of the cache has no fraction to report — the daemon that would count it is the
+   one that stopped — so the bar sweeps rather than claiming a share it does not know. */
+.prog-track.is-indeterminate .prog-fill { width: 30%; animation: progSweep 1.4s var(--ease) infinite; }
+@keyframes progSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prog-track.is-indeterminate .prog-fill { animation: none; width: 100%; opacity: 0.5; }
+}
+
+/* Admin: where other machines open a shared console. Each address wraps whole rather than
+   stretching the panel, since one is an IPv6 literal. */
+.share-urls { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.share-urls code { overflow-wrap: anywhere; }
 
 /* Dialogs the window draws itself. WKWebView asks its host to draw alert(), confirm()
    and prompt(), Wails' macOS backend does not implement those delegate methods, and
@@ -676,3 +701,8 @@ body.rail-open .view { padding-right: calc(min(380px, 92vw) + 18px); }
 .dlg-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .dlg-error:not(:empty) { font-size: 12px; color: var(--bad); }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* What a question found wrong, and what it warns about, inside the dialog asking it. A
+   path is one unbroken word, so it breaks anywhere rather than widening the box. */
+.dlg-line code { word-break: break-all; }
+.dlg-problem { color: var(--bad); }
+.dlg-warn { color: var(--warn); }

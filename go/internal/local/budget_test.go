@@ -132,6 +132,27 @@ func TestGuardRefusesOverTheLimitAndUnderTheFloor(t *testing.T) {
 	}
 }
 
+// A pruned cache is no longer full, and says so as soon as anyone asks — not only after
+// the next download happens to fit.
+func TestGuardUsageClearsAFullVerdictThatNoLongerHolds(t *testing.T) {
+	dir := t.TempDir()
+	guard := NewGuard(nil, dir, Budget{LimitBytes: 1000, MinFreeBytes: 1}, nil)
+	guard.mu.Lock()
+	guard.bytes, guard.free, guard.sampled = 900, 1<<40, time.Now()
+	guard.mu.Unlock()
+	if ok, _ := guard.MayStore(200); ok {
+		t.Fatal("an artifact that does not fit was accepted")
+	}
+	// With no store attached the guard measures an empty cache, which is what a prune
+	// that reclaimed everything leaves behind.
+	if usage := guard.Usage(); usage.Full {
+		t.Fatalf("an empty cache still reports itself full: %+v", usage)
+	}
+	if full, _ := guard.Full(); full {
+		t.Error("the verdict survived a measurement that contradicts it")
+	}
+}
+
 func TestGuardKeepsDiskFreeEvenUnderTheLimit(t *testing.T) {
 	dir := t.TempDir()
 	guard := NewGuard(nil, dir, Budget{LimitBytes: 1 << 40, MinFreeBytes: 1000}, nil)

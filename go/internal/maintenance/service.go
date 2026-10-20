@@ -161,6 +161,9 @@ func (s *Service) Evict(ctx context.Context, options EvictOptions) (EvictResult,
 	}
 	result := EvictResult{BeforeBytes: usage, AfterBytes: usage}
 	expireBefore := s.Now().Add(-options.TTL)
+	// What a dry run has already counted as freed, so a blob two entries share is not
+	// credited twice.
+	wouldFree := map[blob.Digest]bool{}
 	err = s.Catalog.WalkEvictionCandidates(options.Project, func(entry catalog.Entry) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -183,7 +186,17 @@ func (s *Service) Evict(ctx context.Context, options EvictOptions) (EvictResult,
 			reason = "free-space"
 		}
 		if options.DryRun {
+			// A preview has to move the same counters the real pass moves, or the target
+			// and the floor never come to hold and every remaining candidate reads as
+			// evictable — a dry run against a store one byte over its target reported the
+			// whole project. The entry's size stands in for the blob it would free: an
+			// estimate, since a blob another surviving entry shares is not freed for real.
 			result.EvictedEntries++
+			if !wouldFree[entry.Digest] {
+				wouldFree[entry.Digest] = true
+				result.AfterBytes -= entry.Size
+				free += entry.Size
+			}
 			return nil
 		}
 		digest, _, referenced, err := s.Catalog.EvictEntry(entry.EntryKey)

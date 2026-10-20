@@ -8,7 +8,7 @@ Deeper background lives in [docs/system-overview.md](docs/system-overview.md) (w
 does and why) and [docs/go-architecture.md](docs/go-architecture.md) (the design in
 detail). This file is the operational version of both: what to touch, in what order.
 
-This repo has no separate style guide, and does not want one: the six existing
+This repo has no separate style guide, and does not want one: the seven existing
 adapters are the convention. Before writing anything, read the neighbour closest to
 what you are building — [npm.go](go/internal/eco/npm/npm.go) is the shortest complete
 one — and match how it assigns ownership, names things, and explains *why* in comments
@@ -18,8 +18,8 @@ rather than restating *what* the code already says.
 
 ## The model in sixty seconds
 
-PKGCache is a pull-through cache in front of PyPI, npm, OCI registries, apt/apk, git and
-plain files. One Go module builds two binaries — `pkgreg` (the shared server) and
+PKGCache is a pull-through cache in front of PyPI, npm, OCI registries, apt/apk, git,
+Go modules and plain files. One Go module builds two binaries — `pkgreg` (the shared server) and
 `pkgcache` (the single-machine cache) — from the same code.
 
 Four concepts carry the whole design:
@@ -27,7 +27,7 @@ Four concepts carry the whole design:
 | concept | what it is |
 |---|---|
 | **project** | a tenant, addressed as a **URL prefix** (`/<project>/<eco>/…`), never a port or a hostname |
-| **ecosystem** | a protocol adapter: npm, pypi, oci, apt, git, files — the thing you add |
+| **ecosystem** | a protocol adapter: npm, pypi, oci, apt, git, gomod, files — the thing you add |
 | **engine** | the one implementation of fetch → verify → hash → commit → serve, shared by every adapter |
 | **catalog + blob store** | one SQLite catalog of `(project, eco, key)` entries pointing into one content-addressed blob store |
 
@@ -46,7 +46,7 @@ go/                                    the implementation — one module, two bi
   internal/eco/                        the extension point
     eco.go                             Ecosystem, Descriptor, Registry — read this first
     ctx.go                             Ctx: an adapter's entire view of the system
-    npm/ pypi/ oci/ apt/ git/ files/   the six adapters
+    npm/ pypi/ oci/ apt/ git/ gomod/ files/   the seven adapters
     ecotest/harness.go                 a live engine + blobs + catalog behind one adapter
   internal/engine/                     resolutions, documents, single-flight, progressive delivery
   internal/catalog/                    SQLite: entries, refs, artifacts, snapshots
@@ -90,7 +90,7 @@ case "npm": … }` anywhere else is a defect, not an implementation.
 1. A listener (`UnifiedHandler`, or the forward proxy) receives the request.
 2. [`internal/router/project.go`](go/internal/router/project.go) resolves the tenant in
    one of three shapes, chosen by the descriptor's `Listener`:
-   - `ListenerPathPrefixed` — `/<project>/<eco>/…`, the uniform form (npm, pypi, git, files)
+   - `ListenerPathPrefixed` — `/<project>/<eco>/…`, the uniform form (npm, pypi, git, gomod, files)
    - `ListenerProtocolRooted` — a fixed root the client cannot be talked out of; docker
      always starts at `/v2/`, so the project rides the image name
    - `ListenerForwardProxy` — absolute-form targets with no room for a project in the
@@ -296,7 +296,7 @@ Four things to get right, all of which the existing adapters demonstrate:
 ### Step 2 — register it
 
 One line, in the composition root [go/internal/app/app.go](go/internal/app/app.go),
-alongside the other six:
+alongside the other seven:
 
 ```go
 ecosystems.Register(maven.New())

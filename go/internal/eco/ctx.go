@@ -552,24 +552,28 @@ func (c *Ctx) UpstreamRequest(url string, headers http.Header) upstream.Request 
 // is returned unchanged.
 func (c *Ctx) CachesFirst(request upstream.Request, path string) upstream.Request {
 	relay, found := c.cfg.RelayFor(c.Project)
-	var bases []string
+	var bases []upstream.Fallback
 	for _, hop := range relay.Hops {
 		if hop.Sibling && c.fromSibling() {
 			continue // see config.Hop.Sibling
 		}
 		if hop.Base != "" {
-			bases = append(bases, strings.TrimRight(hop.Base, "/")+"/"+c.Eco+"/"+
-				strings.TrimLeft(path, "/"))
+			base := upstream.Fallback{URL: strings.TrimRight(hop.Base, "/") + "/" + c.Eco + "/" +
+				strings.TrimLeft(path, "/")}
+			if hop.Token != "" && !c.fromSibling() {
+				// A team project that serves only to a token; see config.Hop.Token. Not for
+				// a sibling's request, for the reason credentialForURL gives.
+				base.Credential = &upstream.Credential{Kind: "bearer", Token: hop.Token}
+			}
+			bases = append(bases, base)
 		}
 	}
 	if !found || len(bases) == 0 {
 		return request
 	}
 	first := request
-	first.URL, first.Credential, first.Proxy, first.Fallbacks = bases[0], nil, "", nil
-	for _, next := range bases[1:] {
-		first.Fallbacks = append(first.Fallbacks, upstream.Fallback{URL: next})
-	}
+	first.URL, first.Credential, first.Proxy, first.Fallbacks = bases[0].URL, bases[0].Credential, "", nil
+	first.Fallbacks = append(first.Fallbacks, bases[1:]...)
 	if relay.Direct {
 		first.Fallbacks = append(first.Fallbacks, upstream.Fallback{
 			URL: request.URL, Credential: request.Credential, Proxy: request.Proxy,
@@ -680,29 +684,65 @@ func (c *Ctx) chainForURL(url string) (chain []config.Endpoint, head string) {
 // candidate: a chain's second entry is a different origin with its own credential, and
 // looking only at the head would send the team cache's token to the public registry
 // behind it.
+//
+// A URL under no endpoint's path takes the credential of its origin — scheme, host and
+// port — when exactly one is configured there. An index links files it keeps beside its
+// /simple rather than under it (devpi and pkgreg at /+f/, Artifactory and Nexus at
+// /packages/), and pip itself reuses an index's credential for any link on the same host;
+// without this a file from a token-protected team cache was a 401 whose index had just
+// answered 200. Two different credentials on one origin are ambiguous, and get none.
 func (c *Ctx) credentialForURL(url string) *upstream.Credential {
+	// A sibling's request is answered with what this machine may share, never with what it
+	// may present. A credential was given to this machine for its own requests; fetching a
+	// sibling's miss with it would hand anyone who can reach the sibling surface everything
+	// it protects — a token-protected team project to the whole network, unauthenticated.
+	if c.fromSibling() {
+		return nil
+	}
 	longest := 0
-	var selected *upstream.Credential
+	var selected, sameOrigin *upstream.Credential
+	ambiguous := false
+	target := originOf(url)
 	consider := func(endpoint config.Endpoint) {
+		if endpoint.Anonymous() {
+			return
+		}
 		origin := endpoint.URL
-		if endpoint.Anonymous() || len(origin) <= longest {
+		credential := &upstream.Credential{
+			Kind: endpoint.Credential.Kind, Username: endpoint.Credential.Username,
+			Password: endpoint.Credential.Password, Token: endpoint.Credential.Token,
+		}
+		if target != "" && originOf(origin) == target {
+			ambiguous = ambiguous || sameOrigin != nil && *sameOrigin != *credential
+			sameOrigin = credential
+		}
+		if len(origin) <= longest {
 			return
 		}
 		if url != origin && !strings.HasPrefix(url, strings.TrimRight(origin, "/")+"/") {
 			return
 		}
 		longest = len(origin)
-		selected = &upstream.Credential{
-			Kind: endpoint.Credential.Kind, Username: endpoint.Credential.Username,
-			Password: endpoint.Credential.Password, Token: endpoint.Credential.Token,
-		}
+		selected = credential
 	}
 	for _, chain := range c.chains() {
 		for _, endpoint := range chain {
 			consider(endpoint)
 		}
 	}
+	if selected == nil && !ambiguous {
+		return sameOrigin
+	}
 	return selected
+}
+
+// originOf is a URL's scheme and authority, lower-cased, or "" when it has none.
+func originOf(raw string) string {
+	parsed, err := neturl.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme + "://" + parsed.Host)
 }
 
 // Exchange performs a small non-cacheable request through the shared outbound
@@ -745,6 +785,9 @@ func FromSibling(ctx context.Context) context.Context {
 }
 
 func (c *Ctx) fromSibling() bool {
+	if c.R == nil {
+		return false
+	}
 	marked, _ := c.R.Context().Value(siblingKey{}).(bool)
 	return marked
 }

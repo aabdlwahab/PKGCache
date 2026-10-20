@@ -461,11 +461,26 @@ func noCache(header http.Header) {
 	header.Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
 }
 
-func setupSteps(_ eco.SetupContext) []eco.SetupStep {
-	return []eco.SetupStep{
-		{Comment: "Use the temporary Git base from the pkgreg shell. Keep the original Git host in the path:"},
-		{Command: `git clone "$PKGREG_GIT_URL/github.com/<owner>/<repo>.git"`},
+// setupSteps leads with the clone nobody has to change: the pkgcache shell redirects
+// github.com through the mirror with insteadOf, so the URL a README gives already works.
+func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
+	steps := []eco.SetupStep{
+		{Comment: "The pkgcache shell already sends github.com clones through the cache (-git-host adds more hosts), so the usual URL works:"},
+		{Command: "git clone https://github.com/<owner>/<repo>.git"},
+		{Comment: "For any other host, keep the original host in the path under $PKGCACHE_GIT_URL:"},
+		{Command: `git clone "$PKGCACHE_GIT_URL/<host>/<owner>/<repo>.git"`},
 	}
+	if ctx.Local {
+		return steps
+	}
+	// The origin is derived from the request, so there is no index for a machine's
+	// pkgcache to chain to this server's (local.chainedEcosystems): it mirrors from the
+	// forge on its own, and a developer who expected the team's mirror should be told.
+	return append(steps,
+		eco.SetupStep{Comment: "A caching pkgcache pointed here mirrors repositories itself; only a -no-cache shell's clones go through this server. To clone from this server's mirror directly, on a host whose trust store holds its CA (setup.sh):"},
+		eco.SetupStep{Command: "git clone " + ctx.Origin() + "/" + ctx.Project + "/" + ID +
+			"/github.com/<owner>/<repo>.git"},
+	)
 }
 
 type lfsObjectRequest struct {

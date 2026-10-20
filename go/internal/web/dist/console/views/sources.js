@@ -94,15 +94,22 @@ function renderOffline() {
     canOperate
       ? button(isOffline ? "Go online" : "Go offline",
           async () => {
-            // Going offline is fleet-wide and takes effect immediately: it is the one
-            // switch here that changes what every machine using this project sees.
+            // Going offline takes effect immediately, and whom it reaches depends on the
+            // binary: on a server, every machine using this project; on a local cache, this
+            // machine, and whichever machines borrow from it. The question names which.
             // Coming back online restores the default, so only the outbound trip asks.
             if (!isOffline && !await askConfirm({
               title: "Go offline",
-              body: `Take ${store.state.project} offline?\n` +
-                "Every machine using this project stops reaching upstreams — misses fail " +
-                "instead of being fetched. Cached content still serves.\n" +
-                "You can bring it back online from this page at any time.",
+              body: store.isLocal()
+                ? `Take ${store.state.project} offline in this cache?\n` +
+                  "This machine stops reaching upstreams for it — misses fail instead of being " +
+                  "fetched. Cached content still serves, and machines that borrow from this " +
+                  "cache get only what it already holds.\n" +
+                  "You can bring it back online from this page at any time."
+                : `Take ${store.state.project} offline?\n` +
+                  "Every machine using this project stops reaching upstreams — misses fail " +
+                  "instead of being fetched. Cached content still serves.\n" +
+                  "You can bring it back online from this page at any time.",
               confirmLabel: "Go offline", danger: true,
             })) return;
             await store.mutate(
@@ -164,6 +171,15 @@ function teamBody(project, state, again) {
     placeholder: "global", value: state?.team_project ?? "", autocomplete: "off",
   });
   const direct = el("input", { type: "checkbox", checked: state ? state.direct : true });
+  // Write-only, like the fingerprint and for a stronger reason: the daemon never sends a
+  // stored token back, so there is nothing to prefill it with. Empty keeps the stored one
+  // while the cache and project are unchanged; the box below is how to drop it.
+  const hasToken = Boolean(state?.token_configured) && !state.inherited;
+  const token = input("token", {
+    type: "password", autocomplete: "new-password", spellcheck: "false",
+    placeholder: hasToken ? "stored — leave empty to keep it" : "only if their project requires one",
+  });
+  const clearToken = el("input", { type: "checkbox" });
 
   const form = el(
     "form",
@@ -172,6 +188,11 @@ function teamBody(project, state, again) {
     field("Team cache", server, "the pkgreg address"),
     field("CA fingerprint", fingerprint, "from your colleague, not from this network"),
     field("Project on their side", teamProject, "empty means their global project"),
+    field("Read token", token, "for a project that serves downloads only to a token"),
+    hasToken
+      ? el("label", { class: "field-check" }, clearToken,
+          el("span", { text: "stop sending the stored token" }))
+      : null,
     // field() is for a labelled control above its input; a checkbox reads the other way
     // round, so it is built here rather than bent into that shape.
     el("label", { class: "field-check" }, direct,
@@ -187,7 +208,7 @@ function teamBody(project, state, again) {
             if (!await askConfirm({
               title: "Forget the team cache",
               body: `Stop sending ${project} through ${state.server}?\n` +
-                "Its misses go to the public registries instead, or fail if this project is offline.",
+                afterForgettingTeam(project, await sourcesNow(project)),
               confirmLabel: "Forget", danger: true,
             })) return;
             await store.mutate(() => api.deleteSource(project), `${project} no longer uses a team cache`);
@@ -205,6 +226,8 @@ function teamBody(project, state, again) {
         ca_sha256: fingerprint.value.trim(),
         team_project: teamProject.value.trim(),
         direct: direct.checked,
+        ...(token.value.trim() ? { token: token.value.trim() } : {}),
+        ...(clearToken.checked ? { clear_token: true } : {}),
       }),
       `${project} now goes through the team cache`);
     if (applied) {
@@ -220,17 +243,77 @@ function teamBody(project, state, again) {
 // and whose project on it.
 function teamSummary(state) {
   if (!state?.server) {
-    return el("p", { class: "note", text: "This project goes straight to the public registries." });
+    return el("p", { class: "note", text: "No team cache: misses go to the upstreams below." });
   }
   const far = state.team_project || "global";
   return el("div", { class: "status-line" },
     el("span", { class: `pill ${state.reachable === false ? "warning" : "good"}`,
       text: state.reachable === false ? "unreachable" : "reachable" }),
     el("span", { class: "note", text: `${state.server} → ${far}` }),
+    state.token_configured ? el("span", { class: "note", text: "· token configured" }) : null,
     state.inherited
       ? el("span", { class: "note", text: "(inherited from another project)" })
       : null,
   );
+}
+
+/* Where a project's misses go once a team cache or a machine is forgotten.
+ *
+ * Asked of the daemon when the question is put rather than taken from what this page last
+ * drew: the answer depends on the global project's team cache and on every sibling, and
+ * either may have changed from another window or a terminal since. A failure to ask
+ * answers with nothing rather than blocking the Forget it was only describing. */
+async function sourcesNow(project) {
+  const [sources, peers] = await Promise.all([
+    api.sources().then((body) => body?.sources ?? []).catch(() => []),
+    api.peers(project).then((body) => body?.peers ?? []).catch(() => []),
+  ]);
+  return { sources, peers };
+}
+
+// "the machine it borrows from (sams-laptop), then " — or nothing, when there is none.
+function throughMachines(names) {
+  if (!names.length) return "";
+  const which = names.length === 1 ? "the machine" : "the machines";
+  return `${which} it borrows from (${names.join(", ")}), then `;
+}
+
+function afterForgettingTeam(project, { sources, peers }) {
+  const global = sources.find((row) => row.project === "global" && row.server);
+  const first = throughMachines(peers.map((peer) => peer.name));
+  const lines = [
+    // A project with no team cache of its own follows global's — TeamSet.For — so for
+    // every other project, forgetting its own is switching to that one, not to the
+    // internet.
+    project !== "global" && global
+      ? `Its misses then go to ${first}the global project's team cache, ` +
+        `${global.server} → ${global.team_project || "global"}.`
+      : `Its misses then go to ${first}the public registries, or to upstreams of its own ` +
+        "where it has added any.",
+  ];
+  if (project === "global") {
+    const followers = sources
+      .filter((row) => row.project !== "global" && row.server && row.inherited)
+      .map((row) => row.project);
+    if (followers.length) lines.push(`Projects that follow it lose it too: ${followers.join(", ")}.`);
+  }
+  lines.push("If this project is offline, misses fail either way. Nothing already cached is lost.");
+  return lines.join("\n");
+}
+
+function afterForgettingPeer(project, peer, { sources, peers }) {
+  const others = peers.filter((other) => other.name !== peer.name).map((other) => other.name);
+  const team = sources.find((row) => row.project === project && row.server);
+  // The order a miss walks: siblings, the team cache, and the public registry only where
+  // the team cache falls back to it — or where there is no team cache at all.
+  const steps = [];
+  if (others.length) {
+    steps.push(`${others.length === 1 ? "the other machine" : "the other machines"} ` +
+      `it borrows from (${others.join(", ")})`);
+  }
+  if (team) steps.push(`the team cache ${team.server}${team.inherited ? ", followed from global" : ""}`);
+  if (!team || team.direct) steps.push("the public registries");
+  return `Misses go to ${steps.join(", then ")} instead. Nothing already cached here is lost.`;
 }
 
 /* Other machines' caches.
@@ -265,7 +348,8 @@ function peersBody(project, peers, again) {
             ? button("Forget", async () => {
                 if (!await askConfirm({
                   title: "Forget this machine",
-                  body: `Stop borrowing from ${peer.name}?\nMisses go to the public registries instead. Nothing already cached here is lost.`,
+                  body: `Stop borrowing from ${peer.name}?\n` +
+                    afterForgettingPeer(project, peer, await sourcesNow(project)),
                   confirmLabel: "Forget", danger: true,
                 })) return;
                 await store.mutate(() => api.forgetPeer(project, peer.name),
@@ -395,23 +479,41 @@ function renderHealth(points) {
 }
 
 function renderUpstreams() {
-  // "No upstreams. Misses have nowhere to go." is a real diagnosis, and stating it
-  // before the list has arrived would be a false alarm about a broken project.
+  // Read before it is drawn: the empty table and the defaults beneath it are a statement
+  // about where this project's misses go, and making it before the list has arrived
+  // would describe a project nobody has looked at.
   if (!store.hasLoaded("upstreams")) return loading("Reading upstreams");
   const rows = (store.state.upstreams || []).slice().sort((a, b) => a.priority - b.priority);
   const canOperate = store.canOperate();
+  const kinds = configurable();
+  const defaults = defaultsInEffect(rows);
 
-  const ecoOptions = store.state.ecosystems.map((d) => ({ value: d.id, label: d.display }));
+  const ecoSelect = select("eco", kinds.map((d) => ({ value: d.id, label: d.display })), kinds[0]?.id);
+  const nameInput = input("name", { required: true, autocomplete: "off", spellcheck: "false" });
+  const urlInput = input("url", { required: true, type: "url" });
+  const nameField = field("Name", nameInput, " ");
+  // The name is the part people get wrong: it is the alias a row answers for, not a
+  // label, so the hint says what that ecosystem's names are and what reusing one does.
+  const describe = () => {
+    const descriptor = kinds.find((d) => d.id === ecoSelect.value);
+    const name = descriptor ? primaryDefault(descriptor) : "";
+    nameInput.placeholder = name || "an alias";
+    urlInput.placeholder = descriptor?.default_upstreams?.[name] || "https://";
+    nameField.querySelector(".field-hint").textContent = descriptor ? nameHint(descriptor) : "";
+  };
+  ecoSelect.addEventListener("change", describe);
+  describe();
+
   const form = el(
     "form",
     { class: "form row-form" },
-    field("Ecosystem", select("eco", ecoOptions, ecoOptions[0]?.value)),
-    field("Name", input("name", { required: true, placeholder: "pypi.org" })),
-    field("URL", input("url", { required: true, type: "url", placeholder: "https://pypi.org/simple" })),
+    field("Ecosystem", ecoSelect),
+    nameField,
+    field("URL", urlInput),
+    // Origin or peer: the only two kinds the server accepts.
     field("Kind", select("kind", [
       { value: "origin", label: "origin" },
       { value: "peer", label: "peer" },
-      { value: "mirror", label: "mirror" },
     ], "origin")),
     field("Priority", input("priority", { type: "number", value: "10" }),
       "lower is tried first"),
@@ -438,6 +540,7 @@ function renderUpstreams() {
       `Added ${name}`,
     );
     form.reset();
+    describe();
   });
 
   return el(
@@ -450,7 +553,12 @@ function renderUpstreams() {
           el("span", { class: "badge" },
             el("span", { class: "swatch", style: `background:${ecoColor(row.eco)}` }),
             el("span", { text: row.eco })) },
-        { label: "Name", cell: (row) => row.name },
+        { label: "Name", cell: (row) => {
+          const unused = unusedBecause(row, rows);
+          return unused
+            ? el("span", { class: "inline" }, row.name, el("span", { class: "note", text: unused }))
+            : row.name;
+        } },
         { label: "Kind", cell: (row) => el("span", { class: `pill ${row.kind}`, text: row.kind }) },
         { label: "URL", cell: (row) => el("code", { text: row.url, title: row.url }) },
         {
@@ -473,8 +581,7 @@ function renderUpstreams() {
                     if (!await askConfirm({
                       title: "Remove upstream",
                       body: `Remove the upstream ${row.name}?\n` +
-                        "Misses that would have been fetched from it start failing unless " +
-                        "another upstream covers the same ecosystem. Cached content is untouched.",
+                        `${afterRemoving(row, rows)} Cached content is untouched.`,
                       confirmLabel: "Remove", danger: true,
                     })) return;
                     await store.mutate(
@@ -485,8 +592,117 @@ function renderUpstreams() {
         },
       ],
       rows,
-      { empty: "No upstreams. Misses in this project have nowhere to go." },
+      // Not "nowhere to go", which this said for years: a name no row replaces is answered
+      // by the ecosystem's own default, listed beneath.
+      { empty: "No upstreams of this project's own. Misses go to the built-in origins below." },
     ),
+    defaults.length
+      ? [
+          el("h3", { class: "sub-heading", text: "Built-in origins in effect" }),
+          el("p", { class: "note",
+            text: "Each ecosystem's own defaults, answering every name no row above replaces. " +
+              "A row with the same name replaces one outright." }),
+          table(
+            [
+              { label: "Eco", cell: (row) =>
+                el("span", { class: "badge" },
+                  el("span", { class: "swatch", style: `background:${ecoColor(row.eco)}` }),
+                  el("span", { text: row.eco })) },
+              { label: "Name", cell: (row) => row.name },
+              { label: "URL", cell: (row) => el("code", { text: row.url, title: row.url }) },
+            ],
+            defaults,
+          ),
+        ]
+      : null,
     canOperate ? form : null,
   );
+}
+
+/* The ecosystems a row can be written for. apt, files and git take their origin from the
+ * request itself (upstream_shape "none") and the server refuses a row for them; listed,
+ * they were also the default selection — alphabetically first — so an Add left at its
+ * defaults failed every time. */
+function configurable() {
+  return store.state.ecosystems.filter((d) => d.upstream_shape && d.upstream_shape !== "none");
+}
+
+/* Which default an override most likely means, for the placeholder: the one named after
+ * the ecosystem (root/pypi among pypi's eleven), else the first. Only ever a suggestion. */
+function primaryDefault(descriptor) {
+  const names = Object.keys(descriptor.default_upstreams || {}).sort();
+  return names.find((name) => name.includes(descriptor.id)) ?? names[0] ?? "";
+}
+
+/* Rows that are part of a name's chain. A peer row is asked by digest and answers for no
+ * name, and a disabled row is not published at all. */
+function chained(rows, eco) {
+  return rows.filter((row) => row.eco === eco && row.enabled && row.kind !== "peer");
+}
+
+/* The one name a single-origin ecosystem uses. The daemon merges the defaults with this
+ * project's rows by name and takes the first name in sort order, so a row named anything
+ * that sorts after the default's is never asked. */
+function singleName(descriptor, rows) {
+  const names = new Set(Object.keys(descriptor.default_upstreams || {}));
+  for (const row of chained(rows, descriptor.id)) names.add(row.name);
+  return [...names].sort()[0] ?? "";
+}
+
+function nameHint(descriptor) {
+  const name = primaryDefault(descriptor);
+  const origin = descriptor.default_upstreams?.[name];
+  if (descriptor.upstream_shape === "single") {
+    return name
+      ? `${descriptor.display} uses one origin, the first name in sort order: name it ${name} ` +
+        `to replace ${origin}`
+      : `${descriptor.display} uses one origin, the first name in sort order`;
+  }
+  return name
+    ? `the alias clients address: ${name} replaces ${origin}; ` +
+      "a new name adds one beside the defaults"
+    : "the alias clients address";
+}
+
+/* What this project's misses are answered by when no row of the same name replaces it. */
+function defaultsInEffect(rows) {
+  const out = [];
+  for (const descriptor of configurable()) {
+    const named = new Set(chained(rows, descriptor.id).map((row) => row.name));
+    const only = descriptor.upstream_shape === "single" ? singleName(descriptor, rows) : null;
+    for (const name of Object.keys(descriptor.default_upstreams || {}).sort()) {
+      if (named.has(name) || (only !== null && only !== name)) continue;
+      out.push({ eco: descriptor.id, name, url: descriptor.default_upstreams[name] });
+    }
+  }
+  return out;
+}
+
+// Why an enabled row is never asked, or "" when it is.
+function unusedBecause(row, rows) {
+  const descriptor = store.state.ecosystems.find((d) => d.id === row.eco);
+  if (descriptor?.upstream_shape !== "single" || !row.enabled || row.kind === "peer") return "";
+  const used = singleName(descriptor, rows);
+  return used === row.name ? "" : `not used: ${row.eco} takes ${used}, first in sort order`;
+}
+
+// What answers for a row's name once it is gone.
+function afterRemoving(row, rows) {
+  if (row.kind === "peer") return "Lookups by digest stop asking it.";
+  const descriptor = store.state.ecosystems.find((d) => d.id === row.eco);
+  const left = rows.filter((other) => other.id !== row.id);
+  if (descriptor?.upstream_shape === "single") {
+    const name = singleName(descriptor, left);
+    const next = chained(left, row.eco).find((other) => other.name === name)?.url ??
+      descriptor.default_upstreams?.[name];
+    return next
+      ? `${row.eco} misses then go to ${name}, ${next}.`
+      : `${row.eco} has nothing else to fetch from, so its misses fail.`;
+  }
+  const rest = chained(left, row.eco).filter((other) => other.name === row.name);
+  if (rest.length) return `The rest of the ${row.name} chain still answers: ${rest.map((r) => r.url).join(", ")}.`;
+  const fallback = descriptor?.default_upstreams?.[row.name];
+  return fallback
+    ? `${row.name} goes back to its built-in origin, ${fallback}.`
+    : `Nothing else answers for ${row.name}, so misses addressed to it fail.`;
 }

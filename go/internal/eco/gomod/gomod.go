@@ -298,16 +298,26 @@ func parseArtifactKey(key string) (name, version, arch string, ok bool) {
 	return module, parsedVersion, "", true
 }
 
+// setupSteps says what the toolchain needs, which is two variables — the same two the
+// pkgcache shell exports (internal/session), so the shell and a hand-configured host
+// cannot disagree about how Go is pointed here.
 func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
-	base := "http://" + eco.ClientAuthority(ctx.Host, ctx.Port) + "/" + ctx.Project +
-		"/" + ID + "/goproxy"
+	base := ctx.Origin() + "/" + ctx.Project + "/" + ID + "/goproxy"
+	// Direct use differs by what is on the other end. A local cache is plain HTTP on
+	// loopback and needs nothing; a server's address is TLS under its own CA, which Go
+	// reads from the system trust store and nowhere else.
+	elsewhere := "Outside the shell — a Makefile or an IDE that never sees it — set the same two yourself:"
+	if !ctx.Local {
+		elsewhere = "Outside the shell, on a host whose trust store holds this server's CA (setup.sh), point the toolchain here directly:"
+	}
 	return []eco.SetupStep{
-		{Comment: "Point the Go toolchain at this cache:"},
+		{Comment: "The pkgcache shell already sets GOPROXY to this project and turns the checksum database off, so go get and go build need nothing more."},
+		{Comment: elsewhere},
 		{Command: "export GOPROXY=" + base},
-		{Comment: "The checksum database is not served here — it is a transparency log, not a package index, and a cached view of an append-only log is a stale one. go.sum still verifies every module this serves; what this turns off is the third-party witness:"},
-		{Command: "export GONOSUMDB=* GONOSUMCHECK=1 GOFLAGS=-mod=mod"},
-		{Comment: "Or keep the witness and let the toolchain reach sum.golang.org directly, which needs the network this cache exists to avoid:"},
-		{Command: "export GOSUMDB=sum.golang.org"},
+		{Command: "export GOSUMDB=off"},
+		{Comment: "The checksum database is not served here — it is a transparency log, not a package index, and a cached view of an append-only log is a stale one. go.sum still verifies every module this serves; what GOSUMDB=off turns off is the third-party witness."},
+		{Comment: "Or keep the witness and let the toolchain reach sum.golang.org directly, which needs the network this cache exists to avoid. The shell's GONOSUMDB=* would still exempt every module, so it goes too:"},
+		{Command: "unset GONOSUMDB; export GOSUMDB=sum.golang.org"},
 	}
 }
 

@@ -277,22 +277,22 @@ func explainImport(err error, project, head string) error {
 	if err == nil || !strings.Contains(err.Error(), "non-fast-forward") {
 		return err
 	}
-	at := "no checkpoint"
+	at, ask := "no checkpoint", "a full pack, made with\n      pkgcache export"
 	if head != "" {
 		at = "checkpoint " + short(head)
+		ask = "a delta from here:\n      pkgcache export -since " + short(head)
 	}
+	// There is no second option to offer. Importing into a project of its own sounds like
+	// one and was offered here, but a pack names its project and is refused by any other,
+	// so the advice ended in a different error rather than in a fix.
 	return fmt.Errorf(`this pack does not continue from where %s is (%s), so nothing was changed.
 
-  The pack was built from a different starting point. Either:
-    - ask whoever made it to export a delta from here:
-        pkgcache export -since %s
-      run on their machine, against the checkpoint they gave you; or
-    - import it into a project of its own, leaving this one alone:
-        pkgcache project create %s-incoming
-        pkgcache import -project %s-incoming -file …
+  A pack applies only on top of the checkpoint it was built from, and a full pack only to a
+  project with no checkpoint yet. Ask whoever made it for %s
+  run on their machine.
 
   Nothing has been written, and %s is unchanged`,
-		project, at, short(head), project, project, project)
+		project, at, ask, project)
 }
 
 func runSnapshots(ctx context.Context, args []string) error {

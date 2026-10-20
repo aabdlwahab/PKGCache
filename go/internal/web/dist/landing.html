@@ -171,7 +171,7 @@
               <a class="btn btn-primary" href="/tutorial">Start the setup tutorial</a>
               <a class="btn btn-ghost" href="/console">Open console</a>
             </div>
-            <p class="hero-note">A step-by-step walkthrough — download the client, open a temporary shell, and wire up pip, uv, npm, Git, apt and Docker.</p>
+            <p class="hero-note">A step-by-step walkthrough — download pkgcache, point it at your team’s server once, and wire up pip, uv, npm, Go, Git, apt and Docker.</p>
             <div class="pains">
               <div class="pain">
                 <span class="pain-k">the waiting</span>
@@ -212,7 +212,7 @@
               <div class="how">
                 <div class="how-n">03</div>
                 <h3>One service for the build stack</h3>
-                <p>Containers, Python, Node, system packages, Git and generic artifacts share one process and a consistent project setup.</p>
+                <p>Containers, Python, Node, Go, system packages, Git and generic artifacts share one process and a consistent project setup.</p>
               </div>
             </div>
             <div class="flowcard">
@@ -262,21 +262,21 @@
       <!-- ========================= ECOSYSTEMS ========================= -->
       <section class="sec tint" id="ecosystems">
         <div class="wrap">
-          <p class="eyebrow rv">Six ecosystems · one service</p>
+          <p class="eyebrow rv">Seven ecosystems · one service</p>
           <h2 class="rv">One cache service for the tools your builds already use.</h2>
           <p class="lede rv">
-            <span data-ports="single">All six roles share one address — <b>:8443</b> — including the apt and apk forward proxy.</span><span data-ports="split" hidden>Five HTTPS roles share <b>:8443</b>; apt and apk use the <b>:3142</b> forward proxy.</span>
-            Run <code>pkgreg-client</code> to open a verified temporary shell for pip, uv,
-            npm, Git, files and the apt/apk proxy. Nothing is installed, and exiting the
-            shell restores the previous environment. Docker runs through a separate daemon
-            that cannot read that shell, so it has its own section in the tutorial.
+            <span data-ports="single">All seven roles share one address — <b>:8443</b> — including the apt and apk forward proxy.</span><span data-ports="split" hidden>Six HTTPS roles share <b>:8443</b>; apt and apk use the <b>:3142</b> forward proxy.</span>
+            Run <code>pkgcache shell</code> for a shell whose pip, uv, npm, Go, Git, files
+            and apt/apk already use the cache. It configures only that shell, and exiting
+            it restores the previous environment. Docker runs through a separate daemon
+            that cannot read that shell, so it has commands of its own.
           </p>
           <div class="ecos">
-            <article class="eco eco-docker rv">
+            <article class="eco eco-docker eco-span rv">
               <div class="eco-h"><span class="eco-badge">containers</span><span class="eco-was">Docker Hub · GHCR · Quay</span></div>
               <h3>Container images</h3>
-              <p>Cache images from Docker Hub, GHCR and Quay. Pulls, builds and CI each need the address passed to the daemon differently.</p>
-              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">→</span> Tutorial · Docker</span></pre>
+              <p>Cache images from Docker Hub, GHCR, Quay and any other registry. <code>pkgcache pull</code> and <code>pkgcache build</code> hand the daemon the cache’s address and leave every image named as you wrote it.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> pkgcache pull python:3.13-slim</span></pre>
             </article>
             <article class="eco eco-pip rv">
               <div class="eco-h"><span class="eco-badge">python</span><span class="eco-was">pip · uv</span></div>
@@ -290,37 +290,44 @@
               <p>Keep repeat installs local and make cached packages available in offline mode.</p>
               <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> npm install left-pad</span></pre>
             </article>
+            <article class="eco eco-go rv">
+              <div class="eco-h"><span class="eco-badge">go</span><span class="eco-was">GOPROXY</span></div>
+              <h3>Go modules</h3>
+              <p>Serve module zips and version lists over the module proxy protocol; <code>go.sum</code> still verifies every one.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> go mod download</span></pre>
+            </article>
             <article class="eco eco-apt rv">
               <div class="eco-h"><span class="eco-badge">system</span><span class="eco-was">apt · apk</span></div>
               <h3>System packages</h3>
               <p>Serve cached Debian, Ubuntu and Alpine packages to the fleet through one forward proxy.</p>
-              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> apt-get -o \</span><span class="cmd-line cmd-cont">Acquire::http::Proxy=<span class="c-s">"$PKGREG_APT_PROXY"</span> update</span></pre>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> apt-get -o Acquire::http::Proxy=\</span><span class="cmd-line cmd-cont"><span class="c-s">"$PKGCACHE_APT_PROXY"</span> update</span></pre>
             </article>
             <article class="eco eco-git rv">
               <div class="eco-h"><span class="eco-badge">git</span><span class="eco-was">read-only mirrors</span></div>
               <h3>Git repositories</h3>
-              <p>Clone and fetch cached branches and tags from a local read-only mirror, online or offline.</p>
-              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> git clone \</span><span class="cmd-line cmd-cont"><span class="c-h">"$PKGREG_GIT_URL</span>/github.com/pallets/click.git"</span></pre>
+              <p>Clone and fetch cached branches and tags from a local read-only mirror, online or offline. An unmodified GitHub URL is redirected through it.</p>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> git clone \</span><span class="cmd-line cmd-cont"><span class="c-h">https://github.com</span>/pallets/click.git</span></pre>
             </article>
-            <article class="eco eco-files rv">
+            <article class="eco eco-files eco-span-wide rv">
               <div class="eco-h"><span class="eco-badge">everything else</span><span class="eco-was">downloads · uploads</span></div>
               <h3>Anything else</h3>
               <p>Store artifacts that have no package manager, including your own versioned build outputs.</p>
-              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> wget \</span><span class="cmd-line cmd-cont"><span class="c-h">"${PKGREG_FILES_URL}</span>builds/v1.2/app.tar.gz"</span></pre>
+              <pre class="eco-cmd"><span class="cmd-line"><span class="c-p">$</span> wget \</span><span class="cmd-line cmd-cont"><span class="c-h">"${PKGCACHE_FILES_URL}</span>builds/v1.2/app.tar.gz"</span></pre>
             </article>
           </div>
-          <!-- The commands above assume the client setup. Say so plainly and send
+          <!-- The commands above assume the pkgcache setup. Say so plainly and send
                new readers to the tutorial. -->
           <div class="eco-next rv">
             <div class="eco-next-txt">
               <span class="eco-next-k">new to pkgreg? start here</span>
-              <h3>Download the client before copying commands.</h3>
+              <h3>Download pkgcache before copying commands.</h3>
               <p>
-                <b>The pip, npm, apt, Git and files examples run inside the temporary <code>pkgreg-client</code> shell.</b>
-                The client verifies the remote cache, exposes it on localhost, and configures only
-                the child shell. No administrator access or permanent CA installation is needed.
-                The tutorial walks through it in three steps, then covers Docker and shared CI
-                hosts, which each work differently.
+                <b>The pip, npm, Go, apt, Git and files examples run inside a <code>pkgcache shell</code>.</b>
+                pkgcache checks the team server’s certificate against a fingerprint once, keeps a
+                cache on your machine in front of it, and configures only the shell it opens.
+                No administrator access or permanent CA installation is needed. The tutorial
+                walks through it in three steps, then covers Docker and CI hosts, which each
+                work differently.
               </p>
             </div>
             <a class="btn btn-primary eco-next-cta" href="/tutorial">Open the setup tutorial →</a>
@@ -352,9 +359,11 @@
             </ul>
             <p class="ps-note">
               Every chart has a table view beside it, and gaps in a chart mean “not recorded”, never
-              “nothing happened”. Running without a browser surface at all is one flag:
+              “nothing happened”. Running a server without a browser surface at all is one flag:
               <code>pkgreg serve --headless</code> keeps the API, metrics and health endpoints up and
-              answers 404 everywhere else.
+              answers 404 everywhere else. pkgcache, the cache on one machine, has no such flag:
+              its console is for the person at that machine, and only <code>pkgcache share</code>
+              opens it to anyone else, behind a password.
             </p>
           </div>
           <div class="rv">
@@ -391,7 +400,7 @@
             </svg>
           </span>
           <h2>Make the next build independent of the internet.</h2>
-          <p class="lede foot-lede">Run pkgreg on your infrastructure, point existing package clients at it, and checkpoint the cache when it is ready to move. One static binary — the console, the API and all six ecosystems are inside it.</p>
+          <p class="lede foot-lede">Run pkgreg on your infrastructure, point existing package clients at it, and checkpoint the cache when it is ready to move. One static binary — the console, the API and all seven ecosystems are inside it.</p>
           <div class="hero-ctas foot-ctas">
             <a class="btn btn-primary" href="/tutorial">Start the setup tutorial</a>
             <a class="btn btn-ghost" href="/console">Open the console</a>
@@ -399,7 +408,7 @@
           </div>
           <div class="foot-meta">
             <span>package-registry · pkgreg</span>
-            <span>six ecosystems · one static binary · cached packages available offline</span>
+            <span>seven ecosystems · one static binary · cached packages available offline</span>
           </div>
         </div>
       </footer>

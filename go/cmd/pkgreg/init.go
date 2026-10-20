@@ -61,7 +61,7 @@ func runInit(ctx context.Context, args []string) error {
 	}
 
 	// Print the fingerprint here, at the one moment the operator is certainly looking.
-	// pkgreg-client and pkgreg-bridge both refuse to run without it, and telling people
+	// pkgcache setup and pkgreg-bridge both refuse to run without it, and telling people
 	// to "ask your administrator" is no help when they are the administrator.
 	fingerprint := caFingerprint(caPath)
 	if fingerprint != "" {
@@ -109,17 +109,24 @@ func runInit(ctx context.Context, args []string) error {
 
 	fmt.Printf(`
 Next:
-  # 1. Offer the client for download. Copy the pkgreg-client-* release files onto
-  #    this host first; with no path, the directory holding pkgreg is scanned.
+  # 1. Offer the client for download. Copy the pkgcache-* release files (and the
+  #    pkgreg-client-* shim, for older instructions) onto this host first; with no
+  #    path, the directory holding pkgreg is scanned.
   pkgreg publish-client -data-dir %s [path...]
 
   # 2. Start the server:
   pkgreg serve -config %s
 
-Developers then open https://<this-host>%s/tutorial, download pkgreg-client, and
-copy the command shown there. The normal client needs no sudo and is undone by
-typing exit. --persist is only for managed CI or Docker hosts that intentionally
-need machine-wide trust.
+Developers then download pkgcache from https://<this-host>%s/tutorial or from
+Console → Connect, and run:
+
+  pkgcache setup -server https://<this-host>%s -ca-sha256 <the fingerprint above> \
+      -team-project <project> -limit 25G
+  pkgcache shell
+
+That needs no sudo and writes nothing outside pkgcache's own directory; typing exit
+leaves the shell. Machine-wide trust is only for managed CI or Docker hosts that
+intentionally need it, and is the project's setup.sh (Console → Connect), run as root.
 
 Step 1 is not optional in practice: until it is done, the tutorial has nothing to
 hand out and a new developer's first page is a dead end. `+"`pkgreg doctor`"+` reports
@@ -134,6 +141,7 @@ certificates trusted by every one of them.
 `,
 		snap.DataDir,
 		filepath.Join(snap.DataDir, "pkgreg.yaml"),
+		portSuffix(snap.Server.UnifiedAddr),
 		portSuffix(snap.Server.UnifiedAddr),
 		filepath.Join(snap.CertsDir(), pki.CAKeyFile))
 	return nil

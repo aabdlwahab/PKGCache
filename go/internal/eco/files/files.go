@@ -393,17 +393,31 @@ func formatSize(n int64) string {
 	return fmt.Sprintf("%.1f%ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
 
+// setupSteps differs by binary for a reason that is about files, not about the console.
+// Files are the one thing a caching pkgcache pointed at a team server does not chain:
+// there is no upstream to chain to, content arrives by upload. So in its shell
+// $PKGCACHE_FILES_URL is the developer's own machine, and a download from it would miss
+// every file the team uploaded. Only a -no-cache shell's variable reaches the server,
+// through the bridge. On a local cache the variable is exactly right.
 func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
-	base := fmt.Sprintf("https://%s/%s/files/",
-		eco.ClientAuthority(ctx.Host, ctx.Port), ctx.Project)
+	base := ctx.Origin() + "/" + ctx.Project + "/" + ID + "/"
+	address, intro := `"${PKGCACHE_FILES_URL}<path>"`,
+		"The pkgcache shell names this project's files as $PKGCACHE_FILES_URL; outside "+
+			"the shell the address is "+base+". Download:"
+	if !ctx.Local {
+		address = base + "<path>"
+		intro = "Files live on this server alone. A caching pkgcache pointed here keeps " +
+			"none of them, so its $PKGCACHE_FILES_URL is that machine's own store; only a " +
+			"-no-cache shell's reaches this project. Use the address directly — curl needs " +
+			"this server's CA, installed by setup.sh or named with --cacert:"
+	}
 	return []eco.SetupStep{
-		{Comment: "Use the temporary files address from the pkgreg shell. Downloads are anonymous " +
-			"(the direct address for managed hosts is " + base + "):"},
-		{Command: `wget "${PKGREG_FILES_URL}<path>"`},
+		{Comment: intro},
+		{Command: "curl -fLO " + address},
 		{Comment: "Upload (needs this project's write token, from the console):"},
 		{Command: "curl -T <file> \\\n" +
 			"     -H \"Authorization: Bearer $TOKEN\" \\\n" +
-			"     \"${PKGREG_FILES_URL}<path>\""},
+			"     " + address},
 		{Comment: "Uploads are write-once; add ?overwrite=1 to replace."},
 	}
 }

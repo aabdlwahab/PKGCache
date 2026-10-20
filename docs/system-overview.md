@@ -67,7 +67,7 @@ sharing safe without locking anything.
 
 ### Ecosystems are adapters over one engine
 
-Six adapters — `pypi`, `npm`, `oci`, `apt`, `git`, `files` — each describe *what* they
+Seven adapters — `pypi`, `npm`, `oci`, `apt`, `git`, `gomod`, `files` — each describe *what* they
 want; a shared engine decides *how*. An adapter never touches SQL, the filesystem, HTTP
 clients, or single-flight logic.
 
@@ -88,9 +88,10 @@ adapter's descriptor automatically.
 | **oci** | `docker`, `podman` | protocol-rooted `/v2/` | multi-arch images, manifests by tag or digest, `tags/list`, anonymous token dance, registry discovered from the first path segment |
 | **apt** | `apt-get`, `apk` | forward proxy | relays any host, optional allowlist; `InRelease` revalidates, `.deb` never does |
 | **git** | `git`, `git lfs` | path-prefixed | full, shallow and partial clones; protocol v2; LFS; push refused |
+| **gomod** | `go` via `GOPROXY` | path-prefixed | `@v/list` and `@latest` revalidate, `.info`/`.mod`/`.zip` never do; the checksum database is not proxied |
 | **files** | `curl`, `wget`, CI | path-prefixed | the one writable role: `PUT`/`DELETE` behind a token, browsable index |
 
-Two storage modes. Five ecosystems store content as blobs. Git is the exception: it
+Two storage modes. Six ecosystems store content as blobs. Git is the exception: it
 keeps real bare repositories under `managed/git/`, because `git upload-pack` needs a
 directory it can run against.
 
@@ -253,11 +254,14 @@ owns its own storage.
 The cache serves TLS with a certificate it mints itself. Start with the
 [`pkgreg-client` tutorial](../go/internal/web/dist/tutorial.html).
 
-**The client.** Download `pkgreg-client` from the tutorial or Console → Connect and
-give it the CA fingerprint through a separate trusted channel. It checks that
-fingerprint, starts a verified localhost bridge, and opens a child shell whose package
-settings point at that bridge. Exiting the shell stops the bridge and discards the
-environment. It writes no files and needs no administrator access.
+**The client.** Download `pkgcache` from the tutorial or Console → Connect and give
+`pkgcache setup` the CA fingerprint through a separate trusted channel. It checks that
+fingerprint and keeps the CA and the server's address in its own directory; `pkgcache
+shell` then opens a child shell whose package settings point at a local cache in front of
+the team's, or with `-no-cache` at a verified localhost bridge. Exiting the shell discards
+its environment. It writes nothing outside its own directory and needs no administrator
+access. `pkgreg-client` remains, as a shim that turns its old command line into those two
+commands.
 
 **Publishing it.** The operator runs `pkgreg publish-client` on the cache host, passing
 the release files (or nothing, to scan the directory holding the `pkgreg` binary). It
@@ -270,20 +274,20 @@ them, and until something is published the tutorial has no download to offer —
 
 **Docker.** The daemon is a separate process that never reads the session's environment,
 and under Docker Desktop it runs in a VM whose loopback is not the developer's — so the
-session's bridge address is unreachable from it. `pkgreg-client -docker-trust` installs
-the verified CA for the daemon alone, after which `docker pull` uses the cache's own
-stable address. One file, no administrator access on Docker Desktop, reversible with
-`-uninstall`. Details and the per-platform locations are in
-[client onboarding](client-onboarding.md).
+session's bridge address is unreachable from it. `pkgcache docker-setup` teaches the
+daemon about the machine's pkgcache instead, which reaches the team cache itself;
+`pkgcache build` and `pkgcache pull` rewrite image names to it per command. (The
+original `pkgreg-client -docker-trust`, which installed the team CA for the daemon, is
+recorded in [client onboarding](client-onboarding.md).)
 
-**Persistent setup.** `pkgreg-client --persist` downloads the auditable generated
-setup script over fingerprint-verified TLS and applies machine trust and project
-settings. This is explicit because it changes protected files and needs administrator
+**Persistent setup.** The project's generated `setup.sh` (or `setup.ps1`), downloaded
+over fingerprint-verified TLS and run as root, applies machine trust and project
+settings — what `pkgreg-client --persist` used to run for you. This is explicit because it changes protected files and needs administrator
 access. Use it for managed CI/build hosts whose setup must survive a terminal session.
 
 The standalone [`pkgreg-bridge`](client-bridge.md) exposes the same localhost transport
-for users who want to supervise it themselves instead of letting `pkgreg-client` own
-its lifetime.
+for users who want to supervise it themselves instead of letting `pkgcache` own its
+lifetime.
 
 ---
 
@@ -462,9 +466,9 @@ and the same storage, with no accounts, and able to sit in front of a team's `pk
 `pkgcache-app` is its window and status bar item. `pkgcache-docker` is docker with
 `build` and `pull` served from the cache, for orchestrators that shell out to a container
 command and let you choose which one — `crate prepare --runtime pkgcache-docker` is what
-it was written for. `pkgreg-client` opens a fingerprint-verified temporary package shell
-by default and performs machine setup only with `--persist`, and `pkgreg-bridge` is the
-standalone form of the same loopback transport.
+it was written for. `pkgreg-client` is now a shim that turns an old command line into
+`pkgcache setup -no-cache` and `pkgcache shell`, and `pkgreg-bridge` is the standalone
+form of the same loopback transport.
 
 ---
 

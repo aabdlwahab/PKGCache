@@ -21,6 +21,11 @@ define("sources", sources);
 define("transfer", transfer);
 define("admin", admin);
 
+/* The tab's title is the other half of what the favicon says: which program this is. */
+function nameThePage(product) {
+  document.title = `${product} console`;
+}
+
 async function boot() {
   document.documentElement.dataset.theme = store.state.theme;
 
@@ -42,7 +47,9 @@ async function boot() {
     const options = {
       guestAvailable: cause.detail?.guest_available === true,
       passwordOnly: cause.detail?.password_only === true,
+      product: cause.detail?.product === "pkgcache" ? "pkgcache" : "pkgreg",
     };
+    nameThePage(options.product);
     if (cause instanceof APIError && cause.status === 401) {
       return renderLogin(root, undefined, options);
     }
@@ -63,7 +70,10 @@ async function boot() {
   //   4. Only then load. Views mount against empty state and fill in as data lands;
   //      that is what the region model is for.
   await machine;
-  const { main } = buildChrome(root);
+  // Read from `me` itself rather than the store, which does not hold it until (2).
+  const product = me?.product === "pkgcache" ? "pkgcache" : "pkgreg";
+  nameThePage(product);
+  const { main } = buildChrome(root, product);
   store.set({ me });
   // After `me`, before start(): the router has to know which views this session may
   // enter before it renders the first one, or a guest deep-linked to #/admin mounts

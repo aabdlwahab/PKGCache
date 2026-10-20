@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -44,6 +45,9 @@ func (a *API) v1Routes() {
 	a.route("POST /api/v1/projects/{project}/export", a.exportJob)
 	a.route("POST /api/v1/projects/{project}/import", a.importJob)
 	a.route("POST /api/v1/projects/{project}/lockwarm", a.lockwarmJob)
+	// What the job above writes. Only the legacy /api/lockfile served it, which nothing
+	// in the console linked to, so the lock it rewrote was reachable from the job log alone.
+	a.route("GET /api/v1/projects/{project}/lockwarm/uv.lock", a.legacyLockfile)
 	a.route("GET /api/v1/stats", a.getStats)
 	a.route("GET /api/v1/jobs", a.listJobs)
 	a.route("GET /api/v1/jobs/{id}", a.getJob)
@@ -455,7 +459,7 @@ func (a *API) getEndpoints(w http.ResponseWriter, r *http.Request) error {
 	if _, _, err := a.requireView(r, name); err != nil {
 		return err
 	}
-	host, unifiedPort, proxyPort, err := a.clientCoordinates(r)
+	endpoints, err := a.endpointMap(r, name)
 	if err != nil {
 		return err
 	}
@@ -469,7 +473,7 @@ func (a *API) getEndpoints(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"project":    name,
-		"endpoints":  a.endpointMap(name, host, unifiedPort, proxyPort),
+		"endpoints":  endpoints,
 		"onboarding": onboarding,
 	})
 	return nil
@@ -489,14 +493,16 @@ func (a *API) listUpstreams(w http.ResponseWriter, r *http.Request) error {
 }
 
 type upstreamBody struct {
-	Eco          *string `json:"eco"`
-	Name         *string `json:"name"`
-	URL          *string `json:"url"`
-	Kind         *string `json:"kind"`
-	Priority     *int    `json:"priority"`
-	Enabled      *bool   `json:"enabled"`
-	CredentialID *int64  `json:"credential_id"`
-	Credential   *struct {
+	Eco      *string `json:"eco"`
+	Name     *string `json:"name"`
+	URL      *string `json:"url"`
+	Kind     *string `json:"kind"`
+	Priority *int    `json:"priority"`
+	Enabled  *bool   `json:"enabled"`
+	// No credential_id: a credential is created with the row that uses it and goes only
+	// to that row's origin. Accepting the id of an existing one let a request attach any
+	// row's secret — a team token included — to a URL of its own choosing.
+	Credential *struct {
 		Label    string `json:"label"`
 		Kind     string `json:"kind"`
 		Username string `json:"username"`
@@ -524,9 +530,6 @@ func (body upstreamBody) value(base control.Upstream) control.Upstream {
 	}
 	if body.Enabled != nil {
 		value.Enabled = *body.Enabled
-	}
-	if body.CredentialID != nil {
-		value.CredentialID = body.CredentialID
 	}
 	return value
 }
@@ -587,8 +590,11 @@ func (a *API) patchUpstream(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	value := body.value(current)
-	if body.Credential == nil {
-		value.CredentialID = current.CredentialID
+	// An edit that moves the row to another origin leaves its credential behind: kept, it
+	// would go to whatever host the new URL names on the very next request.
+	dropped := body.Credential == nil && current.CredentialID != nil && !sameOrigin(current.URL, value.URL)
+	if dropped {
+		value.CredentialID = nil
 	}
 	var createdCredential int64
 	if body.Credential != nil {
@@ -610,7 +616,7 @@ func (a *API) patchUpstream(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	if createdCredential != 0 && current.CredentialID != nil {
+	if (createdCredential != 0 || dropped) && current.CredentialID != nil {
 		_ = a.Credentials.Delete(*current.CredentialID)
 	}
 	a.audit(r, actor, "upstream.update", r.PathValue("id"), map[string]any{"project": name})
@@ -1161,10 +1167,22 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// product names the binary this API belongs to. The console is one tree served by both,
+// and a page that cannot tell them apart hands a laptop's cache the server's commands:
+// `pkgreg init` to a program that has no such subcommand, a CA it does not have, the
+// accounts it deliberately lacks. Carried on /me because that is the one answer every
+// page reads first, including the sign-in screen, which only ever sees the refusal.
+func (a *API) product() string {
+	if a.Config.Current().Local.Enabled {
+		return "pkgcache"
+	}
+	return "pkgreg"
+}
+
 func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 	if !a.Accounts.Enabled() {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"auth_enabled": false, "authenticated": false,
+			"auth_enabled": false, "authenticated": false, "product": a.product(),
 		})
 		return nil
 	}
@@ -1176,12 +1194,12 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 			// way: every endpoint that could answer is itself behind this check.
 			return control.NewErrorWithDetail(http.StatusUnauthorized,
 				"authentication_required", map[string]any{
-					"guest_available": a.guestAvailable(),
+					"guest_available": a.guestAvailable(), "product": a.product(),
 				}, "authentication required")
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"auth_enabled": true, "authenticated": false, "anon_read": true,
-			"guest_available": a.guestAvailable(),
+			"guest_available": a.guestAvailable(), "product": a.product(),
 		})
 		return nil
 	}
@@ -1190,7 +1208,7 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 			"auth_enabled": true, "authenticated": true,
 			"username": auth.GuestUser, "role": auth.RoleGuest,
 			"guest": true, "readonly": true, "project": config.GlobalProject,
-			"guest_available": true,
+			"guest_available": true, "product": a.product(),
 		})
 		return nil
 	}
@@ -1208,6 +1226,7 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 		"username":  user.Username, "role": user.Role,
 		"reports_to": nullable(user.ReportsTo),
 		"grants":     grants,
+		"product":    a.product(),
 	})
 	return nil
 }
@@ -1225,3 +1244,26 @@ func (a *API) listAudit(w http.ResponseWriter, r *http.Request) error {
 }
 
 var _ = eco.ListenerPathPrefixed
+
+// sameOrigin reports whether two upstream URLs name the same scheme, host and port, the
+// unit a credential is good for. One that does not parse is no origin anybody shares.
+func sameOrigin(a, b string) bool {
+	left, errLeft := url.Parse(a)
+	right, errRight := url.Parse(b)
+	if errLeft != nil || errRight != nil || left.Host == "" || right.Host == "" {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectivePort(left) == effectivePort(right)
+}
+
+func effectivePort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return "443"
+}

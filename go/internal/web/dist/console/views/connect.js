@@ -9,13 +9,20 @@
  * links went in a circle between two pages that said the same thing in different words.
  *
  * The split now is by what each one can know. Connect renders values only this running
- * instance has — the selected project, its exact start command, whether it needs a token,
+ * instance has — the selected project, its exact setup command, whether it needs a token,
  * the live fingerprint, what is actually published — and states each step in one line.
  * The tutorial explains, and owns everything that is the same on every instance: what the
  * session changes, Docker, CI hosts, troubleshooting. So this file links there for
- * explanation and never restates it. */
+ * explanation and never restates it.
+ *
+ * Both binaries serve this page, and the reader stands somewhere different on each. On
+ * pkgreg they are at another machine, which needs pkgcache downloaded, pointed at this
+ * server once, and a shell opened. On pkgcache they are already on the machine the cache
+ * serves: there is nothing to download and no CA to verify, and the only question is how
+ * long the settings should last. Either way the shell they end up in is a pkgcache shell,
+ * so the ecosystem cards below the first panel describe the same thing on both. */
 
-import { el, region, panel, fill, table, button, field, input, select } from "../dom.js";
+import { el, region, panel, fill, table, button, field, input, select, loading } from "../dom.js";
 import { api } from "../api.js";
 import { askConfirm } from "../dialog.js";
 import * as store from "../store.js";
@@ -23,28 +30,37 @@ import { when, ecoColor } from "../format.js";
 
 export default {
   mount(node) {
+    const local = store.isLocal();
+    const project = store.state.project;
     const endpoints = region("div");
-    const trust = region("div");
+    const start = region("div");
     const tokens = region("div");
 
     fill(
       node,
       el("div", { class: "view-head" },
         el("h1", { text: "Connect" }),
-        el("p", { class: "note", text: `Exact values for this instance and project ${store.state.project}. The tutorial explains what each step does.` }),
-        el("a", { class: "btn ghost", href: `/tutorial?project=${encodeURIComponent(store.state.project)}`, text: "Open the tutorial" })),
+        // The tutorial is the team server's getting-started page — downloads, fingerprints,
+        // a server to point at — none of which a laptop's own cache has, so pkgcache does
+        // not send its reader there.
+        local
+          ? el("p", { class: "note", text: `Commands for this machine, scoped to project ${project}.` })
+          : el("p", { class: "note", text: `Exact values for this instance and project ${project}. The tutorial explains what each step does.` }),
+        local ? null : el("a", { class: "btn ghost", href: `/tutorial?project=${encodeURIComponent(project)}`, text: "Open the tutorial" })),
       el("div", { class: "panel-grid" },
-        panel("Start a session", { note: "no installation, sudo, cache IP, or insecure TLS flag", wide: true }, trust.node),
+        local
+          ? panel("Use it on this machine", { note: "each command starts the cache if it is not running", wide: true }, start.node)
+          : panel("Start a session", { note: "one executable: no sudo, no system trust store, no insecure TLS flag", wide: true }, start.node),
         panel("Your tools in that shell", { note: "generated from this instance's ecosystems", wide: true }, endpoints.node),
-        panel("Access tokens", { note: "only for protected projects and file uploads" }, tokens.node)),
+        panel("Access tokens", { note: local ? "only for file uploads" : "only for protected projects and file uploads" }, tokens.node)),
     );
 
     const draw = () => {
       endpoints.set(renderEndpoints());
-      trust.set(renderTrust());
+      start.set(local ? renderLocal() : renderServer());
       tokens.set(renderTokens());
     };
-    // "projects" is in this list because both the start command and the token notice
+    // "projects" is in this list because both the setup command and the token notice
     // depend on whether the selected project requires one. It used to be missing, so a
     // reader who landed here before the project list arrived was shown the command
     // without -token-file and no warning, and nothing ever redrew it.
@@ -112,79 +128,134 @@ function commandBlock(command) {
   );
 }
 
-function renderTrust() {
+// renderLocal is Connect on pkgcache. There is nothing to download or verify here, so
+// the four ways of using the cache are the whole panel, ordered from the one that
+// changes least to the one that changes most. Each takes -project, and each is given the
+// selected one: left to its default, a command uses whatever `pkgcache project use`
+// last chose, which need not be the project this page is showing.
+function renderLocal() {
+  const scope = `-project ${store.state.project}`;
+  const port = localPort();
+  return el(
+    "div",
+    { class: "stack" },
+    el("h3", { class: "sub-heading", text: "A shell" }),
+    commandBlock(`pkgcache shell ${scope}`),
+    el("p", { class: "note", text: "pip, uv, npm, pnpm, go and git in it use this cache, and the next panel is what to type there. Type exit to return to your terminal as it was." }),
+    el("h3", { class: "sub-heading", text: "One command" }),
+    commandBlock(`pkgcache run ${scope} -- npm ci`),
+    el("h3", { class: "sub-heading", text: "Settings that outlive the shell" }),
+    commandBlock(`pkgcache persist ${scope}`),
+    el("p", { class: "note", text: "Writes user-level settings for npm, pip, uv and git, so a Makefile, an IDE or a terminal opened earlier use the cache too. No root and nothing under /etc; -dry-run shows every change first, and -uninstall reverses them." }),
+    el("h3", { class: "sub-heading", text: "This terminal only" }),
+    commandBlock(`eval "$(pkgcache env ${scope})"`),
+    el("p", { class: "note", text: "The shell's settings, printed as exports for sh, bash or zsh to keep." }),
+    // Other machines get one paragraph, because this cache is not something they can be
+    // pointed at: its packages answer on loopback only, and sharing opens the console
+    // alone. What another machine can do is borrow from it, which is a pkgcache command
+    // run over there.
+    el("h3", { class: "sub-heading", text: "Other machines" }),
+    el("p", { class: "note", text: `Packages are served to this machine only; pkgcache share opens this console to other machines, not the packages. Another machine can reuse what this one has cached by running its own pkgcache and borrowing from this one as a peer, for pypi and oci. That needs this cache listening beyond loopback (PKGCACHE_ADDR=0.0.0.0:${port}); then, on the other machine:` }),
+    commandBlock(`pkgcache peer add <this-machine>:${port}`),
+  );
+}
+
+// localPort is the port this cache answers on, for the one command that has to name it
+// from another machine. 41780 is every pkgcache's default.
+function localPort() {
+  return store.state.coordinates?.unified?.match(/:(\d+)$/)?.[1] || "41780";
+}
+
+// renderServer is Connect on pkgreg: download pkgcache, point it at this server once,
+// open a shell. The commands are the ones `pkgcache setup -h` documents, and -project is
+// deliberately absent from them: there it names a project on the developer's machine,
+// while the project this page is showing is the server's, which is -team-project.
+function renderServer() {
+  // Until the endpoints answer, a missing onboarding block means "not read yet", and
+  // saying the server has no CA on that basis would be a false claim about it.
+  if (!store.hasLoaded("endpoints")) return loading("Reading this server's certificate");
+
   const onboarding = store.state.onboarding;
-  if (!onboarding) {
-    return el("p", {
-      class: "empty",
-      text: "Client setup is unavailable because this instance does not expose a TLS certificate authority.",
-    });
-  }
   const coordinates = store.state.coordinates;
   const origin = coordinates
     ? `${coordinates.scheme}://${coordinates.unified}`
     : "https://<cache-host>:8443";
-  const clients = store.state.downloads.filter((item) => item.tool === "client");
+  const binaries = store.state.downloads.filter((item) => item.tool === "pkgcache");
+
+  if (!onboarding) {
+    return el(
+      "div",
+      { class: "stack" },
+      el("div", { class: "token-needed" },
+        el("strong", { text: "This server has no certificate authority, so no machine can verify it." }),
+        el("p", { class: "note", text: "pkgcache setup trusts a server only once its CA matches a fingerprint the developer was given, and there is no CA to match. On the server host, mint one — with a certificate pair, into the data directory — and restart pkgreg serve. pkgreg doctor reports what is missing." }),
+        commandBlock("pkgreg init -data-dir <data-dir>")),
+      el("p", { class: "note", text: "Downloads stay available meanwhile." }),
+      pkgcacheDownloads(binaries),
+    );
+  }
+
   const fingerprintFact = el("dl", { class: "facts" },
     el("div", { class: "fact" },
       el("dt", { text: "CA fingerprint" }),
       el("dd", {}, el("code", { text: onboarding.ca_sha256 }))));
 
-  // A scheme other than https means this instance has no certificate pair configured.
-  // The client refuses an http:// server by design — there is nothing for it to pin — so
-  // rendering the start command anyway hands out a command that cannot work, which is
-  // what this page used to do: the reader hit "server must use https" with no hint that
-  // the blocker was on the server.
+  // A scheme other than https means this server is answering without its certificate.
+  // setup refuses an http:// server by design — there is nothing for the pin to check —
+  // so rendering the command anyway hands out one that cannot work, which is what this
+  // page used to do: the reader hit "server must use https" with no hint that the
+  // blocker was on the server.
   if (coordinates && coordinates.scheme !== "https") {
     return el(
       "div",
       { class: "stack" },
       el("div", { class: "token-needed" },
-        el("strong", { text: "This instance is serving plain HTTP, so no client can connect." }),
-        el("p", { class: "note", text: `pkgreg-client requires an https:// server and stops with "server must use https" against ${origin}. It fetches the CA over one unverified request and pins it to the fingerprint below; without TLS there is nothing for it to verify.` }),
-        el("p", { class: "note", text: "On the cache host, mint a certificate pair into the data directory and restart the server; a server started against a data directory that holds one now uses it. pkgreg doctor reports the missing pair as a failure." }),
+        el("strong", { text: "This server is answering in plain HTTP, so no machine can be pointed at it." }),
+        el("p", { class: "note", text: `pkgcache setup stops with "server must use https" against ${origin}. It fetches the CA over one unverified request and pins it to the fingerprint below; without TLS there is nothing to check it against.` }),
+        el("p", { class: "note", text: "The server has a CA but is not serving a certificate. On the server host, issue a pair into the data directory and restart pkgreg serve; init keeps the existing CA, so the fingerprint below stays the one to give out. To use a pair you already have, set server.tls.cert_file and key_file instead. pkgreg doctor reports a missing pair as a failure." }),
         commandBlock("pkgreg init -data-dir <data-dir>")),
       fingerprintFact,
-      el("p", { class: "note", text: "Downloads and this fingerprint stay available meanwhile, so developers can fetch and verify the client while the server is fixed." }),
-      clientDownloads(clients),
+      el("p", { class: "note", text: "Downloads and this fingerprint stay available meanwhile, so developers can fetch pkgcache and check the fingerprint while the server is fixed." }),
+      pkgcacheDownloads(binaries),
     );
   }
 
-  const selectedProject = store.state.projects.find((item) => item.name === store.state.project);
+  const project = store.state.project;
+  const selectedProject = store.state.projects.find((item) => item.name === project);
   const needsToken = selectedProject?.data_plane_auth === "token";
   const tokenFlag = needsToken ? " -token-file ./pkgreg.token" : "";
-  const tutorial = `/tutorial?project=${encodeURIComponent(store.state.project)}`;
+  const target = `-server ${origin} -ca-sha256 ${onboarding.ca_sha256} -team-project ${project}`;
+  const tutorial = `/tutorial?project=${encodeURIComponent(project)}`;
 
   return el(
     "div",
     { class: "stack" },
-    el("h3", { class: "sub-heading", text: "1. Download the client" }),
-    el("p", { class: "note", text: "One executable, not an installer. Most Intel and AMD machines are amd64; Apple silicon is darwin arm64. Rename it to pkgreg-client (pkgreg-client.exe on Windows) and, on Linux or macOS, chmod +x it. Each button's tooltip carries the SHA-256 to check against." }),
-    clientDownloads(clients),
-    el("h3", { class: "sub-heading", text: "2. Start the session" }),
+    el("h3", { class: "sub-heading", text: "1. Download pkgcache" }),
+    el("p", { class: "note", text: "One executable, not an installer. Most Intel and AMD machines are amd64; Apple silicon is darwin arm64. Rename it to pkgcache (pkgcache.exe on Windows) and, on Linux or macOS, chmod +x it. Each button's tooltip carries the SHA-256 to check against." }),
+    pkgcacheDownloads(binaries),
+    el("h3", { class: "sub-heading", text: "2. Point it at this server, once" }),
     // The fingerprint is the value people come back to this page for, so it is stated
     // here rather than folded into a details element as it once was — and stated next
     // to the command it appears in, since the point is to compare the two.
     fingerprintFact,
-    el("p", { class: "note", text: "Compare it with a value the operator gave you through a separate channel before running anything. The client refuses to continue if the cache presents a different CA." }),
+    el("p", { class: "note", text: "Compare it with a value the operator gave you through a separate channel before running anything. setup refuses to continue if this server presents a different CA." }),
     needsToken ? el("div", { class: "token-needed" },
       el("strong", { text: "This project requires an access token." }),
-      el("p", { class: "note", text: "Create a read token below, save the one-time secret in ./pkgreg.token, chmod 600 that file, and keep the -token-file option in the command." })) : null,
+      el("p", { class: "note", text: "Create a read token below, save the one-time secret in ./pkgreg.token, chmod 600 that file, and keep the -token-file option in the setup command." })) : null,
     el("p", { class: "platform-label", text: "Linux and macOS" }),
-    commandBlock(
-      `./pkgreg-client -server ${origin} -project ${store.state.project} ` +
-      `-ca-sha256 ${onboarding.ca_sha256}${tokenFlag}`,
-    ),
+    commandBlock(`./pkgcache setup ${target} -limit 25G${tokenFlag}`),
     el("p", { class: "platform-label", text: "Windows PowerShell" }),
-    commandBlock(
-      `.\\pkgreg-client.exe -server ${origin} -project ${store.state.project} ` +
-      `-ca-sha256 ${onboarding.ca_sha256}${tokenFlag}`,
-    ),
+    commandBlock(`.\\pkgcache.exe setup ${target} -limit 25G${tokenFlag}`),
+    el("p", { class: "note", text: "That keeps a cache of up to 25G on this machine: a lookup goes there first, then to this server, and to the public registry only while this server cannot be reached (-no-direct forbids even that). To cache nothing here and reach this server through a verified loopback bridge instead — what pkgreg-client used to do:" }),
+    commandBlock(`./pkgcache setup -no-cache ${target}${tokenFlag}`),
+    el("h3", { class: "sub-heading", text: "3. Open a shell" }),
+    commandBlock("./pkgcache shell"),
+    el("p", { class: "note", text: "Or run one command with its tools pointed at the cache: ./pkgcache run -- npm ci. On Windows, every command is the same with .\\pkgcache.exe." }),
     el("div", { class: "session-result" },
       el("strong", { text: "What happens next" }),
-      el("p", { class: "note", text: "The client verifies the fingerprint, starts a localhost bridge, and opens a child shell in this terminal. Run the commands in the next panel there. Type exit to stop the bridge and return to your unchanged terminal." })),
+      el("p", { class: "note", text: "setup runs once per machine. It checks the fingerprint, keeps the CA and this server's address inside pkgcache's own directory, and changes nothing outside it. pkgcache shell then opens a child shell in this terminal whose pip, uv, npm, go and git use the cache; the next panel is what to type there. Type exit to return to your unchanged terminal, and open another shell whenever you need one." })),
     el("h3", { class: "sub-heading", text: "Other machines and other cases" }),
-    el("p", { class: "note", text: "Docker's daemon does not read that shell, and CI runners and shared build hosts need settings that outlive it. Both are explained in the tutorial; setup.sh and setup.ps1 below are exactly what the persistent path runs, if you want to read them first." }),
+    el("p", { class: "note", text: "Docker's daemon never sees the shell: run pkgcache docker-setup once, then pkgcache pull or pkgcache build. For settings that outlive the shell, pkgcache persist writes user-level npm, pip, uv and git settings, with no root. A CI runner or shared build host that needs this server trusted machine-wide runs setup.sh or setup.ps1 below instead; they install its CA into the system and Docker trust stores, and need administrator rights to do it." }),
     el("div", { class: "link-row" },
       el("a", { class: "btn ghost", href: `${tutorial}#docker`, text: "Docker" }),
       el("a", { class: "btn ghost", href: `${tutorial}#persist`, text: "CI and shared hosts" }),
@@ -194,19 +265,23 @@ function renderTrust() {
   );
 }
 
-// clientDownloads renders one button per published platform, or — for the state every
+// pkgcacheDownloads renders one button per published platform, or — for the state every
 // fresh instance is in — the command that fixes it. Saying "the operator must publish the
 // release" left even the operator guessing, and this is the wall every developer hits
 // first.
-function clientDownloads(clients) {
-  if (!clients.length) {
+//
+// Only tool "pkgcache" is offered. pkgreg-client is still published, but as a shim that
+// runs pkgcache for instructions written before the two merged; handing it out as the
+// thing to download is how this page came to print a command that could not run.
+function pkgcacheDownloads(binaries) {
+  if (!binaries.length) {
     return el("div", { class: "token-needed" },
-      el("strong", { text: "No client is published on this instance." }),
-      el("p", { class: "note", text: "Nobody can start a session until one is. On the cache host, run:" }),
+      el("strong", { text: "pkgcache is not published on this server." }),
+      el("p", { class: "note", text: "Nobody can start a session until it is. On the server host, run:" }),
       commandBlock("pkgreg publish-client"),
-      el("p", { class: "note", text: "The pkgreg-client-* release files must be on that host first; pkgreg doctor reports whether it worked." }));
+      el("p", { class: "note", text: "The pkgcache-* release files must be on that host first, beside pkgreg or at a path given to the command; pkgreg doctor reports whether it worked." }));
   }
-  return el("div", { class: "link-row" }, clients.map((item) =>
+  return el("div", { class: "link-row" }, binaries.map((item) =>
     el("a", {
       class: "btn",
       href: `/api/v1/downloads/${encodeURIComponent(item.name)}`,
@@ -276,8 +351,10 @@ function renderTokens() {
     "div",
     { class: "stack" },
     needsToken
-      ? el("p", { class: "note", text: "This project requires a token for package downloads. Create a read token, save the one-time secret in a chmod 600 file, and pass that path to pkgreg-client with -token-file." })
-      : el("p", { class: "note", text: "Package downloads are public for this project. You need a token only for protected operations such as file uploads." }),
+      ? el("p", { class: "note", text: "This project requires a token for package downloads. Create a read token, save the one-time secret in a chmod 600 file, and pass that path to pkgcache setup with -token-file." })
+      : el("p", { class: "note", text: store.isLocal()
+          ? "Package downloads need no token. You need one only to upload files."
+          : "Package downloads are public for this project. You need a token only for protected operations such as file uploads." }),
     table(
       [
         { label: "Label", cell: (row) => row.label || row.id },

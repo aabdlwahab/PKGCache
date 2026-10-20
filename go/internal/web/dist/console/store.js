@@ -37,6 +37,10 @@ export const state = {
   tokens: [],
   upstreams: [],
   snapshots: [],
+  /* The checkpoint the project is on, which is not simply the newest row: a rollback
+     moves it back without removing what came after. It is what an export packs and what
+     a pack arriving here must continue from. Empty until the first checkpoint. */
+  head: "",
   users: [],
   audit: [],
   jobs: [],
@@ -188,6 +192,19 @@ export function hasLoaded(...keys) {
   return keys.every((key) => loaded.has(key));
 }
 
+/** Which binary is serving this page: "pkgreg", the team's server, or "pkgcache", one
+ *  machine's cache. The same tree is served by both, and most of what a page says —
+ *  which commands exist, whether there is a CA, whether there are accounts — depends on
+ *  which. A server older than the field is a server, which is what it always was. */
+export function product() {
+  return state.me?.product === "pkgcache" ? "pkgcache" : "pkgreg";
+}
+
+/** A cache that belongs to one machine, rather than a server other machines point at. */
+export function isLocal() {
+  return product() === "pkgcache";
+}
+
 /** A guest session: signed in, read-only, global project only. */
 export function isGuest() {
   return state.me?.guest === true;
@@ -288,6 +305,7 @@ export async function loadProject() {
     tokens: tokens.tokens,
     upstreams: upstreams.upstreams,
     snapshots: snapshots.snapshots,
+    head: snapshots.head ?? "",
   });
 }
 

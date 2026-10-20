@@ -52,6 +52,13 @@ type SourceSpec struct {
 	TeamProject string `json:"team_project"`
 	// Direct keeps the public registry in the chain behind the team cache.
 	Direct bool `json:"direct"`
+	// Token is the team project's read token, for a project that serves downloads only to
+	// a token. Write-only: no response carries it back. Empty keeps the token already
+	// stored, as long as the server and the project on it are unchanged — a token is never
+	// carried to a cache or a project it was not issued for.
+	Token string `json:"token,omitempty"`
+	// ClearToken forgets the stored token, for a team project that no longer needs one.
+	ClearToken bool `json:"clear_token,omitempty"`
 }
 
 // SourceState is what one project resolves through.
@@ -67,6 +74,8 @@ type SourceState struct {
 	// Reachable is nil when it was not probed. A pointer because "not asked" and "down"
 	// are different answers and a bool cannot hold both.
 	Reachable *bool `json:"reachable,omitempty"`
+	// TokenConfigured reports that a token is sent to the team cache. Whether, never which.
+	TokenConfigured bool `json:"token_configured,omitempty"`
 }
 
 // requireSources refuses where nothing implements the surface, which is every server.
@@ -115,9 +124,11 @@ func (a *API) putSource(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// The fingerprint is audited, not the CA: it is the thing a person can compare against
-	// what they were told, and it is what identifies which cache was trusted.
-	a.audit(r, actor, "source.configure", name,
-		map[string]any{"server": state.Server, "fingerprint": state.Fingerprint})
+	// what they were told, and it is what identifies which cache was trusted. The token is
+	// recorded as present or not, never as itself.
+	a.audit(r, actor, "source.configure", name, map[string]any{
+		"server": state.Server, "fingerprint": state.Fingerprint, "token": state.TokenConfigured,
+	})
 	writeJSON(w, http.StatusOK, state)
 	return nil
 }

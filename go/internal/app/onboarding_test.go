@@ -7,12 +7,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/onboarding"
 	"github.com/aabdlwahab/PKGCache/internal/pki"
+	"github.com/aabdlwahab/PKGCache/internal/session"
 )
 
 func onboardingApp(t *testing.T, authEnabled bool) *App {
@@ -197,15 +199,57 @@ func TestEndpointInstructionsUseTheClientAndRealHost(t *testing.T) {
 	for _, required := range []string{
 		"pkgcache.internal:8443",
 		"python -m pip install",
-		"PKGREG_FILES_URL",
+		"PKGCACHE_APT_PROXY",
 	} {
 		if !strings.Contains(body, required) {
 			t.Errorf("endpoint instructions are missing %q: %s", required, body)
 		}
 	}
-	for _, stale := range []string{"<host>", "trusted-host", "strict-ssl=false"} {
+	// PKGREG_* is what the retired pkgreg-client shell exported. The shell a developer
+	// opens now is pkgcache's on both binaries, and it clears PKGREG_*, so a step naming
+	// one expands to an empty string. GONOSUMCHECK is not a Go variable at all.
+	for _, stale := range []string{
+		"<host>", "trusted-host", "strict-ssl=false", "PKGREG_", "pkgreg shell",
+		"GONOSUMCHECK", "GOFLAGS",
+	} {
 		if strings.Contains(body, stale) {
 			t.Errorf("endpoint instructions still contain %q: %s", stale, body)
+		}
+	}
+}
+
+// TestEndpointInstructionsNameOnlyVariablesTheShellSets holds every descriptor's steps to
+// the environment internal/session actually builds. The two are written in different
+// packages, and the failure when they drift is silent: the reader's command runs with the
+// variable expanded to nothing.
+func TestEndpointInstructionsNameOnlyVariablesTheShellSets(t *testing.T) {
+	app := onboardingApp(t, false)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet,
+		"/api/v1/projects/team-a/endpoints", nil)
+	request.Host = "cache.internal:8443"
+	app.AdminHandler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("endpoints = %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	exported := map[string]bool{}
+	for _, entry := range session.Environment(nil, session.Options{
+		Prefix: session.PkgcachePrefix, Kind: "local", BaseURL: "http://127.0.0.1:41780",
+		Project: "team-a", AptProxy: "http://127.0.0.1:41780",
+		DockerRegistry: "127.0.0.1:41780", GitHosts: []string{"github.com"},
+	}) {
+		name, _, _ := strings.Cut(entry, "=")
+		exported[name] = true
+	}
+	named := regexp.MustCompile(`\$\{?(PKGCACHE_[A-Z_]+)`).FindAllStringSubmatch(
+		recorder.Body.String(), -1)
+	if len(named) == 0 {
+		t.Fatal("no step names a PKGCACHE_ variable; this test is no longer checking anything")
+	}
+	for _, match := range named {
+		if !exported[match[1]] {
+			t.Errorf("a setup step names $%s, which the pkgcache shell does not set", match[1])
 		}
 	}
 }

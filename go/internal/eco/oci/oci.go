@@ -708,23 +708,32 @@ func clientName(c *eco.Ctx, route imageRoute) string {
 	return c.Project + "/" + route.display
 }
 
+// setupSteps goes through `pkgcache pull` rather than $PKGCACHE_DOCKER_REGISTRY, because
+// the daemon does not read the shell and, under Docker Desktop, cannot reach the loopback
+// address that variable names. pull works out which address this daemon can reach, and
+// takes the project from the shell — which, pointed at a team server, is the local one
+// that chains there, not the name this page is rendered for.
 func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
-	prefix := "dockerhub/library/alpine:3.20"
-	if !ctx.IsGlobal {
-		prefix = ctx.Project + "/" + prefix
+	steps := []eco.SetupStep{
+		{Comment: "Docker's daemon never sees the shell. Once per machine, tell it this machine's cache is an acceptable registry:"},
+		{Command: "pkgcache docker-setup"},
+		{Comment: "Then pull through the cache. The image keeps its own name, and from the pkgcache shell lands in the shell's project; pkgcache build does the same for a Dockerfile's FROM lines:"},
+		{Command: "pkgcache pull alpine:3.20"},
 	}
-	// Two commands, because Docker has two situations and only one of them looks like
-	// every other ecosystem. The daemon does not read the shell the client configured,
-	// so the first form works only when that daemon shares this machine's loopback
-	// interface. Naming the second address here rather than only saying "use persistent
-	// setup" is the difference between guidance and an instruction: the reader on Docker
-	// Desktop needs a command, and it is one we can compute.
-	return []eco.SetupStep{
-		{Comment: "Docker runs as a separate daemon. From the pkgreg shell, with Docker on this same machine:"},
-		{Command: `docker pull "$PKGREG_DOCKER_REGISTRY/` + prefix + `"`},
-		{Comment: "Docker Desktop, a remote builder and CI cannot reach that loopback bridge. On a host where the cache's CA is installed (persistent setup), pull from the cache directly — this address is stable, so it can go in a Dockerfile:"},
-		{Command: "docker pull " + eco.ClientAuthority(ctx.Host, ctx.Port) + "/" + prefix},
+	if ctx.Local {
+		return steps
 	}
+	// The two forms that reach this server rather than a local cache both embed this
+	// project, because docker has nowhere else to put it: it rides the image name. The
+	// bridge a -no-cache shell opens relays /v2/ as it is, so the prefix goes through it;
+	// a daemon addressing the server itself verifies TLS, so that form needs the CA.
+	image := router.OCIProjectPrefix(ctx.Project) + "dockerhub/library/alpine:3.20"
+	return append(steps,
+		eco.SetupStep{Comment: "With -no-cache there is no cache here to teach the daemon about. From that shell, with a daemon that shares this machine's loopback (native Linux), pull through its bridge:"},
+		eco.SetupStep{Command: `docker pull "$PKGCACHE_DOCKER_REGISTRY/` + image + `"`},
+		eco.SetupStep{Comment: "A remote builder or CI runner with no pkgcache: on a host where this server's CA is installed (setup.sh), pull from it directly — the address is stable, so it can go in a Dockerfile:"},
+		eco.SetupStep{Command: "docker pull " + eco.ClientAuthority(ctx.Host, ctx.Port) + "/" + image},
+	)
 }
 
 func cloneMap(in map[string]string) map[string]string {

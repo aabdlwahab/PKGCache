@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aabdlwahab/PKGCache/internal/clientrelease"
@@ -34,9 +35,12 @@ func runPublishClient(_ context.Context, args []string) error {
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: pkgreg publish-client [flags] [path...]
 
-Publishes pkgreg-client binaries into <data-dir>/downloads and records their
-SHA-256 digests. Each path may be a release file or a directory holding them;
-with no path, the directory containing this pkgreg binary is used.
+Publishes the client binaries this instance hands out into <data-dir>/downloads
+and records their SHA-256 digests: pkgcache, which is what developers download
+from /tutorial and Console → Connect; pkgreg-client, the shim that keeps older
+instructions working by running pkgcache; and pkgreg-bridge. Each path may be a
+release file or a directory holding them; with no path, the directory containing
+this pkgreg binary is used.
 
 `)
 		fs.PrintDefaults()
@@ -69,13 +73,14 @@ with no path, the directory containing this pkgreg binary is used.
 		return err
 	}
 	if len(found) == 0 {
+		expected := slices.Concat(clientrelease.PkgcachePlatforms(), clientrelease.ClientPlatforms())
 		return fmt.Errorf(
 			"no client binaries found in %s\n"+
 				"Expected one or more of: %s\n"+
-				"Build them with `make client-release` on a machine with Go, then copy "+
-				"bin/pkgreg-client-* and bin/pkgreg-client-SHA256SUMS to this host.%s",
-			source, strings.Join(clientrelease.ClientPlatforms(), ", "),
-			archiveHint(paths))
+				"Build them with `make client-release pkgcache-release` on a machine with Go, "+
+				"then copy bin/pkgcache-*, bin/pkgreg-client-* and their -SHA256SUMS files "+
+				"to this host.%s",
+			source, strings.Join(expected, ", "), archiveHint(paths))
 	}
 
 	dir := clientrelease.Dir(snap.DataDir)
@@ -90,7 +95,11 @@ with no path, the directory containing this pkgreg binary is used.
 			binary.Platform(), binary.Name, humanBytes(binary.Bytes), short(binary.SHA256))
 	}
 
-	missing, corrupt, unrecorded, err := clientrelease.Verify(dir)
+	missingShim, corrupt, unrecorded, err := clientrelease.Verify(dir)
+	if err != nil {
+		return err
+	}
+	missingPkgcache, err := missingPkgcache(dir)
 	if err != nil {
 		return err
 	}
@@ -101,21 +110,64 @@ with no path, the directory containing this pkgreg binary is used.
 			strings.Join(corrupt, ", "))
 	case len(unrecorded) > 0:
 		return fmt.Errorf("no digest was recorded for %s", strings.Join(unrecorded, ", "))
-	case len(missing) > 0:
-		fmt.Printf(`Still missing %d of %d client platforms:
+	case len(missingPkgcache) > 0 || len(missingShim) > 0:
+		if len(missingPkgcache) > 0 {
+			fmt.Printf(`Still missing %d of %d pkgcache platforms:
   %s
 
 Developers on those platforms will not see a download. Build the full set with
-`+"`make client-release`"+` and publish it, or publish only the platforms your
-team actually uses.%s
-`, len(missing), len(clientrelease.ClientPlatforms()), strings.Join(missing, "\n  "),
-			archiveHint(paths))
+`+"`make pkgcache-release`"+` and publish it, or publish only the platforms your
+team actually uses.
+`, len(missingPkgcache), len(clientrelease.PkgcachePlatforms()),
+				strings.Join(missingPkgcache, "\n  "))
+		}
+		if len(missingShim) > 0 {
+			if len(missingPkgcache) > 0 {
+				fmt.Println()
+			}
+			fmt.Printf(`Still missing %d of %d pkgreg-client platforms:
+  %s
+
+pkgreg-client is only the shim that turns older instructions into pkgcache
+commands; build it with `+"`make client-release`"+` where those instructions are
+still in use.
+`, len(missingShim), len(clientrelease.ClientPlatforms()), strings.Join(missingShim, "\n  "))
+		}
+		if hint := archiveHint(paths); hint != "" {
+			fmt.Println(strings.TrimPrefix(hint, "\n"))
+		}
 	default:
-		fmt.Println("All 5 client platforms are published with matching digests.")
+		fmt.Printf("All %d pkgcache and %d pkgreg-client platforms are published "+
+			"with matching digests.\n",
+			len(clientrelease.PkgcachePlatforms()), len(clientrelease.ClientPlatforms()))
 	}
 	fmt.Printf("\nDevelopers can now download from https://<this-host>%s/tutorial\n",
 		portSuffix(snap.Server.UnifiedAddr))
 	return nil
+}
+
+// missingPkgcache names the pkgcache platforms a downloads directory does not offer.
+//
+// clientrelease.Verify reports pkgreg-client's gaps and treats pkgcache as optional, which
+// was right while pkgreg-client was the client. pkgcache is what the tutorial and Console
+// → Connect hand a developer now, so a release without it is the incomplete one, however
+// many shims sit beside it.
+func missingPkgcache(dir string) ([]string, error) {
+	offered, err := clientrelease.List(dir)
+	if err != nil {
+		return nil, err
+	}
+	present := map[string]bool{}
+	for _, binary := range offered {
+		present[binary.Name] = true
+	}
+	var missing []string
+	for _, filename := range clientrelease.PkgcachePlatforms() {
+		if !present[filename] {
+			missing = append(missing, filename)
+		}
+	}
+	return missing, nil
 }
 
 // archiveHint names any release file that is a publishable binary still inside its

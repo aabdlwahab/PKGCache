@@ -124,7 +124,7 @@ func Run(ctx context.Context, o RunOptions) error {
 	// here, above the API.
 	a.API.Sources = &Sources{
 		DataDir: snap.DataDir, Store: a.Projects, Ecos: a.Ecos, Pool: a.Pool, Snapshot: snap,
-		Config: a.Config,
+		Config: a.Config, Credentials: a.Credentials,
 	}
 	// And the choice the switcher in that window is making. It writes the same file
 	// `pkgcache project use` writes, because a project switched in the app that only the

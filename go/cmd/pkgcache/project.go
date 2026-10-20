@@ -125,7 +125,7 @@ func reachRegistry(ctx context.Context, snap *config.Snapshot) (local.State, err
 		return local.State{}, fmt.Errorf(
 			"this cache stores nothing (-no-cache), so it has no projects of its own.\n"+
 				"  The project used on the team cache is %q; change it with\n"+
-				"  `pkgcache setup -server %s -project <name>`",
+				"  `pkgcache setup -no-cache -server %s -team-project <name>`",
 			team.Project, team.Server)
 	}
 	return local.Ensure(ctx, local.EnsureOptions{Snapshot: snap, Notes: os.Stderr})

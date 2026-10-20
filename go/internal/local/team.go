@@ -17,6 +17,7 @@ import (
 	"github.com/aabdlwahab/PKGCache/internal/config"
 	"github.com/aabdlwahab/PKGCache/internal/control"
 	controlapi "github.com/aabdlwahab/PKGCache/internal/control/api"
+	"github.com/aabdlwahab/PKGCache/internal/control/credential"
 	"github.com/aabdlwahab/PKGCache/internal/eco/pypi"
 	"github.com/aabdlwahab/PKGCache/internal/ociname"
 	"github.com/aabdlwahab/PKGCache/internal/router"
@@ -63,6 +64,12 @@ type Team struct {
 	// database is created and nothing is written to the cache directory, so the merged
 	// binary costs an existing client's users its size and nothing else.
 	NoCache bool `json:"no_cache,omitempty"`
+	// Token is the read token for Project, when the team serves it only to a token. It is
+	// the one secret in this file, which is why the file is 0600; the bridge opens no store
+	// to seal it in, and every other copy — a sealed credential per chain row, the relay's
+	// hop — is derived from this one. Never printed, never returned by the control plane.
+	// See teamtoken.go.
+	Token string `json:"token,omitempty"`
 }
 
 func teamPath(dataDir string) string { return filepath.Join(dataDir, "team.json") }
@@ -200,10 +207,36 @@ func WriteTeams(dataDir string, set TeamSet) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(teamPath(dataDir), append(data, '\n'), 0o600); err != nil {
-		return err
+	if err := writePrivate(dataDir, teamPath(dataDir), append(data, '\n')); err != nil {
+		return fmt.Errorf("local: write team cache settings: %w", err)
 	}
 	return writeTrustBundle(dataDir, set)
+}
+
+// writePrivate replaces a file with one only this user can read, whole or not at all.
+//
+// Through a new file and a rename rather than os.WriteFile, whose mode applies only when
+// it creates the file: a team.json written 0644 by an older build or by hand would have
+// kept that mode with a token now inside it. And a reader — the daemon starting, `status`
+// — never sees half a record.
+func writePrivate(dir, path string, data []byte) error {
+	temp, err := os.CreateTemp(dir, ".team-*.json")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	defer func() { _ = os.Remove(name) }()
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // writeTrustBundle assembles every distinct team CA into the file the outbound pool
@@ -382,32 +415,45 @@ func ociTeamURL(alias string) func(server, project string) string {
 	}
 }
 
+// ChainRow is one upstream row a team configuration means, with the credential it is
+// written with.
+type ChainRow struct {
+	control.Upstream
+	// Credential is the team's token, on the team's rows only: a public registry behind
+	// it is never shown a credential issued by somebody else. Sealed into the credential
+	// store as the row is written, and posted inline when the row goes through the API.
+	Credential *credential.Plain `json:"credential,omitempty"`
+}
+
 // ChainRows is the upstream chain one team configuration means, as rows.
 //
 // Extracted so the two appliers cannot drift: setup writes rows through the store with
 // the daemon stopped, and `project create` writes them through the daemon's own API
 // while it serves. Same rows either way, or a project created after setup would resolve
 // differently from one created before it.
-func ChainRows(team Team, known func(eco string) bool) []control.Upstream {
+func ChainRows(team Team, known func(eco string) bool) []ChainRow {
 	server := strings.TrimRight(team.Server, "/")
 	project := team.Project
 	if project == "" {
 		project = config.GlobalProject
 	}
-	var rows []control.Upstream
+	var rows []ChainRow
 	for _, entry := range chainedEcosystems {
 		if known != nil && !known(entry.eco) {
 			continue
 		}
-		rows = append(rows, control.Upstream{
-			Eco: entry.eco, Name: entry.index, URL: entry.teamURL(server, project),
-			Kind: "origin", Priority: teamPriority, Enabled: true,
+		rows = append(rows, ChainRow{
+			Upstream: control.Upstream{
+				Eco: entry.eco, Name: entry.index, URL: entry.teamURL(server, project),
+				Kind: "origin", Priority: teamPriority, Enabled: true,
+			},
+			Credential: team.credential(),
 		})
 		if team.Direct && entry.public != "" {
-			rows = append(rows, control.Upstream{
+			rows = append(rows, ChainRow{Upstream: control.Upstream{
 				Eco: entry.eco, Name: entry.index, URL: entry.public,
 				Kind: "origin", Priority: publicPriority, Enabled: true,
-			})
+			}})
 		}
 	}
 	return rows
@@ -436,7 +482,7 @@ func ConfigureChains(
 	}
 	defer release()
 	known := func(eco string) bool { _, found := instance.Ecos.Get(eco); return found }
-	return ConfigureChainsOn(ctx, instance.Projects, known, set)
+	return ConfigureChainsOn(ctx, instance.Projects, instance.Credentials, known, set)
 }
 
 // ChainStore is the slice of the project service chain configuration needs.
@@ -454,8 +500,13 @@ type ChainStore interface {
 }
 
 // ConfigureChainsOn is ConfigureChains against an already-open store.
+//
+// secrets seals the token a team row carries. It is the same credential store a sibling's
+// token goes into, and a row's credential is deleted with the row by the project service,
+// so rewriting a chain leaves no sealed token behind.
 func ConfigureChainsOn(
-	ctx context.Context, store ChainStore, known func(string) bool, set TeamSet,
+	ctx context.Context, store ChainStore, secrets PeerCredentials, known func(string) bool,
+	set TeamSet,
 ) (unknown []string, err error) {
 	projects, err := store.List()
 	if err != nil {
@@ -491,13 +542,39 @@ func ConfigureChainsOn(
 			continue
 		}
 		for _, row := range ChainRows(team, known) {
-			if _, err := store.AddUpstream(project.Name, row); err != nil {
+			if err := addChainRow(store, secrets, project.Name, row); err != nil {
 				return nil, fmt.Errorf("local: configure %s upstream for %s: %w",
 					row.Eco, project.Name, err)
 			}
 		}
 	}
 	return unknown, nil
+}
+
+// addChainRow writes one row, sealing its credential first when it has one.
+//
+// A row that should carry a token and cannot is refused rather than written bare: a bare
+// team row is a 401 on every request, which reads as the team cache being broken rather
+// than as this machine having dropped its credential.
+func addChainRow(store ChainStore, secrets PeerCredentials, project string, row ChainRow) error {
+	value := row.Upstream
+	if row.Credential != nil {
+		if secrets == nil {
+			return errors.New("the team token has nowhere to be sealed")
+		}
+		sealed, err := secrets.Create(*row.Credential)
+		if err != nil {
+			return fmt.Errorf("seal the team token: %w", err)
+		}
+		value.CredentialID = &sealed
+		if _, err := store.AddUpstream(project, value); err != nil {
+			_ = secrets.Delete(sealed)
+			return err
+		}
+		return nil
+	}
+	_, err := store.AddUpstream(project, value)
+	return err
 }
 
 // ConfigureChainVia writes one project's chain through a running daemon.
@@ -530,6 +607,7 @@ func ConfigureChainVia(ctx context.Context, state State, project string, team Te
 	}
 	// No ecosystem filter here: the daemon rejects an unknown one itself, and asking it
 	// for the list first would be a round trip to duplicate a check it already makes.
+	// A row's credential travels inline, and the daemon seals it as it writes the row.
 	for _, row := range ChainRows(team, nil) {
 		if err := api.do(ctx, http.MethodPost, path, row, nil); err != nil {
 			return fmt.Errorf("local: configure %s upstream for %s: %w", row.Eco, project, err)
@@ -665,6 +743,17 @@ func Relays(set TeamSet, siblings map[string][]controlapi.PeerState) map[string]
 		}
 		if team, ok := set.For(project); ok {
 			if hop, ok := cacheHop(team.Server, team.Project); ok {
+				hop.Token = team.Token
+				if team.Token != "" && team.Direct {
+					// The token rides the data-plane hop, which is TLS, and never the
+					// proxy, which is cleartext: pkgreg reads a token from a header, and a
+					// header on that hop is a project credential on the wire for anyone on
+					// the path. Without it the team answers apt with a 401, so apt goes to
+					// the origin as it would with no team at all. Under -no-direct the
+					// proxy stays, and that 401 is the answer: failing loudly is what
+					// that setting asks for, and reaching the internet instead is not.
+					hop.Proxy = ""
+				}
 				relay.Hops = append(relay.Hops, hop)
 			}
 			relay.Direct = team.Direct
