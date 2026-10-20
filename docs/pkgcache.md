@@ -53,6 +53,7 @@ message but "killed". See [the installers](../packaging/README.md).
 | `pkgcache env` | print the exports, for a shell that has to keep them |
 | `pkgcache build` / `compose` | `docker build` / `docker compose` through the cache, Dockerfile untouched |
 | `pkgcache pull <image>` | pull an image through the cache, and keep the name you asked for |
+| `pkgcache push <image>` | put an image built here into the cache under `local/`; `-team` sends it on to the team cache |
 | `pkgcache crate` | run the crate orchestrator with its builds served from the cache |
 | `pkgcache warmlock` | fill the cache from a lock file; `-rewrite` also points the lock at this machine's cache, which then works on this machine only |
 | `pkgcache setup` | point this machine at a cache, once — budget, team cache, everything |
@@ -253,6 +254,13 @@ the team cache or the mirror; either way the files are cached here too. The cach
 startup while it serves siblings. (This used to be refused outright — local mode would not
 bind anything but loopback, which made every sibling on another machine unreachable.)
 
+A sibling never makes this machine spend its credentials. A miss it asks for is fetched
+without the team token or any upstream credential this machine holds, so a project the
+team serves only to a token is not fetched for a machine that has no token of its own.
+What this cache already holds is lent as it is, though, including packages it fetched from
+such a project with its own token: leave the sibling surface closed on a network that must
+not see them.
+
 ## Three tiers
 
 With a team cache configured, a lookup goes local, then the team's cache, then the
@@ -402,6 +410,42 @@ all. It is opt-in because it reroutes every pull on the machine — and note tha
 needs a cache that answers unprefixed `/v2/` paths, which is `server.registry_mirror` on a
 pkgreg server. A `pkgcache` on a laptop does not set that today, so the daemon asks, gets a
 404 and falls back to Docker Hub: use `pkgcache pull` there.
+
+### Pushing an image you built
+
+A cache otherwise holds copies of registries' images, under their names. An image built
+on this machine — a base image a Dockerfile copies from, a tool other builds need — goes
+under `local/` instead, which belongs to no registry:
+
+```sh
+pkgcache push mold:latest            # now local/mold:latest in this cache
+pkgcache push -team mold:latest      # and on the team cache this machine is pointed at
+pkgcache pull local/mold:latest      # on any machine behind the same team
+```
+
+A build through the cache names it the same way — `FROM local/mold:latest`, or
+`COPY --from=local/mold:latest` — and a pull of `local/…` looks in this cache first and then
+in the team's `local/`, so an image pushed to the team from one machine is a pull on every
+other. Pushed images are the only copy anywhere, so eviction never removes them, and they
+travel with `export` and `checkpoint` like everything else.
+
+Docker only ever talks to this cache, over loopback. `-team` then sends the image on
+itself, layer by layer, skipping what the team already has, with this machine's team token
+and the CA `setup` pinned — so Docker needs no login for the team and no certificate in its
+trust store. The token needs scope **write**: create one in the team console under
+Connect → Access tokens, and give it to this machine with
+
+```sh
+pkgcache setup -server https://cache.internal:8443 -ca-sha256 AB:CD:… -token-file -
+```
+
+which asks for it with nothing shown as it is pasted. The console prints that command,
+filled in, next to every token it creates.
+
+`docker push` straight at a team server is not supported: its pulls are anonymous, and a
+registry that answers anonymous pulls cannot also ask Docker for a login without breaking
+them. A team server takes a push from `pkgcache push -team`, or from any registry client
+that sends the write token itself, as a bearer token or as the password of Basic auth.
 
 ## Settings that outlive the session
 

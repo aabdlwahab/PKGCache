@@ -30,6 +30,7 @@ var commands = map[string]struct {
 	"env":                {"print the settings that point tools at the cache", runEnv},
 	"build":              {"run docker build through the cache", runBuild},
 	"pull":               {"docker pull through the cache, keeping the image's own name", runPull},
+	"push":               {"put an image built here into the cache, and on to the team with -team", runPush},
 	"warmlock":           {"warm the cache from a lock file (-rewrite also points the lock at it)", runWarmlock},
 	"compose":            {"run docker compose through the cache", runCompose},
 	"crate":              {"run crate with its builds served from the cache", runCrate},
@@ -59,7 +60,7 @@ var commands = map[string]struct {
 // went unlisted; TestOrderListsEveryCommand holds the two together.
 var order = []string{
 	"setup", "project", "peer", "run", "shell", "env", "build", "compose", "crate",
-	"pull", "warmlock", "persist", "docker-setup", "docker-build-setup",
+	"pull", "push", "warmlock", "persist", "docker-setup", "docker-build-setup",
 	"checkpoint", "export", "import", "snapshots", "rollback",
 	"widget", "tray", "console", "share",
 	"limit", "status", "prune", "migrate", "stop", "serve", "version",

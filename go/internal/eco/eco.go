@@ -176,6 +176,18 @@ type Descriptor struct {
 	// applied to what it names in turn, so an image index need only name its manifests.
 	Companions func(key string, read func() ([]byte, error)) ([]string, error)
 
+	// Hosted reports whether a key holds content this instance is the only source of — an
+	// image pushed to it — rather than a copy of something it can fetch again. Eviction
+	// never removes such an entry: deleting the one copy of somebody's work is not making
+	// room. Nil means every key is a cached copy.
+	Hosted func(key string) bool
+
+	// Reserved names leading path segments this ecosystem gives a meaning of its own,
+	// beyond its upstream aliases, so that no project can be created under one. An image
+	// name carries its project in the first segment, and the namespace pushed images live
+	// in is read from that same segment.
+	Reserved []string
+
 	// Setup renders client configuration instructions. This is what previously lived
 	// as a hand-written block per ecosystem in the control plane's urls.py, and is
 	// why adding an ecosystem needed a frontend change.
@@ -208,11 +220,14 @@ type Ecosystem interface {
 type Registry struct {
 	byID  map[string]Ecosystem
 	order []string
+	// hosted is each descriptor's Hosted, taken once at registration: eviction asks for
+	// every entry it walks, and a descriptor is rebuilt each time it is asked for.
+	hosted map[string]func(key string) bool
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{byID: make(map[string]Ecosystem)}
+	return &Registry{byID: make(map[string]Ecosystem), hosted: make(map[string]func(string) bool)}
 }
 
 // Register adds an ecosystem. Registering the same ID twice is a programming error
@@ -228,6 +243,15 @@ func (r *Registry) Register(e Ecosystem) {
 	r.byID[d.ID] = e
 	r.order = append(r.order, d.ID)
 	sort.Strings(r.order)
+	if d.Hosted != nil {
+		r.hosted[d.ID] = d.Hosted
+	}
+}
+
+// Hosted reports whether an ecosystem holds a key as the only copy; see Descriptor.Hosted.
+func (r *Registry) Hosted(eco, key string) bool {
+	hosted := r.hosted[eco]
+	return hosted != nil && hosted(key)
 }
 
 // Get returns an ecosystem by ID.

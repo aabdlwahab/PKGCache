@@ -88,6 +88,15 @@ func (e *Engine) Put(project, eco, key string, body io.Reader, o PutOptions) (Pu
 	if o.MaxBytes > 0 && written > o.MaxBytes {
 		return PutResult{}, fmt.Errorf("%w: over %d bytes", ErrTooLarge, o.MaxBytes)
 	}
+	return e.finishPut(w, entryKey, exists, existing, o)
+}
+
+// finishPut verifies staged content and files it under its key. Put and CommitUpload
+// both end here, so a body that arrived in one request and one that arrived in several
+// are checked against their declared digest in exactly the same way.
+func (e *Engine) finishPut(
+	w *blob.Writer, entryKey catalog.EntryKey, exists bool, existing catalog.Entry, o PutOptions,
+) (PutResult, error) {
 	if o.ExpectDigest != "" && w.Digest() != o.ExpectDigest {
 		return PutResult{}, fmt.Errorf("%w: expected %s, got %s", ErrChecksum, o.ExpectDigest, w.Digest())
 	}
@@ -97,6 +106,7 @@ func (e *Engine) Put(project, eco, key string, body io.Reader, o PutOptions) (Pu
 		return PutResult{}, err
 	}
 
+	project, eco := entryKey.Project, entryKey.Eco
 	now := time.Now()
 	var artifact *catalog.Artifact
 	if o.Artifact != nil {

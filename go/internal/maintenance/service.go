@@ -25,6 +25,9 @@ type Service struct {
 	Config  *config.Store
 	Metrics *obs.Metrics
 	Now     func() time.Time
+	// Hosted reports an entry that is the only copy of its content — an image pushed to
+	// this instance — which eviction leaves alone however old it is. Nil means none is.
+	Hosted func(eco, key string) bool
 
 	runMu sync.Mutex
 	wg    sync.WaitGroup
@@ -176,6 +179,11 @@ func (s *Service) Evict(ctx context.Context, options EvictOptions) (EvictResult,
 			return nil
 		}
 		if _, pinned := pins[entry.Digest]; pinned {
+			result.Pinned++
+			return nil
+		}
+		// Counted with the pinned, which is what it is: kept because nothing else has it.
+		if s.Hosted != nil && s.Hosted(entry.Eco, entry.Key) {
 			result.Pinned++
 			return nil
 		}

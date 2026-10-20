@@ -1014,3 +1014,19 @@ func TestFromBuiltFromArgsIsResolvedAndPointedAtTheCache(t *testing.T) {
 		t.Errorf("a FROM was resolved without knowing the build's arguments:\n%s", body)
 	}
 }
+
+// An image pushed to the cache is named local/<name>, which Docker alone would read as a
+// Docker Hub user called local. Through the cache it is the cache's own, in the project.
+func TestPushedImageNameMapsToTheCachesOwn(t *testing.T) {
+	for _, tc := range []struct{ project, want string }{
+		{"global", "127.0.0.1:41999/local/mold:latest"},
+		{"work", "127.0.0.1:41999/work/local/mold:latest"},
+	} {
+		if got := MapImage("local/mold:latest", "127.0.0.1:41999", tc.project); got != tc.want {
+			t.Errorf("project %s: %q, want %q", tc.project, got, tc.want)
+		}
+	}
+	if got := MapImage("localteam/app:1", "127.0.0.1:41999", "global"); got != "127.0.0.1:41999/dockerhub/localteam/app:1" {
+		t.Errorf("a Docker Hub user whose name only starts with local: %q", got)
+	}
+}

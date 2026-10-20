@@ -233,6 +233,40 @@ func (c *Ctx) PutBytes(key string, body []byte, mediaType string) (blob.Digest, 
 	return c.engine.PutBytes(c.Project, c.Eco, key, body, mediaType)
 }
 
+// StartUpload opens a body that arrives over several requests — an OCI layer, put up
+// as a POST, PATCHes and a closing PUT — and returns the id those requests name.
+func (c *Ctx) StartUpload() (string, error) { return c.engine.StartUpload(c.Project, c.Eco) }
+
+// AppendUpload adds a body to an open upload and reports how much it now holds.
+func (c *Ctx) AppendUpload(id string, body io.Reader, maxBytes int64) (int64, error) {
+	return c.engine.AppendUpload(c.Project, c.Eco, id, body, maxBytes)
+}
+
+// UploadSize reports how much an open upload holds.
+func (c *Ctx) UploadSize(id string) (int64, bool) {
+	return c.engine.UploadSize(c.Project, c.Eco, id)
+}
+
+// CancelUpload abandons an open upload and removes what it staged.
+func (c *Ctx) CancelUpload(id string) { c.engine.CancelUpload(c.Project, c.Eco, id) }
+
+// CommitUpload closes an upload and stores it under key, verified as PutBlob verifies.
+func (c *Ctx) CommitUpload(
+	id, key string, body io.Reader, o engine.PutOptions,
+) (engine.PutResult, error) {
+	return c.engine.CommitUpload(c.Project, c.Eco, id, key, body, o)
+}
+
+// LinkBlob files content the store already holds under another key, copying nothing.
+func (c *Ctx) LinkBlob(key string, digest blob.Digest, mediaType string) error {
+	return c.engine.Link(c.Project, c.Eco, key, digest, mediaType)
+}
+
+// ReadEntry returns the bytes of a small entry, such as a manifest, bounded by maxBytes.
+func (c *Ctx) ReadEntry(key string, maxBytes int64) ([]byte, catalog.Entry, error) {
+	return c.engine.ReadEntry(c.Project, c.Eco, key, maxBytes)
+}
+
 // Entry looks up a cache key without serving it.
 func (c *Ctx) Entry(key string) (catalog.Entry, bool) {
 	e, err := c.engine.Entry(c.Project, c.Eco, key)

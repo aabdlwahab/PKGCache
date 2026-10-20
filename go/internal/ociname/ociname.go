@@ -32,6 +32,12 @@ import (
 // registry host, and the OCI adapter refuses it as a path segment outright.
 const AnyRegistry = "*"
 
+// Hosted is the first segment of an image pushed to a cache rather than pulled through it:
+// <cache>/local/<name>:<tag>. It names no registry and can name no project; it is here, and
+// not in the adapter that serves it, because a build's FROM line and the client that sends
+// a push on to a team have to spell it the same way. See eco/oci/push.go.
+const Hosted = "local"
+
 // Registry is the registry one image-name segment refers to.
 type Registry struct {
 	// Segment is what this registry is called inside a cache path. It is the host for

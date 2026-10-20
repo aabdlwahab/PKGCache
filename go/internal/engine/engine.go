@@ -95,6 +95,8 @@ type Engine struct {
 	docs     docGroup
 	peer     PeerFetcher
 	guard    StoreGuard
+	// uploads holds the OCI pushes still arriving; see upload.go.
+	uploads uploadTable
 
 	// usage caches per-project entry totals for the quota pre-flight, so a burst of
 	// requests costs one aggregate query rather than one per request.

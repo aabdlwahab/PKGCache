@@ -14,7 +14,11 @@ import (
 // manifest, whose own layers are found by asking this again about those. Only manifests
 // are read; a layer names nothing.
 func companions(key string, read func() ([]byte, error)) ([]string, error) {
-	if !strings.HasPrefix(key, "manifest/") && !strings.HasPrefix(key, "tag/") {
+	// A pushed image's parts are pushed too, and go under the same hosted/ prefix: copying
+	// one between projects must not leave its layers behind as evictable cached copies.
+	hosted := hostedKey(key)
+	bare := strings.TrimPrefix(key, hostedPrefix)
+	if !strings.HasPrefix(bare, "manifest/") && !strings.HasPrefix(bare, "tag/") {
 		return nil, nil
 	}
 	body, err := read()
@@ -22,6 +26,16 @@ func companions(key string, read func() ([]byte, error)) ([]string, error) {
 		return nil, err
 	}
 	var keys []string
+	if hosted {
+		// Every child, attestations included: a push had to send them all to be accepted.
+		for _, child := range indexDigests(body) {
+			keys = append(keys, hostedManifestKey(child))
+		}
+		for _, digest := range imageBlobs(body) {
+			keys = append(keys, hostedBlobKey(digest))
+		}
+		return keys, nil
+	}
 	for _, child := range indexChildren(body) {
 		keys = append(keys, manifestKey(child.digest))
 	}

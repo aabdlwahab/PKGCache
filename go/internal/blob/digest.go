@@ -7,6 +7,7 @@
 package blob
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,6 +59,15 @@ func ParseDigest(s string) (Digest, error) {
 		}
 	}
 	return Digest(b.String()), nil
+}
+
+// DigestBytes is the digest of a buffer already in memory.
+//
+// For a protocol that names content by its hash before it is stored: an OCI manifest is
+// pushed under a tag, and the registry answers with the digest it will be fetched by. The
+// one sha256 every key in this store is addressed by, rather than one per caller.
+func DigestBytes(body []byte) Digest {
+	return Digest(fmt.Sprintf("%x", sha256.Sum256(body)))
 }
 
 // parseDigestName is ParseDigest as a predicate, for walking a directory where a name

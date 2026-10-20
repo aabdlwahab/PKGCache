@@ -52,7 +52,7 @@ export default {
           ? panel("Use it on this machine", { note: "each command starts the cache if it is not running", wide: true }, start.node)
           : panel("Start a session", { note: "one executable: no sudo, no system trust store, no insecure TLS flag", wide: true }, start.node),
         panel("Your tools in that shell", { note: "generated from this instance's ecosystems", wide: true }, endpoints.node),
-        panel("Access tokens", { note: local ? "only for file uploads" : "only for protected projects and file uploads" }, tokens.node)),
+        panel("Access tokens", { note: local ? "only for file uploads" : "for protected projects, file uploads and image pushes" }, tokens.node)),
     );
 
     const draw = () => {
@@ -303,6 +303,22 @@ function fileSize(value) {
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+// addToMachine is what to do with a token just created: the setup command that hands it
+// to a machine's pkgcache, with this server's address and fingerprint already in it.
+// -token-file - asks for the token at the prompt, so it goes from this page to the machine
+// without passing through a file or the shell history.
+function addToMachine(scope) {
+  const coordinates = store.state.coordinates;
+  const origin = coordinates ? `${coordinates.scheme}://${coordinates.unified}` : "https://<cache-host>:8443";
+  const fingerprint = store.state.onboarding?.ca_sha256 || "<fingerprint>";
+  return el("div", { class: "stack" },
+    el("p", { class: "note", text: "To give it to a machine's pkgcache, run this there and paste the token when asked:" }),
+    commandBlock(`pkgcache setup -server ${origin} -ca-sha256 ${fingerprint} -team-project ${store.state.project} -token-file -`),
+    scope === "write"
+      ? el("p", { class: "note", text: "With a write token that machine can also push images here: pkgcache push -team <image>, and every machine behind this server pulls it as local/<image>." })
+      : el("p", { class: "note", text: "A read token lets the machine download. To push images from it as well, create a write token instead." }));
+}
+
 function renderTokens() {
   const rows = store.state.tokens || [];
   const canOperate = store.canOperate();
@@ -342,7 +358,8 @@ function renderTokens() {
       // they can come back for it.
       form.prepend(el("div", { class: "secret" },
         el("strong", { text: "Copy this now — it is not stored:" }),
-        el("code", { text: result.secret })));
+        el("code", { text: result.secret }),
+        store.isLocal() ? null : addToMachine(String(data.get("scope")))));
       form.reset();
     }
   });
@@ -354,7 +371,7 @@ function renderTokens() {
       ? el("p", { class: "note", text: "This project requires a token for package downloads. Create a read token, save the one-time secret in a chmod 600 file, and pass that path to pkgcache setup with -token-file." })
       : el("p", { class: "note", text: store.isLocal()
           ? "Package downloads need no token. You need one only to upload files."
-          : "Package downloads are public for this project. You need a token only for protected operations such as file uploads." }),
+          : "Package downloads are public for this project. You need a token only for protected operations: file uploads, and pushing images from a machine with pkgcache push -team." }),
     table(
       [
         { label: "Label", cell: (row) => row.label || row.id },

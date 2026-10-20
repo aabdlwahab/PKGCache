@@ -33,8 +33,8 @@ func runSetup(ctx context.Context, args []string) error {
 	noCache := fs.Bool("no-cache", false,
 		"do not cache locally; use the team cache through a verified loopback bridge")
 	tokenFile := fs.String("token-file", os.Getenv(local.TokenFileEnvVar),
-		"file holding the team project's read token, if it requires one (default $"+
-			local.TokenFileEnvVar+")")
+		"file holding the team project's token — read, or write to push images — or - to be "+
+			"asked for it (default $"+local.TokenFileEnvVar+")")
 	uninstall := fs.Bool("uninstall", false, "forget the team cache and its chain")
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(fs.Output(), `pkgcache setup — point this machine at a cache, once
@@ -61,7 +61,9 @@ shell history. It is kept with that project's team record, readable by you alone
 over TLS on every request to the team cache and never printed. apt is the exception: the
 team's apt proxy is cleartext, so apt goes to its mirror directly, or fails with
 -no-direct. Running setup again for the same server and project keeps the token;
--uninstall forgets it.
+-uninstall forgets it. -token-file - asks for the token instead, with nothing shown as it
+is pasted, or reads one line from a pipe. A token with scope write also lets
+`+"`pkgcache push -team`"+` send images to the team cache.
 
 Nothing is written outside this cache's own directory.
 
@@ -83,7 +85,7 @@ flags:
 		if *server == "" {
 			return errors.New("-token-file is the team project's token; pass -server with it")
 		}
-		read, err := local.ReadTokenFile(*tokenFile)
+		read, err := readToken(*tokenFile, *server)
 		if err != nil {
 			return err
 		}
@@ -320,4 +322,12 @@ func sortedProjects(set local.TeamSet, except string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// readToken is -token-file: a file, or - for the prompt.
+func readToken(path, server string) (string, error) {
+	if path == "-" {
+		return readTokenPrompt(server)
+	}
+	return local.ReadTokenFile(path)
 }

@@ -190,7 +190,9 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 	ecosystems.Register(ecogit.NewWithConfig(snap.Git))
 	ecosystems.Register(gomod.New())
 	ecosystems.Register(npm.New())
-	ecosystems.Register(oci.New())
+	// Pushes need a write token on a team server. A machine's own cache takes them on its
+	// loopback socket, which is the boundary its control API already relies on.
+	ecosystems.Register(oci.New().WithPush(oci.PushPolicy{Tokens: tokens, Open: snap.Local.Enabled}))
 	ecosystems.Register(pypi.New())
 	projects, err := controlproject.New(controlDB, cfg, ecosystems, credentials, metrics)
 	if err != nil {
@@ -240,7 +242,7 @@ func Open(snap *config.Snapshot, opts ...Option) (*App, error) {
 	}
 	a.Ops.Register(jobs)
 	a.Maintenance = &maintenance.Service{
-		Catalog: cat, Blobs: blobs, Config: cfg, Metrics: metrics,
+		Catalog: cat, Blobs: blobs, Config: cfg, Metrics: metrics, Hosted: ecosystems.Hosted,
 	}
 	a.Maintenance.Register(jobs)
 	a.Maintenance.Start(baseCtx)

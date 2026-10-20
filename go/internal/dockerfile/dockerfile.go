@@ -936,6 +936,12 @@ func mapImage(ref, registry, project string) string {
 		}
 		return registry + "/" + router.OCIProjectPrefix(project) + reg.Segment + "/" + rest + tag
 	}
+	if hasSlash && head == ociname.Hosted {
+		// An image pushed to the cache, this machine's or its team's. Docker would read the
+		// name as a Docker Hub user called local, which nobody means when the cache keeps
+		// pushed images under exactly that name.
+		return registry + "/" + router.OCIProjectPrefix(project) + ociname.Hosted + "/" + rest + tag
+	}
 	if !hasSlash {
 		// Docker Hub's official images live under library/.
 		name = "library/" + name

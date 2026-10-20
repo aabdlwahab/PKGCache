@@ -408,6 +408,9 @@ func (s *Service) validateName(name string) error {
 		for alias := range descriptor.DefaultUpstreams {
 			reserved[alias] = true
 		}
+		for _, name := range descriptor.Reserved {
+			reserved[name] = true
+		}
 	}
 	if reserved[name] {
 		return invalid("%q is reserved", name)

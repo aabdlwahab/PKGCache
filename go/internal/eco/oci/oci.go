@@ -52,6 +52,7 @@ var defaultRegistries = map[string]string{
 // Repo is the OCI ecosystem.
 type Repo struct {
 	registries map[string]string
+	push       PushPolicy
 
 	pendingMu sync.Mutex
 	pending   map[string][]pendingImage
@@ -96,18 +97,20 @@ func (r *Repo) Descriptor() eco.Descriptor {
 			return eco.Immutable
 		},
 		Companions: companions,
+		Hosted:     hostedKey,
+		Reserved:   []string{HostedNamespace},
 		Setup:      setupSteps,
 	}
 }
 
 // Routes implements eco.Ecosystem.
 func (r *Repo) Routes() []eco.Route {
-	return []eco.Route{
+	return append([]eco.Route{
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/v2/", Handler: r.version},
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/v2/{name...}/manifests/{ref}", Handler: r.manifest},
 		{Methods: []string{http.MethodGet, http.MethodHead}, Pattern: "/v2/{name...}/blobs/{digest}", Handler: r.blob},
 		{Methods: []string{http.MethodGet}, Pattern: "/v2/{name...}/tags/list", Handler: r.tagsList},
-	}
+	}, r.pushRoutes()...)
 }
 
 func (r *Repo) version(w http.ResponseWriter, req *http.Request, p router.Params) {
@@ -127,6 +130,15 @@ func (r *Repo) manifest(w http.ResponseWriter, req *http.Request, p router.Param
 	if ref == "" || strings.Contains(ref, "/") {
 		writeOCIError(c, http.StatusNotFound, "MANIFEST_UNKNOWN", "invalid manifest reference")
 		return
+	}
+	if route.hosted {
+		if serveHostedManifest(c, route, ref) {
+			return
+		}
+		if route.base == "" {
+			writeOCIError(c, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown to this registry")
+			return
+		}
 	}
 	if strings.HasPrefix(ref, "sha256:") {
 		r.manifestByDigest(c, route, ref)
@@ -210,6 +222,9 @@ func (r *Repo) blob(w http.ResponseWriter, req *http.Request, p router.Params) {
 	headers := http.Header{}
 	headers.Set("Docker-Content-Digest", digest.Prefixed())
 	headers.Set("Docker-Distribution-API-Version", "registry/2.0")
+	if route.hosted && serveHostedBlob(c, route, digest, headers) {
+		return
+	}
 	err = c.Serve(engine.Resolution{
 		Key:       blobKey(digest),
 		Upstream:  c.UpstreamRequest(blobURL(route, digest), nil),
@@ -227,6 +242,9 @@ func (r *Repo) tagsList(w http.ResponseWriter, req *http.Request, p router.Param
 	route, ok := resolveName(c, p.Unescape("name"))
 	if !ok {
 		writeOCIError(c, http.StatusNotFound, "NAME_UNKNOWN", "unknown registry prefix or repository")
+		return
+	}
+	if route.hosted && serveHostedTags(c, route) {
 		return
 	}
 
@@ -435,6 +453,9 @@ func (r *Repo) prunePendingLocked(now time.Time) {
 
 type imageRoute struct {
 	base, alias, repo, display string
+	// hosted is local/, where pushed images live; base is then the team's local/, or
+	// empty when there is no team behind this cache.
+	hosted bool
 }
 
 // resolveName maps an OCI repository path onto an upstream and a repository.
@@ -467,6 +488,18 @@ func resolveName(c *eco.Ctx, raw string) (imageRoute, bool) {
 		}
 	}
 	alias := strings.ToLower(parts[0])
+	if alias == HostedNamespace {
+		// Pushed images, which no registry holds; see push.go. Ahead of everything below,
+		// so local/ can never be read as a repository on the registry mirror.
+		if len(parts) < 2 {
+			return imageRoute{}, false
+		}
+		repo := strings.Join(parts[1:], "/")
+		return imageRoute{
+			base: hostedUpstream(c), alias: HostedNamespace, repo: repo,
+			display: HostedNamespace + "/" + repo, hosted: true,
+		}, true
+	}
 	if alias == ociname.AnyRegistry {
 		// The name a chain files its discovery rule under is not a registry a client
 		// may ask for by name.
@@ -721,8 +754,15 @@ func setupSteps(ctx eco.SetupContext) []eco.SetupStep {
 		{Command: "pkgcache pull alpine:3.20"},
 	}
 	if ctx.Local {
-		return steps
+		return append(steps,
+			eco.SetupStep{Comment: "An image built here goes into this cache under local/, where builds and pulls through it name it as local/<name>; -team sends it on to the team cache as well:"},
+			eco.SetupStep{Command: "pkgcache push myimage:1.0"},
+		)
 	}
+	steps = append(steps,
+		eco.SetupStep{Comment: "An image built on a machine goes into its cache under local/ and, with -team and a write token from Access tokens, on to this server, where every machine pulls it as local/<name>:"},
+		eco.SetupStep{Command: "pkgcache push -team myimage:1.0"},
+	)
 	// The two forms that reach this server rather than a local cache both embed this
 	// project, because docker has nowhere else to put it: it rides the image name. The
 	// bridge a -no-cache shell opens relays /v2/ as it is, so the prefix goes through it;
