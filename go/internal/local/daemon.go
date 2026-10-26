@@ -19,6 +19,11 @@ import (
 // ErrAlreadyRunning reports that a daemon already owns this cache directory.
 var ErrAlreadyRunning = errors.New("local: a pkgcache daemon is already running for this cache")
 
+// drainWait is how long a starting daemon waits for the cache's lock. Long enough for a
+// daemon on its way out to close two databases; well inside the client's start timeout,
+// so the wait still ends in a cache that answers.
+const drainWait = 10 * time.Second * startBudgetFactor
+
 // RunOptions configures one daemon.
 type RunOptions struct {
 	Snapshot *config.Snapshot
@@ -41,7 +46,13 @@ func Run(ctx context.Context, o RunOptions) error {
 	if err := snap.EnsureDirs(); err != nil {
 		return err
 	}
-	lock, err := Acquire(LockPath(snap.DataDir), false)
+	// Waited for, briefly, because the daemon most often found holding it is the one this
+	// replaces. An idle exit, a stop or a version change removes the state file and stops
+	// answering before it closes its databases, and the client starting this one took
+	// either as gone. Refused at once, this daemon exited "already running" and that
+	// client waited out its whole start timeout for a cache that was never coming: the
+	// first command after every upgrade, and two CI runs in a row.
+	lock, err := waitForLock(ctx, LockPath(snap.DataDir), drainWait)
 	if err != nil {
 		if errors.Is(err, ErrLocked) {
 			return fmt.Errorf("%w: %s", ErrAlreadyRunning, snap.DataDir)

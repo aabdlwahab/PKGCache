@@ -1,9 +1,11 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"time"
 )
 
 // ErrLocked reports that another process holds the lock.
@@ -33,6 +35,28 @@ func Acquire(path string, wait bool) (*Lock, error) {
 		return nil, err
 	}
 	return &Lock{file: file}, nil
+}
+
+// waitForLock takes the lock at path, trying again for up to wait while another process
+// holds it, and returns ErrLocked once the wait is over.
+//
+// For a holder that is on its way out rather than one that is staying: a daemon that has
+// stopped answering still holds its lock until its databases are closed, and both
+// everything that stops a cache and everything that starts one decide it is gone at the
+// first of those, not the second.
+func waitForLock(ctx context.Context, path string, wait time.Duration) (*Lock, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		lock, err := Acquire(path, false)
+		if !errors.Is(err, ErrLocked) || time.Now().After(deadline) {
+			return lock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // Close releases the lock.

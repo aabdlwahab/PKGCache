@@ -204,26 +204,13 @@ func Migrate(ctx context.Context, o MigrateOptions) (MigrateResult, error) {
 // descriptor — so a move that stops the daemon and takes the lock in the next breath
 // finds it held by the daemon it just stopped.
 func acquireIdle(ctx context.Context, dataDir string, wait time.Duration) (*Lock, error) {
-	deadline := time.Now().Add(wait)
-	for {
-		lock, err := Acquire(LockPath(dataDir), false)
-		if err == nil {
-			return lock, nil
-		}
-		if !errors.Is(err, ErrLocked) {
-			return nil, err
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf(
-				"local: the cache at %s is in use.\n"+
-					"  stop it first:  pkgcache stop", dataDir)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
+	lock, err := waitForLock(ctx, LockPath(dataDir), wait)
+	if errors.Is(err, ErrLocked) {
+		return nil, fmt.Errorf(
+			"local: the cache at %s is in use.\n"+
+				"  stop it first:  pkgcache stop", dataDir)
 	}
+	return lock, err
 }
 
 // migratePaths resolves both ends and rejects the pairs that cannot mean anything.
