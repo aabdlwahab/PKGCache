@@ -64,10 +64,16 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 	if mapped == image {
 		return nil
 	}
-	// Tagged back, because the cache's address is how this was fetched and not what it
-	// is. A compose file or a manifest naming alpine:3.20 has to find it afterwards.
-	if err := runDocker(ctx, o, nil, "tag", mapped, image); err != nil {
-		return fmt.Errorf("tag %s: %w", image, err)
+	if strings.Contains(image, "@") {
+		if err := namePinned(ctx, image, mapped, o); err != nil {
+			return err
+		}
+	} else {
+		// Tagged back, because the cache's address is how this was fetched and not what
+		// it is. A compose file or a manifest naming alpine:3.20 has to find it afterwards.
+		if err := runDocker(ctx, o, nil, "tag", mapped, image); err != nil {
+			return fmt.Errorf("tag %s: %w", image, err)
+		}
 	}
 	if o.Keep {
 		return nil
@@ -77,6 +83,25 @@ func Pull(ctx context.Context, image string, o PullOptions) error {
 	if err := runDocker(ctx, o, nil, "rmi", mapped); err != nil && o.Notes != nil {
 		_, _ = fmt.Fprintf(o.Notes, "pkgcache: %s is pulled, but %s is still tagged: %v\n",
 			image, mapped, err)
+	}
+	return nil
+}
+
+// namePinned gives an image pulled by digest — minio@sha256:… — the name it was asked for.
+//
+// docker tag cannot do it: Docker refuses a tag that carries a digest, and an image is known
+// as repo@sha256:… only once it has been pulled under that name. Tagging it repo:latest
+// instead would invent a tag the registry never gave it, and still leave the pinned name
+// unknown to the classic image store, so a compose file naming the pin would not find it.
+//
+// So it is pulled once more, from its own registry. Every layer is already here by then, so
+// that pull is the manifest and the config, and the digest makes it the same image the
+// cache served. A registry that cannot be reached leaves it under the cache's address, which
+// is a name it does have, and the error says so.
+func namePinned(ctx context.Context, image, mapped string, o PullOptions) error {
+	if err := runDocker(ctx, o, nil, "pull", image); err != nil {
+		return fmt.Errorf("pull %s: the image is here as %s, but Docker names an image by digest "+
+			"only by pulling it from its own registry, and that pull failed: %w", image, mapped, err)
 	}
 	return nil
 }

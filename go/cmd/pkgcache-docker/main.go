@@ -204,10 +204,10 @@ func runPull(ctx context.Context, registry, project, docker string, args []strin
 		images = append(images, argument)
 	}
 	if len(images) != 1 || len(flags) > 0 {
-		// `docker pull -a`, a digest pin, or several images at once. Each has a meaning
-		// this program would have to reproduce exactly, and reproducing it approximately
-		// is worse than not trying: the image somebody gets would differ from the image
-		// they asked for.
+		// `docker pull -a`, a platform, or several images at once. Each has a meaning this
+		// program would have to reproduce exactly, and reproducing it approximately is
+		// worse than not trying: the image somebody gets would differ from the image they
+		// asked for. A digest pin is not among them; clientbuild.Pull names it.
 		fmt.Fprintf(os.Stderr,
 			"pkgcache-docker: this pull has flags or several images; running it directly\n")
 		return passthrough(ctx, docker, args)
