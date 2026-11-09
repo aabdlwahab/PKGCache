@@ -18,7 +18,9 @@ pieces of privileged setup:
 
 On native Linux, the same bridge can also avoid `/etc/docker/certs.d`. Docker Desktop
 and remote daemons do not share the terminal's loopback, so that is not a portable
-Docker setup.
+Docker setup. For a daemon that another program drives — a CI runner's Docker executor —
+put `pkgcache-docker serve` in front of it and point it at the bridge; see
+[docker-builds.md](docker-builds.md#anything-that-talks-to-the-docker-socket).
 
 When loopback does not fit, run the project's `setup.sh` explicitly, as root (Console →
 Connect). Because the bridge never writes to the machine, there is nothing to undo first.

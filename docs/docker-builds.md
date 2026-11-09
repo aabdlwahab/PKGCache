@@ -243,6 +243,64 @@ Pulls chain to a team cache when one is configured — see
 [pkgcache.md](pkgcache.md#three-tiers) for the path shapes, which are not like the other
 ecosystems'.
 
+## Anything that talks to the Docker socket
+
+Some programs never run docker at all: they talk to the daemon's API. A CI runner's Docker
+executor is the one that matters most — it pulls a job's `image:` and `services:` itself,
+so a shim on the PATH is never involved. `pkgcache-docker serve` answers that API on a
+socket of its own and forwards everything to the real daemon, except pulls:
+
+```sh
+pkgreg-bridge -server https://cache.internal:8443 -ca-sha256 <fingerprint> -project ci
+pkgcache-docker serve -socket /run/pkgcache-docker.sock -registry 127.0.0.1:41999 -project ci
+```
+
+A pull of `local/app:1.0` or `python:3.12` arriving there is rewritten exactly as a `FROM`
+line is, fetched through the cache, and tagged with the name that was asked for — the name
+the program inspects and runs next. Every other request (create, attach, exec, logs, wait,
+volumes, networks, BuildKit's session) reaches the daemon as it was sent, so the program
+behaves exactly as it does against the daemon itself; the front interprets one endpoint and
+nothing else.
+
+`-registry` is the cache as the daemon dials it. Paired with [pkgreg-bridge](client-bridge.md)
+on loopback, the daemon pulls plain HTTP from `127.0.0.1`, which native Linux Docker accepts
+with nothing in `/etc/docker/certs.d`, and the bridge carries it on over verified TLS. Nothing
+is stored on the machine beyond the images Docker keeps anyway. `-project` puts every pull in
+that project, as `pkgcache setup -team-project` does for a build.
+
+For a GitLab Runner Docker executor, point the runner at the socket:
+
+```toml
+[[runners]]
+  executor = "docker"
+  [runners.docker]
+    host = "unix:///run/pkgcache-docker.sock"
+    pull_policy = ["always", "if-not-present"]
+```
+
+Jobs then name a pushed image as `image: local/app:1.0`, and Docker Hub images come through
+the cache with no change to the job. `always` asks the cache on every job, so a tag that
+moves is picked up; `if-not-present` keeps jobs running from the copy already on the machine
+when the cache cannot be reached.
+
+The socket is the daemon's API, which is root on the machine to whoever can open it, so it is
+a file with mode 0660 and never a port. Run the front as a service with the group allowed to
+use Docker, and the bridge beside it:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/pkgcache-docker serve -socket /run/pkgcache-docker.sock -registry 127.0.0.1:41999 -project ci
+Group=docker
+Restart=always
+```
+
+What it leaves to the daemon: `docker pull -a`, imports, and registries the cache does not
+front arrive as they were sent. An image pinned by digest is fetched through the cache and
+then named by one more pull from its own registry — the manifest and the config — exactly as
+`pkgcache pull` does, because Docker learns a digest name only by pulling it. It rewrites
+pulls, not builds: a `docker build` sent over the socket fetches its `FROM` itself, so build
+with `pkgcache-docker build` when that should come from the cache too.
+
 ## When a build still misses the cache
 
 - `pkgcache status` — is the cache running, and is the team cache reachable

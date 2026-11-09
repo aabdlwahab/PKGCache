@@ -891,6 +891,11 @@ func isStageIndex(ref string) bool {
 // and two implementations of this would eventually disagree about which.
 func MapImage(ref, registry, project string) string { return mapImage(ref, registry, project) }
 
+// SplitTag separates a reference from its tag or digest, keeping the ":" or "@" on the
+// second half. Exported for the Docker API front, which reads a pull's reference the way
+// MapImage will.
+func SplitTag(ref string) (name, tag string) { return splitTag(ref) }
+
 // mapImage rewrites one image reference to the cache, inside the given project.
 //
 // The project is a segment of the image name, because Docker cannot be given a base path

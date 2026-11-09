@@ -21,6 +21,11 @@
 //	*       handed to docker untouched. run, ps, save, load, image inspect, compose —
 //	        everything else is not this program's business and is not slowed down by it.
 //
+// And one that is not docker's: `pkgcache-docker serve` answers Docker's API on a socket
+// of its own, for the programs that talk to the daemon instead of running a command — a
+// CI runner's Docker executor first among them. A pull arriving there goes through the
+// cache by the same rule; see internal/dockerfront.
+//
 // Which address the cache is reached on is worked out rather than configured: a daemon
 // that cannot see this terminal's network — Docker Desktop, WSL, a VM — is given
 // host.docker.internal, and a daemon on this host is given loopback. That matters more
@@ -58,6 +63,11 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) int {
+	// Not a docker verb, so nothing a caller relies on being passed through is lost.
+	if len(args) > 0 && args[0] == "serve" {
+		return runServe(ctx, args[1:])
+	}
+
 	// The real container command. PKGCACHE_DOCKER lets this sit in front of podman or
 	// nerdctl, which is the same substitution this program is itself performing.
 	docker := os.Getenv("PKGCACHE_DOCKER")
