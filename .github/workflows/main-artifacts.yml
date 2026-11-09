@@ -285,7 +285,8 @@ jobs:
   # ---- macOS: the .pkg, unsigned ------------------------------------------------------
   macos:
     needs: [version, macos-app-amd64]
-    runs-on: macos-14
+    # macos-15: GitHub retired the macOS 14 images on 2026-11-02.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

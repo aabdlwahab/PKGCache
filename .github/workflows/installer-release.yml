@@ -305,7 +305,10 @@ jobs:
 
   pkg:
     needs: [version, macos-app-amd64]
-    runs-on: macos-14
+    # macos-15, not macos-14: GitHub retired every macOS 14 image on 2026-11-02, and a run
+    # asking for one is cancelled at once, so this job — and the release, which needs it —
+    # never ran.
+    runs-on: macos-15
     permissions:
       contents: read
       id-token: write
