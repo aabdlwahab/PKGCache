@@ -177,6 +177,31 @@ func TestOfficialImageIsFetchedFromTheCachesDockerHub(t *testing.T) {
 	}
 }
 
+// Newer clients, a runner's executor among them, send the name Docker normalized:
+// docker.io/local/app for local/app. Read as written, that is Docker Hub's user "local",
+// and a pushed image is looked for where it never was. Each normalized name has to land
+// where its short form does.
+func TestNormalizedNamesGoWhereTheirShortFormsDo(t *testing.T) {
+	for sent, want := range map[string]string{
+		"docker.io/local/app":      cache + "/ci/local/app",
+		"docker.io/library/python": cache + "/ci/dockerhub/library/python",
+		"docker.io/nvidia/cuda":    cache + "/ci/dockerhub/nvidia/cuda",
+	} {
+		t.Run(sent, func(t *testing.T) {
+			d := newDaemon(t)
+			post(t, front(t, d), "/images/create?fromImage="+url.QueryEscape(sent)+"&tag=1.0")
+
+			calls := d.recorded()
+			if len(calls) != 2 || calls[0].query.Get("fromImage") != want {
+				t.Fatalf("pulled %+v, want %s", calls, want)
+			}
+			if calls[1].path != "/images/"+want+":1.0/tag" {
+				t.Errorf("tagged %s", calls[1].path)
+			}
+		})
+	}
+}
+
 // The daemon takes a tag inside fromImage when the tag parameter is empty, and so does the
 // front; otherwise python:3.12 sent that way would read as a pull of every tag.
 func TestTagInsideFromImageIsRead(t *testing.T) {

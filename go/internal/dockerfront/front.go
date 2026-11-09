@@ -146,6 +146,12 @@ func (f *Front) plan(query url.Values) (pullPlan, bool) {
 	if name == "" || query.Get("fromSrc") != "" {
 		return pullPlan{}, false
 	}
+	// Newer clients normalize a name before sending it — a runner's executor among them —
+	// so local/app arrives as docker.io/local/app. MapImage knows the cache's own local/
+	// only in the form somebody writes it, and would send that to Docker Hub's user
+	// "local". docker.io/ is what Docker adds to any name without a registry, so taking it
+	// off loses nothing.
+	name = strings.TrimPrefix(name, "docker.io/")
 	// The daemon reads a tag inside fromImage only when the tag parameter is empty.
 	name, own := dockerfile.SplitTag(name)
 	if tag == "" && own != "" {
